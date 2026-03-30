@@ -18,7 +18,7 @@ intact** — its entries are removed from the `.sln` (original saved as
 `CiderPress2.sln.original`) so the Avalonia project builds instead.
 Nothing in `cp2_avalonia/` should ever reference files inside `cp2_wpf/`.
 
-The full planning document is at `cp2_avalonia/PORTING_OVERVIEW.md`. Refer to it for
+The full planning document is at `cp2_avalonia/guidance/PORTING_OVERVIEW.md`. Refer to it for
 detailed analysed of every source file, risk assessments, and the iteration plan.
 
 ---

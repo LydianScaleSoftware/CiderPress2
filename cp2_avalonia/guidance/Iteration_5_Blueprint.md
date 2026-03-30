@@ -1,6 +1,6 @@
 # Iteration 5 Blueprint: Simple Dialogs (First Batch)
 
-> **First:** Read `cp2_avalonia/Pre-Iteration-Notes.md` to familiarize yourself with the
+> **First:** Read `cp2_avalonia/guidance/Pre-Iteration-Notes.md` to familiarize yourself with the
 > project context, conventions, and architecture decisions before proceeding.
 
 ---

@@ -1,6 +1,6 @@
 # Iteration 3 Blueprint: File Open & Archive/Directory Trees
 
-> **First:** Read `cp2_avalonia/Pre-Iteration-Notes.md` to familiarize yourself with the
+> **First:** Read `cp2_avalonia/guidance/Pre-Iteration-Notes.md` to familiarize yourself with the
 > project context, conventions, and architecture decisions before proceeding.
 
 ---
