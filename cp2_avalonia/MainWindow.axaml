@@ -27,10 +27,154 @@ limitations under the License.
         MinWidth="640" MinHeight="680"
         Icon="avares://CiderPress2/Res/cp2_app.ico">
 
-    <!-- Launch panel: displayed when no file is open -->
-    <TextBlock Text="CiderPress II"
-               HorizontalAlignment="Center"
-               VerticalAlignment="Center"
-               FontSize="36" FontWeight="Bold"/>
+    <Window.KeyBindings>
+        <KeyBinding Gesture="Enter" Command="{Binding ViewFilesCommand}"/>
+        <KeyBinding Gesture="Delete" Command="{Binding DeleteFilesCommand}"/>
+        <KeyBinding Gesture="Alt+Up" Command="{Binding NavToParentCommand}"/>
+        <KeyBinding Gesture="Ctrl+I" Command="{Binding ToggleInfoCommand}"/>
+        <KeyBinding Gesture="Ctrl+Shift+A" Command="{Binding AddFilesCommand}"/>
+        <KeyBinding Gesture="Ctrl+E" Command="{Binding ExtractFilesCommand}"/>
+        <KeyBinding Gesture="Alt+Enter" Command="{Binding EditAttributesCommand}"/>
+        <KeyBinding Gesture="Ctrl+Shift+N" Command="{Binding CreateDirectoryCommand}"/>
+        <KeyBinding Gesture="Ctrl+Shift+W" Command="{Binding CloseSubTreeCommand}"/>
+        <KeyBinding Gesture="Ctrl+Shift+T" Command="{Binding Debug_DiskArcLibTestCommand}"/>
+        <KeyBinding Gesture="Ctrl+Shift+1" Command="{Binding RecentFile1Command}"/>
+        <KeyBinding Gesture="Ctrl+Shift+2" Command="{Binding RecentFile2Command}"/>
+        <KeyBinding Gesture="Ctrl+Shift+3" Command="{Binding RecentFile3Command}"/>
+        <KeyBinding Gesture="Ctrl+Shift+4" Command="{Binding RecentFile4Command}"/>
+        <KeyBinding Gesture="Ctrl+Shift+5" Command="{Binding RecentFile5Command}"/>
+        <KeyBinding Gesture="Ctrl+Shift+6" Command="{Binding RecentFile6Command}"/>
+    </Window.KeyBindings>
+
+    <DockPanel>
+        <Menu DockPanel.Dock="Top">
+            <MenuItem Header="_File">
+                <MenuItem Header="New _Disk Image..." Command="{Binding NewDiskImageCommand}"
+                          HotKey="Ctrl+N"/>
+                <MenuItem Header="_New File Archive..." Command="{Binding NewFileArchiveCommand}"/>
+                <MenuItem Header="_Open" Command="{Binding OpenCommand}" HotKey="Ctrl+O"/>
+                <MenuItem Header="Open Physical Drive..."
+                          Command="{Binding OpenPhysicalDriveCommand}"/>
+                <MenuItem Header="_Close" Command="{Binding CloseCommand}" HotKey="Ctrl+W"/>
+                <Separator/>
+                <MenuItem Name="recentFilesMenu" Header="Recent Files">
+                    <MenuItem Header="(none)"/>
+                </MenuItem>
+                <Separator/>
+                <MenuItem Header="E_xit" Command="{Binding ExitCommand}"
+                          InputGesture="Alt+F4"/>
+            </MenuItem>
+
+            <MenuItem Header="_Edit">
+                <MenuItem Header="_Copy" Command="{Binding CopyCommand}" HotKey="Ctrl+C"/>
+                <MenuItem Header="_Paste" Command="{Binding PasteCommand}" HotKey="Ctrl+V"/>
+                <Separator/>
+                <MenuItem Header="_Find" Command="{Binding FindCommand}" HotKey="Ctrl+F"/>
+                <Separator/>
+                <MenuItem Header="Select _All" Command="{Binding SelectAllCommand}"
+                          HotKey="Ctrl+A"/>
+                <Separator/>
+                <MenuItem Header="Settings..." Command="{Binding EditAppSettingsCommand}"/>
+            </MenuItem>
+
+            <MenuItem Header="_Actions">
+                <MenuItem Header="_View Files" Command="{Binding ViewFilesCommand}"
+                          InputGesture="Enter"/>
+                <MenuItem Header="_Add Files..." Command="{Binding AddFilesCommand}"
+                          InputGesture="Ctrl+Shift+A"/>
+                <MenuItem Header="Import Files..." Command="{Binding ImportFilesCommand}"/>
+                <MenuItem Header="_Extract Files..." Command="{Binding ExtractFilesCommand}"
+                          InputGesture="Ctrl+E"/>
+                <MenuItem Header="E_xport Files..." Command="{Binding ExportFilesCommand}"/>
+                <MenuItem Header="_Delete Files" Command="{Binding DeleteFilesCommand}"
+                          InputGesture="Delete"/>
+                <MenuItem Header="Test Files" Command="{Binding TestFilesCommand}"/>
+                <MenuItem Header="Rename / Edit Attributes..."
+                          Command="{Binding EditAttributesCommand}"
+                          InputGesture="Alt+Enter"/>
+                <MenuItem Header="Create Directory..."
+                          Command="{Binding CreateDirectoryCommand}"
+                          InputGesture="Ctrl+Shift+N"/>
+                <Separator/>
+                <MenuItem Header="Edit Directory Attributes..."
+                          Command="{Binding EditDirAttributesCommand}"/>
+                <Separator/>
+                <MenuItem Header="Edit Sectors..." Command="{Binding EditSectorsCommand}"/>
+                <MenuItem Header="Edit Blocks..." Command="{Binding EditBlocksCommand}"/>
+                <MenuItem Header="Edit Blocks (CP/M)..."
+                          Command="{Binding EditBlocksCPMCommand}"/>
+                <MenuItem Header="Save As Disk Image..."
+                          Command="{Binding SaveAsDiskImageCommand}"/>
+                <MenuItem Header="Replace Partition Contents..."
+                          Command="{Binding ReplacePartitionCommand}"/>
+                <MenuItem Header="Scan for Bad Blocks"
+                          Command="{Binding ScanForBadBlocksCommand}"/>
+                <Separator/>
+                <MenuItem Header="Scan for Sub-Volumes"
+                          Command="{Binding ScanForSubVolCommand}"/>
+                <MenuItem Header="Defragment Filesystem"
+                          Command="{Binding DefragmentCommand}"/>
+                <MenuItem Header="Close File Source"
+                          Command="{Binding CloseSubTreeCommand}"
+                          InputGesture="Ctrl+Shift+W"/>
+            </MenuItem>
+
+            <MenuItem Header="_View">
+                <MenuItem Header="Show Full List"
+                          Command="{Binding ShowFullListCommand}"/>
+                <MenuItem Header="Show Directory List"
+                          Command="{Binding ShowDirListCommand}"/>
+                <MenuItem Header="Show Information"
+                          Command="{Binding ShowInfoCommand}"/>
+            </MenuItem>
+
+            <MenuItem Header="_Navigate">
+                <MenuItem Header="Go To Parent Directory"
+                          Command="{Binding NavToParentDirCommand}"/>
+                <MenuItem Header="Go To Parent"
+                          Command="{Binding NavToParentCommand}"
+                          InputGesture="Alt+Up"/>
+            </MenuItem>
+
+            <MenuItem Header="_Help">
+                <MenuItem Header="Help" Command="{Binding HelpCommand}"
+                          HotKey="F1"/>
+                <MenuItem Header="_About CiderPress II"
+                          Command="{Binding AboutCommand}"/>
+            </MenuItem>
+
+            <!-- Debug menu: visible only when ShowDebugMenu is true -->
+            <MenuItem Header="_DEBUG"
+                      IsVisible="{Binding ShowDebugMenu}">
+                <MenuItem Header="DiskArc Library Tests..."
+                          Command="{Binding Debug_DiskArcLibTestCommand}"
+                          InputGesture="Ctrl+Shift+T"/>
+                <MenuItem Header="FileConv Library Tests..."
+                          Command="{Binding Debug_FileConvLibTestCommand}"/>
+                <MenuItem Header="Bulk Compression Test..."
+                          Command="{Binding Debug_BulkCompressTestCommand}"/>
+                <Separator/>
+                <MenuItem Header="System Info..."
+                          Command="{Binding Debug_ShowSystemInfoCommand}"/>
+                <MenuItem Header="Show Debug Log"
+                          Command="{Binding Debug_ShowDebugLogCommand}"
+                          IsChecked="{Binding IsDebugLogVisible}"
+                          ToggleType="CheckBox"/>
+                <MenuItem Header="Show Drop/Paste Target"
+                          Command="{Binding Debug_ShowDropTargetCommand}"
+                          IsChecked="{Binding IsDropTargetVisible}"
+                          ToggleType="CheckBox"/>
+                <Separator/>
+                <MenuItem Header="Convert ANI to GIF..."
+                          Command="{Binding Debug_ConvertANICommand}"/>
+            </MenuItem>
+        </Menu>
+
+        <!-- Placeholder for toolbar (Iteration 2) and main content -->
+        <TextBlock Text="CiderPress II"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Center"
+                   FontSize="36" FontWeight="Bold"/>
+    </DockPanel>
 
 </Window>
