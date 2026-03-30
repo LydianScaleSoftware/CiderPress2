@@ -21,7 +21,6 @@
   <ItemGroup>
     <AvaloniaResource Include="Res/cp2_app.ico" />
     <AvaloniaResource Include="Res/RedX.png" />
-    <AvaloniaResource Include="Res/Icons.axaml" />
   </ItemGroup>
 
   <ItemGroup>
