@@ -553,7 +553,9 @@ namespace cp2_avalonia {
             DeleteFilesCommand = new RelayCommand(() => NotImplemented("Delete Files"), () => false);
             TestFilesCommand = new RelayCommand(() => NotImplemented("Test Files"), () => false);
             EditAttributesCommand = new RelayCommand(() => NotImplemented("Edit Attributes"), () => false);
-            CreateDirectoryCommand = new RelayCommand(() => NotImplemented("Create Directory"), () => false);
+            CreateDirectoryCommand = new RelayCommand(
+                async () => await mMainCtrl.CreateDirectory(),
+                () => mMainCtrl.IsHierarchicalFileSystemSelected && mMainCtrl.CanWrite);
             EditDirAttributesCommand = new RelayCommand(() => NotImplemented("Edit Directory Attributes"), () => false);
             EditSectorsCommand = new RelayCommand(() => NotImplemented("Edit Sectors"), () => false);
             EditBlocksCommand = new RelayCommand(() => NotImplemented("Edit Blocks"), () => false);
@@ -596,7 +598,10 @@ namespace cp2_avalonia {
             Debug_FileConvLibTestCommand = new RelayCommand(() => NotImplemented("FileConv Library Tests"));
             Debug_BulkCompressTestCommand = new RelayCommand(() => NotImplemented("Bulk Compression Test"));
             Debug_ShowSystemInfoCommand = new RelayCommand(() => NotImplemented("System Info"));
-            Debug_ShowDebugLogCommand = new RelayCommand(() => NotImplemented("Show Debug Log"));
+            Debug_ShowDebugLogCommand = new RelayCommand(() => {
+                mMainCtrl.Debug_ShowDebugLog();
+                IsDebugLogVisible = mMainCtrl.IsDebugLogOpen;
+            });
             Debug_ShowDropTargetCommand = new RelayCommand(() => NotImplemented("Show Drop/Paste Target"));
             Debug_ConvertANICommand = new RelayCommand(() => NotImplemented("Convert ANI to GIF"), () => false);
 

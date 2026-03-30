@@ -1,5 +1,6 @@
 /*
- * Copyright 2025 faddenSoft
+ * Copyright 2023 faddenSoft
+ * Copyright 2026 Lydian Scale Software
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -92,7 +93,9 @@ namespace cp2_avalonia {
                 if (Dispatcher.UIThread.CheckAccess()) {
                     raiseEvent(this, e);
                 } else {
-                    Dispatcher.UIThread.InvokeAsync(() => raiseEvent(this, e));
+                    // Use Post (fire-and-forget) to avoid deadlocks when the UI thread
+                    // is blocked waiting on a worker via Monitor.Wait.
+                    Dispatcher.UIThread.Post(() => raiseEvent(this, e));
                 }
             }
         }
@@ -100,14 +103,16 @@ namespace cp2_avalonia {
         /// <summary>
         /// Returns all current entries in order (oldest first).
         /// </summary>
-        public LogEntry[] GetEntries() {
+        public List<LogEntry> GetLogs() {
             lock (mEntries) {
-                int count = mEntries.Count;
-                LogEntry[] result = new LogEntry[count];
-                for (int i = 0; i < count; i++) {
-                    result[i] = mEntries[(mTopEntry + i) % count];
+                List<LogEntry> list = new List<LogEntry>(mEntries.Count);
+                for (int i = mTopEntry; i < mEntries.Count; i++) {
+                    list.Add(mEntries[i]);
                 }
-                return result;
+                for (int i = 0; i < mTopEntry; i++) {
+                    list.Add(mEntries[i]);
+                }
+                return list;
             }
         }
 

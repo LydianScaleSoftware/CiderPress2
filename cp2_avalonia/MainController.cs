@@ -44,6 +44,9 @@ namespace cp2_avalonia {
         private DebugMessageLog mDebugLog;
         public AppHook AppHook { get; private set; }
 
+        private Tools.LogViewer? mDebugLogViewer;
+        public bool IsDebugLogOpen => mDebugLogViewer != null;
+
         private string mWorkPathName = string.Empty;
         private WorkTree? mWorkTree = null;
         public Formatter mFormatter;
@@ -103,6 +106,7 @@ namespace cp2_avalonia {
         /// Performs cleanup when the window is closing.
         /// </summary>
         public void WindowClosing() {
+            mDebugLogViewer?.Close();
             SaveAppSettings();
         }
 
@@ -418,6 +422,102 @@ namespace cp2_avalonia {
             // TODO: Iteration 5 — show Avalonia MessageBox.  For now just log it.
             Debug.WriteLine("ShowFileError: " + msg);
             AppHook.LogE("ShowFileError: " + msg);
+        }
+
+        // -----------------------------------------------------------------------------------------
+        // Selection helpers
+
+        /// <summary>
+        /// Gets the currently selected archive or filesystem and directory entry.
+        /// </summary>
+        /// <param name="archiveOrFileSystem">Result: IArchive or IFileSystem, or null.</param>
+        /// <param name="daNode">Result: DiskArcNode for the selected item.</param>
+        /// <param name="selectionDir">Result: selected directory entry, or NO_ENTRY.</param>
+        /// <returns>True on success.</returns>
+        public bool GetSelectedArcDir([System.Diagnostics.CodeAnalysis.NotNullWhen(true)]
+                out object? archiveOrFileSystem,
+                [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out DiskArcNode? daNode,
+                out IFileEntry selectionDir) {
+            archiveOrFileSystem = null;
+            daNode = null;
+            selectionDir = IFileEntry.NO_ENTRY;
+
+            ArchiveTreeItem? arcTreeSel = mMainWin.SelectedArchiveTreeItem;
+            DirectoryTreeItem? dirTreeSel = mMainWin.SelectedDirectoryTreeItem;
+            if (arcTreeSel == null || dirTreeSel == null) {
+                Debug.WriteLine("Current selection is not archive or filesystem");
+                return false;
+            }
+
+            object? arcObj = arcTreeSel.WorkTreeNode.DAObject;
+            if (arcObj == null) {
+                Debug.WriteLine("DAObject was null");
+                return false;
+            } else if (arcObj is not IArchive && arcObj is not IFileSystem) {
+                Debug.WriteLine("Unexpected DAObject type: " + arcObj.GetType());
+                return false;
+            }
+            archiveOrFileSystem = arcObj;
+            selectionDir = dirTreeSel.FileEntry;
+
+            daNode = arcTreeSel.WorkTreeNode.FindDANode();
+            return true;
+        }
+
+        // -----------------------------------------------------------------------------------------
+        // Actions → Create Directory
+
+        /// <summary>
+        /// Handles Actions → Create Directory.
+        /// </summary>
+        public async Task CreateDirectory() {
+            if (!GetSelectedArcDir(out object? archiveOrFileSystem, out DiskArcNode? _,
+                    out IFileEntry targetDir)) {
+                return;
+            }
+            IFileSystem? fs = archiveOrFileSystem as IFileSystem;
+            if (fs == null) {
+                Debug.Assert(false);
+                return;
+            }
+
+            string rules = "\u2022 " + fs.Characteristics.FileNameSyntaxRules;
+            CreateDirectory dialog = new CreateDirectory(mMainWin, fs, targetDir,
+                fs.IsValidFileName, rules);
+            if (await dialog.ShowDialog<bool?>(mMainWin) != true) {
+                return;
+            }
+
+            try {
+                IFileEntry newEntry = fs.CreateFile(targetDir, dialog.NewFileName,
+                    IFileSystem.CreateMode.Directory);
+                RefreshDirAndFileList();
+                FileListItem.SetSelectionFocusByEntry(mMainWin.FileList,
+                    mMainWin.fileListDataGrid, newEntry);
+            } catch (Exception ex) {
+                AppHook.LogE("CreateDirectory failed: " + ex.Message);
+                ShowFileError("Failed to create directory: " + ex.Message);
+            }
+        }
+
+        // -----------------------------------------------------------------------------------------
+        // Debug log viewer
+
+        /// <summary>
+        /// Toggles the debug log viewer window open/closed.
+        /// </summary>
+        public void Debug_ShowDebugLog() {
+            if (mDebugLogViewer == null) {
+                Tools.LogViewer dlg = new Tools.LogViewer(mDebugLog);
+                dlg.Closing += (sender, e) => {
+                    Debug.WriteLine("Debug log viewer closed");
+                    mDebugLogViewer = null;
+                };
+                dlg.Show();
+                mDebugLogViewer = dlg;
+            } else {
+                mDebugLogViewer.Close();
+            }
         }
     }
 }
