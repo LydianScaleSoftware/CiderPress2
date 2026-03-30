@@ -24,6 +24,12 @@ limitations under the License.
     <Application.Styles>
         <FluentTheme />
         <StyleInclude Source="avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml"/>
+        <!-- Fade icon images when their parent toolbar button is disabled.
+             Must live here (not in Icons.axaml) because ResourceDictionary
+             cannot host free-standing selector styles. -->
+        <Style Selector="Button:disabled Image">
+            <Setter Property="Opacity" Value="0.25"/>
+        </Style>
     </Application.Styles>
 
     <Application.Resources>

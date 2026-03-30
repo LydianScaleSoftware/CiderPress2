@@ -27,6 +27,14 @@ limitations under the License.
         MinWidth="640" MinHeight="680"
         Icon="avares://CiderPress2/Res/cp2_app.ico">
 
+    <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceInclude Source="avares://CiderPress2/Res/TreeViewItemStyle.axaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Window.Resources>
+
     <Window.KeyBindings>
         <KeyBinding Gesture="Enter" Command="{Binding ViewFilesCommand}"/>
         <KeyBinding Gesture="Delete" Command="{Binding DeleteFilesCommand}"/>
@@ -170,7 +178,84 @@ limitations under the License.
             </MenuItem>
         </Menu>
 
-        <!-- Placeholder for toolbar (Iteration 2) and main content -->
+        <!-- Toolbar: replaces WPF ToolBarTray/ToolBar -->
+        <Border DockPanel.Dock="Top" BorderBrush="LightGray" BorderThickness="0,0,0,1"
+                Padding="4,2">
+            <StackPanel Orientation="Horizontal" Height="28">
+                <!-- View mode buttons.
+                     No explicit IsEnabled needed — RelayCommand.CanExecute controls
+                     the enabled/disabled state automatically for all toolbar buttons. -->
+                <Button Command="{Binding ShowFullListCommand}"
+                        ToolTip.Tip="Show full file list"
+                        BorderBrush="{Binding FullListBorderBrush}">
+                    <Image Source="{StaticResource icon_ListView}" Width="16" Height="16"/>
+                </Button>
+                <Button Command="{Binding ShowDirListCommand}"
+                        ToolTip.Tip="Show contents of single directory"
+                        BorderBrush="{Binding DirListBorderBrush}">
+                    <Image Source="{StaticResource icon_MeasureTree}" Width="16" Height="16"/>
+                </Button>
+                <Button Command="{Binding ShowInfoCommand}"
+                        ToolTip.Tip="Show information (toggle: Ctrl+I)"
+                        BorderBrush="{Binding InfoBorderBrush}">
+                    <Image Source="{StaticResource icon_StatusInformationOutlineNoColor}"
+                           Width="16" Height="16"/>
+                </Button>
+
+                <Border Width="1" Background="LightGray" Margin="4,2"/>
+
+                <Button Command="{Binding ResetSortCommand}"
+                        ToolTip.Tip="Reset the sort order in the file list">
+                    <Image Source="{StaticResource icon_ClearSort}" Width="16" Height="16"/>
+                </Button>
+                <Button Command="{Binding NavToParentCommand}"
+                        ToolTip.Tip="Move to parent">
+                    <Image Source="{StaticResource icon_Upload}" Width="16" Height="16"/>
+                </Button>
+
+                <Border Width="1" Background="LightGray" Margin="4,2"/>
+
+                <!-- Drag &amp; copy mode radio buttons -->
+                <TextBlock Text="Drag &amp; Copy mode:" Margin="4,5,0,0"
+                           ToolTip.Tip="Configure behavior when dragging and copying files in or out"/>
+                <RadioButton Content="Add/Extract" GroupName="aeix" Margin="4,0,0,0"
+                             IsChecked="{Binding IsChecked_AddExtract}"
+                             ToolTip.Tip="When dragging or pasting files, perform add/extract operations."/>
+                <RadioButton Content="Import/Export" GroupName="aeix" Margin="4,0,4,0"
+                             IsChecked="{Binding IsChecked_ImportExport}"
+                             ToolTip.Tip="When dragging or pasting files, perform import/export operations."/>
+                <!-- Note: WPF sets BorderBrush on these RadioButtons to
+                     {DynamicResource {x:Static SystemColors.MenuHighlightBrushKey}}.
+                     Avalonia has no SystemColors — the default Fluent theme styling
+                     is sufficient, so this binding is intentionally dropped. -->
+
+                <Border Width="1" Background="LightGray" Margin="4,2"/>
+
+                <Button Command="{Binding HelpCommand}"
+                        ToolTip.Tip="Help - open manual in browser (F1)">
+                    <Image Source="{StaticResource icon_F1Help}" Width="16" Height="16"/>
+                </Button>
+            </StackPanel>
+        </Border>
+
+        <!-- Status bar -->
+        <Border DockPanel.Dock="Bottom" BorderBrush="LightGray" BorderThickness="0,1,0,0"
+                Padding="4,2">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="Ready"/>
+                <TextBlock Grid.Column="1" HorizontalAlignment="Center"
+                           Text="{Binding CenterStatusText}"/>
+                <TextBlock Grid.Column="2" Name="statusRightText"
+                           Text="{Binding RightStatusText}"/>
+            </Grid>
+        </Border>
+
+        <!-- Placeholder for main content (Iteration 3+) -->
         <TextBlock Text="CiderPress II"
                    HorizontalAlignment="Center"
                    VerticalAlignment="Center"

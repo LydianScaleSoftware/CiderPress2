@@ -22,6 +22,7 @@ using System.Windows.Input;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
+using Avalonia.Media;
 
 using cp2_avalonia.Common;
 
@@ -119,6 +120,55 @@ namespace cp2_avalonia {
         public bool IsDropTargetVisible {
             get => mIsDropTargetVisible;
             set { mIsDropTargetVisible = value; OnPropertyChanged(); }
+        }
+
+        // ---- Status bar ----
+        private string mCenterStatusText = string.Empty;
+        public string CenterStatusText {
+            get => mCenterStatusText;
+            set { mCenterStatusText = value; OnPropertyChanged(); }
+        }
+
+        private string mRightStatusText = string.Empty;
+        public string RightStatusText {
+            get => mRightStatusText;
+            set { mRightStatusText = value; OnPropertyChanged(); }
+        }
+
+        // ---- Toolbar state ----
+        private bool mIsChecked_AddExtract = true;
+        public bool IsChecked_AddExtract {
+            get => mIsChecked_AddExtract;
+            set { mIsChecked_AddExtract = value; OnPropertyChanged(); }
+        }
+
+        private bool mIsChecked_ImportExport = false;
+        public bool IsChecked_ImportExport {
+            get => mIsChecked_ImportExport;
+            set { mIsChecked_ImportExport = value; OnPropertyChanged(); }
+        }
+
+        // TODO (Iteration 15): Replace with a theme-aware accent brush for dark mode support,
+        // e.g. Application.Current.Resources["SystemAccentColor"] or a DynamicResource.
+        private static readonly IBrush ToolbarHighlightBrush = Brushes.Green;
+        private static readonly IBrush ToolbarNohiBrush = Brushes.Transparent;
+
+        private IBrush mFullListBorderBrush = Brushes.Transparent;
+        public IBrush FullListBorderBrush {
+            get => mFullListBorderBrush;
+            set { mFullListBorderBrush = value; OnPropertyChanged(); }
+        }
+
+        private IBrush mDirListBorderBrush = Brushes.Transparent;
+        public IBrush DirListBorderBrush {
+            get => mDirListBorderBrush;
+            set { mDirListBorderBrush = value; OnPropertyChanged(); }
+        }
+
+        private IBrush mInfoBorderBrush = Brushes.Transparent;
+        public IBrush InfoBorderBrush {
+            get => mInfoBorderBrush;
+            set { mInfoBorderBrush = value; OnPropertyChanged(); }
         }
 
         public MainWindow() {
