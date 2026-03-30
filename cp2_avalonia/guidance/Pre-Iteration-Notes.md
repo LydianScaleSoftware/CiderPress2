@@ -122,6 +122,11 @@ Follow the existing faddenSoft coding style used throughout CiderPress II:
   ```
   Use the same dual-copyright pattern for `.axaml` XML comment headers.
 
+  > **Agent constraint:** The dual-copyright header is **mandatory** for every new `.cs`
+  > and `.axaml` file created in `cp2_avalonia/`. Both lines must be present — the
+  > `faddenSoft` line first, followed by the `Lydian Scale Software` line. Never omit
+  > the second copyright line.
+
 - **Namespace:** `cp2_avalonia` (mirroring `cp2_wpf`). Sub-namespaces follow directory
   names: `cp2_avalonia.Actions`, `cp2_avalonia.Tools`, `cp2_avalonia.LibTest`,
   `cp2_avalonia.Common`.
@@ -420,6 +425,15 @@ dotnet run --project cp2_avalonia -c Release
 The `MakeDist` project must be updated to build `cp2_avalonia` instead of `cp2_wpf`.
 Specifically, `MakeDist/Build.cs` has a `sWinTargets` array containing `"cp2_wpf"` — this
 needs to change to `"cp2_avalonia"` and move to `sTargets` (cross-platform targets).
+
+> **Agent constraint:** Never run `git add`, `git commit`, or any other git write commands.
+> The user is responsible for all version control operations.
+
+> **Agent constraint:** Never modify any code outside the `cp2_avalonia/` subproject without
+> express permission from the user. This includes the solution file (`CiderPress2.sln`),
+> any other subproject (`AppCommon`, `CommonUtil`, `DiskArc`, `FileConv`, `cp2`, `MakeDist`,
+> etc.), and any file at the workspace root. If a change outside `cp2_avalonia/` appears
+> necessary, stop and ask the user first.
 
 ---
 

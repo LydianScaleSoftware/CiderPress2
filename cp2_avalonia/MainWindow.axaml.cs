@@ -15,19 +15,24 @@
  * limitations under the License.
  */
 using System;
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
 
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 
+using AppCommon;
 using cp2_avalonia.Common;
 
 namespace cp2_avalonia {
     public partial class MainWindow : Window, INotifyPropertyChanged {
+
+        private MainController mMainCtrl = null!;
 
         // INotifyPropertyChanged
         public new event PropertyChangedEventHandler? PropertyChanged;
@@ -135,6 +140,51 @@ namespace cp2_avalonia {
             set { mRightStatusText = value; OnPropertyChanged(); }
         }
 
+        // ---- Panel visibility ----
+        private bool mLaunchPanelVisible = true;
+        public bool LaunchPanelVisible {
+            get => mLaunchPanelVisible;
+            set { mLaunchPanelVisible = value; OnPropertyChanged(); }
+        }
+
+        private bool mMainPanelVisible = false;
+        public bool MainPanelVisible {
+            get => mMainPanelVisible;
+            set { mMainPanelVisible = value; OnPropertyChanged(); }
+        }
+
+        // ---- Program version ----
+        public string ProgramVersionString => GlobalAppVersion.AppVersion.ToString();
+
+        // ---- Archive and directory trees ----
+        public ObservableCollection<ArchiveTreeItem> ArchiveTreeRoot { get; } = new();
+        public ObservableCollection<DirectoryTreeItem> DirectoryTreeRoot { get; } = new();
+
+        // ---- Recent files ----
+        private string mRecentFileName1 = string.Empty;
+        private string mRecentFilePath1 = string.Empty;
+        private string mRecentFileName2 = string.Empty;
+        private string mRecentFilePath2 = string.Empty;
+
+        public bool ShowRecentFile1 => !string.IsNullOrEmpty(mRecentFileName1);
+        public string RecentFileName1 {
+            get => mRecentFileName1;
+            set { mRecentFileName1 = value; OnPropertyChanged(); OnPropertyChanged(nameof(ShowRecentFile1)); }
+        }
+        public string RecentFilePath1 {
+            get => mRecentFilePath1;
+            set { mRecentFilePath1 = value; OnPropertyChanged(); }
+        }
+        public bool ShowRecentFile2 => !string.IsNullOrEmpty(mRecentFileName2);
+        public string RecentFileName2 {
+            get => mRecentFileName2;
+            set { mRecentFileName2 = value; OnPropertyChanged(); OnPropertyChanged(nameof(ShowRecentFile2)); }
+        }
+        public string RecentFilePath2 {
+            get => mRecentFilePath2;
+            set { mRecentFilePath2 = value; OnPropertyChanged(); }
+        }
+
         // ---- Toolbar state ----
         private bool mIsChecked_AddExtract = true;
         public bool IsChecked_AddExtract {
@@ -191,11 +241,13 @@ namespace cp2_avalonia {
 
             NewDiskImageCommand = new RelayCommand(() => NotImplemented("New Disk Image"));
             NewFileArchiveCommand = new RelayCommand(() => NotImplemented("New File Archive"));
-            OpenCommand = new RelayCommand(() => NotImplemented("Open"));
+            OpenCommand = new RelayCommand(async () => await mMainCtrl.OpenWorkFile());
             OpenPhysicalDriveCommand = new RelayCommand(() => NotImplemented("Open Physical Drive"));
-            CloseCommand = new RelayCommand(() => NotImplemented("Close"), () => false);
-            RecentFile1Command = new RelayCommand(() => NotImplemented("Recent File 1"));
-            RecentFile2Command = new RelayCommand(() => NotImplemented("Recent File 2"));
+            CloseCommand = new RelayCommand(
+                () => mMainCtrl.CloseWorkFile(),
+                () => mMainCtrl?.IsFileOpen ?? false);
+            RecentFile1Command = new RelayCommand(() => mMainCtrl.OpenRecentFile(0));
+            RecentFile2Command = new RelayCommand(() => mMainCtrl.OpenRecentFile(1));
             RecentFile3Command = new RelayCommand(() => NotImplemented("Recent File 3"));
             RecentFile4Command = new RelayCommand(() => NotImplemented("Recent File 4"));
             RecentFile5Command = new RelayCommand(() => NotImplemented("Recent File 5"));
@@ -247,6 +299,25 @@ namespace cp2_avalonia {
 
             InitializeComponent();
             DataContext = this;
+
+            mMainCtrl = new MainController(this);
+            WindowPlacement.TrackNormalBounds(this);
+            Loaded += (s, e) => mMainCtrl.WindowLoaded();
+            Closing += (s, e) => mMainCtrl.WindowClosing();
+        }
+
+        private void ArchiveTree_SelectionChanged(object? sender, SelectionChangedEventArgs e) {
+            if (archiveTree.SelectedItem is ArchiveTreeItem item) {
+                mMainCtrl.ArchiveTree_SelectionChanged(item);
+            } else {
+                mMainCtrl.ArchiveTree_SelectionChanged(null);
+            }
+        }
+
+        internal void ClearTreesAndLists() {
+            ArchiveTreeRoot.Clear();
+            DirectoryTreeRoot.Clear();
+            // FileList.Clear();  // added in Iteration 4
         }
 
         private async void NotImplemented(string featureName) {

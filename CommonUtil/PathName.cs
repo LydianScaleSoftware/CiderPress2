@@ -536,12 +536,22 @@ namespace CommonUtil {
             string fancyName = "ABCabcäà_ÅÃ";
             Debug.Assert(AdjustFileName(fancyName, '_') == fancyName);
             Debug.Assert(AdjustFileName("foo/bar", '_') == "foo_bar");
+            // ':' is invalid on Windows but valid on Linux/macOS.
+#if WINDOWS
             Debug.Assert(AdjustFileName("foo:bar", '_') == "foo_bar");
+#else
+            Debug.Assert(AdjustFileName("foo:bar", '_') == "foo:bar");
+#endif
 
             Debug.Assert(EscapeFileName(fancyName) == fancyName);
             Debug.Assert(EscapeFileName("a/b") == "a%2fb");
             Debug.Assert(EscapeFileName("a%b") == "a%%b");
+            // ':', '\', '?' are invalid on Windows but valid on Linux/macOS.
+#if WINDOWS
             Debug.Assert(EscapeFileName(@"face/off:dir\name") == "face%2foff%3adir%5cname");
+#else
+            Debug.Assert(EscapeFileName(@"face/off:dir\name") == "face%2foff:dir\\name");
+#endif
             Debug.Assert(EscapeFileName("x\r\ny\u007fz") == "x%0d%0ay%7fz");
             Debug.Assert(EscapeFileName("x\u240d\u240ay\u2421z") == "x%0d%0ay%7fz");
 
@@ -553,8 +563,16 @@ namespace CommonUtil {
             Debug.Assert(UnescapeFileName("a%%b", '/') == "a%b");
 
             char dirSep = Path.DirectorySeparatorChar;
+#if WINDOWS
             Debug.Assert(EscapePathName("a:b/c:d", '/') == "a%3ab" + dirSep + "c%3ad");
+#else
+            Debug.Assert(EscapePathName("a:b/c:d", '/') == "a:b" + dirSep + "c:d");
+#endif
+#if WINDOWS
             Debug.Assert(AdjustEscapePathName("a:b/c:d", '/', '_') == "a_b" + dirSep + "c%3ad");
+#else
+            Debug.Assert(AdjustEscapePathName("a:b/c:d", '/', '_') == "a:b" + dirSep + "c:d");
+#endif
             Debug.Assert(AdjustEscapePathName("%%xyz:foo/bar", ':', '_') ==
                 "%%xyz" + dirSep + "foo%2fbar");
 

@@ -1,0 +1,120 @@
+/*
+ * Copyright 2025 faddenSoft
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using Avalonia.Threading;
+
+using CommonUtil;
+
+namespace cp2_avalonia {
+    /// <summary>
+    /// Debug message log with UI-thread notification.  Replaces cp2_wpf/DebugMessageLog.cs.
+    /// </summary>
+    public class DebugMessageLog : MessageLog {
+        public class LogEventArgs : EventArgs {
+            public LogEntry Entry { get; private set; }
+            public LogEventArgs(LogEntry entry) { Entry = entry; }
+        }
+
+        /// <summary>
+        /// Event raised when a log entry is added.
+        /// </summary>
+        public event EventHandler<LogEventArgs>? RaiseLogEvent;
+
+        /// <summary>
+        /// One entry in the log.
+        /// </summary>
+        public class LogEntry {
+            public int Index { get; private set; }
+            public DateTime When { get; private set; }
+            public Priority Priority { get; private set; }
+            public string Message { get; private set; }
+
+            public LogEntry(int index, DateTime when, Priority prio, string msg) {
+                Index = index;
+                When = when;
+                Priority = prio;
+                Message = msg;
+            }
+        }
+
+        private List<LogEntry> mEntries = new List<LogEntry>();
+        private int mTopEntry = 0;
+        private int mLastIndex;
+        private const int MAX_LINES = 100000;
+
+        // MessageLog abstract override
+        public override void Clear() {
+            Debug.WriteLine("CLEAR message log");
+            lock (mEntries) {
+                mEntries.Clear();
+            }
+        }
+
+        // MessageLog abstract override
+        public override void Log(Priority prio, string message) {
+            if (prio < mMinPriority) {
+                return;
+            }
+            LogEntry ent;
+            lock (mEntries) {
+                ent = new LogEntry(++mLastIndex, DateTime.Now, prio, message);
+                if (mEntries.Count < MAX_LINES) {
+                    mEntries.Add(ent);
+                } else {
+                    mEntries[mTopEntry++] = ent;
+                    if (mTopEntry == MAX_LINES) {
+                        mTopEntry = 0;
+                    }
+                }
+            }
+
+            OnRaiseLogEvent(new LogEventArgs(ent));
+        }
+
+        protected virtual void OnRaiseLogEvent(LogEventArgs e) {
+            EventHandler<LogEventArgs>? raiseEvent = RaiseLogEvent;
+            if (raiseEvent != null) {
+                if (Dispatcher.UIThread.CheckAccess()) {
+                    raiseEvent(this, e);
+                } else {
+                    Dispatcher.UIThread.InvokeAsync(() => raiseEvent(this, e));
+                }
+            }
+        }
+
+        /// <summary>
+        /// Returns all current entries in order (oldest first).
+        /// </summary>
+        public LogEntry[] GetEntries() {
+            lock (mEntries) {
+                int count = mEntries.Count;
+                LogEntry[] result = new LogEntry[count];
+                for (int i = 0; i < count; i++) {
+                    result[i] = mEntries[(mTopEntry + i) % count];
+                }
+                return result;
+            }
+        }
+
+        public int GetEntryCount() {
+            lock (mEntries) {
+                return mEntries.Count;
+            }
+        }
+    }
+}
