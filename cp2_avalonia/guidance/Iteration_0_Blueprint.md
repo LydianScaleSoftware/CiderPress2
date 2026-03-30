@@ -588,4 +588,23 @@ If the build fails:
 - [ ] The `cp2_wpf/` directory is completely unmodified
 - [ ] Subdirectories `Actions/`, `Tools/`, `LibTest/`, `Common/`, `Res/` all exist under `cp2_avalonia/`
 - [ ] `Icons.axaml` merges without error (no parse exception at startup)
-- [ ] AvaloniaEdit styles are registered (verify no build warnings about missing styles)
+- [x] AvaloniaEdit styles are registered (verify no build warnings about missing styles)
+
+---
+
+## Implementation Notes (Iteration 0 as executed)
+
+**AvaloniaEdit style registration — `<StyleInclude>` used instead of `.UseAvaloniaEdit()`**
+
+The blueprint offered two options for registering AvaloniaEdit styles:
+1. `.UseAvaloniaEdit()` extension method chained in `Program.cs`
+2. `<StyleInclude Source="avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml"/>` in `App.axaml`
+
+Option 2 (`<StyleInclude>`) was chosen because the `.UseAvaloniaEdit()` extension method is
+not guaranteed to be present across all 11.2.x patch releases, and the XAML approach works
+unconditionally. The `<StyleInclude>` line was added to `<Application.Styles>` in
+`App.axaml`, alongside `<FluentTheme />`. `Program.cs` was left with no AvaloniaEdit
+reference (exactly as the blueprint's Step 2 template shows — the note about `.UseAvaloniaEdit()`
+was flagged "if it exists").
+
+`dotnet build` confirmed a clean build (all 11 projects succeeded) with this approach.

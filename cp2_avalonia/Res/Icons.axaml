@@ -1,0 +1,13 @@
+<!--
+Copyright 2023 faddenSoft
+Copyright 2026 Lydian Scale Software
+
+Licensed under the Apache License, Version 2.0.
+See PORTING_OVERVIEW.md §11b for the replication strategy.
+-->
+
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- Icon DrawingImage resources will be ported from cp2_wpf/Res/Icons.xaml
+         in Iteration 2. -->
+</ResourceDictionary>
