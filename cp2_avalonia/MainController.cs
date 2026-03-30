@@ -117,20 +117,20 @@ namespace cp2_avalonia {
             if (pathName == null) {
                 return;
             }
-            DoOpenWorkFile(pathName, false);
+            await DoOpenWorkFile(pathName, false);
         }
 
         /// <summary>
         /// Handles file-drop open on the launch panel.
         /// </summary>
-        public void DropOpenWorkFile(string pathName) {
+        public async Task DropOpenWorkFile(string pathName) {
             if (!CloseWorkFile()) {
                 return;
             }
-            DoOpenWorkFile(pathName, false);
+            await DoOpenWorkFile(pathName, false);
         }
 
-        private void DoOpenWorkFile(string pathName, bool asReadOnly) {
+        private async Task DoOpenWorkFile(string pathName, bool asReadOnly) {
             Debug.Assert(mWorkTree == null);
             if (!File.Exists(pathName)) {
                 ShowFileError("File not found: '" + pathName + "'");
@@ -150,7 +150,7 @@ namespace cp2_avalonia {
 
                 OpenProgress prog = new OpenProgress(pathName, limiter, asReadOnly, AppHook);
                 WorkProgress workDialog = new WorkProgress(mMainWin, prog, true);
-                workDialog.ShowDialog(mMainWin);
+                await workDialog.ShowDialog(mMainWin);
                 // ShowDialog returns when the work is done (WorkProgress.Close() is called).
                 if (!workDialog.DialogResult) {
                     if (prog.Results.mException != null) {
@@ -385,14 +385,14 @@ namespace cp2_avalonia {
         /// <summary>
         /// Opens a recent file by index (0 = most recent).
         /// </summary>
-        public void OpenRecentFile(int recentIndex) {
+        public async Task OpenRecentFile(int recentIndex) {
             if (recentIndex >= RecentFilePaths.Count) {
                 return;
             }
             if (!CloseWorkFile()) {
                 return;
             }
-            DoOpenWorkFile(RecentFilePaths[recentIndex], false);
+            await DoOpenWorkFile(RecentFilePaths[recentIndex], false);
         }
 
         // -----------------------------------------------------------------------------------------

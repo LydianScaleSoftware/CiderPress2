@@ -246,8 +246,8 @@ namespace cp2_avalonia {
             CloseCommand = new RelayCommand(
                 () => mMainCtrl.CloseWorkFile(),
                 () => mMainCtrl?.IsFileOpen ?? false);
-            RecentFile1Command = new RelayCommand(() => mMainCtrl.OpenRecentFile(0));
-            RecentFile2Command = new RelayCommand(() => mMainCtrl.OpenRecentFile(1));
+            RecentFile1Command = new RelayCommand(async () => await mMainCtrl.OpenRecentFile(0));
+            RecentFile2Command = new RelayCommand(async () => await mMainCtrl.OpenRecentFile(1));
             RecentFile3Command = new RelayCommand(() => NotImplemented("Recent File 3"));
             RecentFile4Command = new RelayCommand(() => NotImplemented("Recent File 4"));
             RecentFile5Command = new RelayCommand(() => NotImplemented("Recent File 5"));
