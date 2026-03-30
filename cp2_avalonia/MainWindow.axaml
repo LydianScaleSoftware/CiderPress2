@@ -322,12 +322,12 @@ limitations under the License.
 
             <!-- Main triptych panel: shown when a file is open -->
             <Grid Name="mainTriptychPanel" IsVisible="{Binding MainPanelVisible}">
-                <Grid.ColumnDefinitions>
+<Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" MinWidth="100"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*" MinWidth="150"/>
                     <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*" MinWidth="100"/>
+                    <ColumnDefinition Width="Auto" MinWidth="100"/>
                 </Grid.ColumnDefinitions>
 
                 <GridSplitter Grid.Column="1" Width="4"/>
@@ -392,7 +392,8 @@ limitations under the License.
                         <Border Grid.Row="1" BorderBrush="LightGray" BorderThickness="1"
                                 CornerRadius="2">
                             <TreeView Name="directoryTree"
-                                      ItemsSource="{Binding DirectoryTreeRoot}">
+                                      ItemsSource="{Binding DirectoryTreeRoot}"
+                                      SelectionChanged="DirectoryTree_SelectionChanged">
                                 <TreeView.ItemTemplate>
                                     <TreeDataTemplate ItemsSource="{Binding Items}">
                                         <TextBlock Text="{Binding Name}"/>
@@ -408,13 +409,122 @@ limitations under the License.
                     </Grid>
                 </Grid>
 
-                <!-- Center panel: file list (Iteration 4) -->
-                <Border Grid.Column="2" BorderBrush="LightGray" BorderThickness="1"
-                        CornerRadius="2" Margin="0,4">
-                    <TextBlock Text="(file list - Iteration 4)"
-                               HorizontalAlignment="Center" VerticalAlignment="Center"
-                               Foreground="Gray"/>
-                </Border>
+                <!-- Center panel: file list DataGrid and info panel (toggle via IsVisible) -->
+                <Grid Grid.Column="2" Margin="0,4">
+                    <!-- Center panel option 1: file list DataGrid -->
+                    <DataGrid Name="fileListDataGrid"
+                              IsVisible="{Binding ShowCenterFileList}"
+                              ItemsSource="{Binding FileList}"
+                              AutoGenerateColumns="False"
+                              IsReadOnly="True"
+                              CanUserReorderColumns="False"
+                              CanUserResizeColumns="True"
+                              CanUserSortColumns="True"
+                              SelectionMode="Extended"
+                              GridLinesVisibility="Vertical"
+                              DoubleTapped="FileListDataGrid_DoubleTapped"
+                              SelectionChanged="FileListDataGrid_SelectionChanged"
+                              Sorting="FileListDataGrid_Sorting">
+                        <DataGrid.Columns>
+                            <!-- Col 0: Status icon (dubious/damaged/comment) -->
+                            <DataGridTemplateColumn Header="?" Width="Auto" CanUserResize="True" IsVisible="True">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Image Source="{Binding StatusIcon}" Width="16"
+                                               IsVisible="{Binding StatusIcon,
+                                                   Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <!-- Col 1: Filename (shown in single-dir mode) -->
+                            <!-- Note: DataGridColumn.IsVisible binding via parent DataContext
+                                 does not work in Avalonia (columns are not in the visual tree).
+                                 Visibility is set in code-behind via SetColumnVisible(). -->
+                            <DataGridTemplateColumn Header="Filename" Width="Auto" CanUserResize="True">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding FileName}"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <!-- Col 2: Pathname (shown in full-list/archive mode) -->
+                            <DataGridTemplateColumn Header="Pathname" Width="Auto" CanUserResize="True">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding PathName}"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <!-- Col 3-5: always visible -->
+                            <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="Auto" CanUserResize="True"/>
+                            <DataGridTextColumn Header="Auxtype" Binding="{Binding AuxType}" Width="Auto" CanUserResize="True"/>
+                            <DataGridTextColumn Header="Mod Date" Binding="{Binding ModDate}" Width="Auto" CanUserResize="True"/>
+                            <!-- Col 6: always visible -->
+                            <DataGridTextColumn Header="Data Len" Binding="{Binding DataLength}" Width="Auto" CanUserResize="True"/>
+                            <!-- Col 7: conditional (DOS 3.x raw files) -->
+                            <DataGridTextColumn Header="Raw Len" Binding="{Binding RawDataLength}" Width="Auto" CanUserResize="True"/>
+                            <!-- Col 8: conditional (archive format column) -->
+                            <DataGridTextColumn Header="Data Fmt" Binding="{Binding DataFormat}" Width="Auto" CanUserResize="True"/>
+                            <!-- Col 9: conditional (resource fork length) -->
+                            <DataGridTextColumn Header="Rsrc Len" Binding="{Binding RsrcLength}" Width="Auto" CanUserResize="True"/>
+                            <!-- Col 10: conditional (resource fork format) -->
+                            <DataGridTextColumn Header="Rsrc Fmt" Binding="{Binding RsrcFormat}" Width="Auto" CanUserResize="True"/>
+                            <!-- Col 11: conditional (total size for filesystems) -->
+                            <DataGridTextColumn Header="Total Size" Binding="{Binding TotalSize}" Width="Auto" CanUserResize="True"/>
+                            <!-- Col 12: always visible -->
+                            <DataGridTextColumn Header="Access" Binding="{Binding Access}" Width="Auto" CanUserResize="True"/>
+                        </DataGrid.Columns>
+                        <!-- TODO: drag &amp; drop support -->
+                        <DataGrid.ContextMenu>
+                            <!-- TODO: ContextMenuOpening refocus handler -->
+                            <ContextMenu>
+                                <MenuItem Header="View Files" Command="{Binding ViewFilesCommand}"/>
+                                <MenuItem Header="Edit Attributes" Command="{Binding EditAttributesCommand}"/>
+                                <MenuItem Header="Extract Files" Command="{Binding ExtractFilesCommand}"/>
+                                <MenuItem Header="Export Files" Command="{Binding ExportFilesCommand}"/>
+                                <MenuItem Header="Copy" Command="{Binding CopyCommand}"/>
+                                <MenuItem Header="Delete Files" Command="{Binding DeleteFilesCommand}"/>
+                                <MenuItem Header="Test Files" Command="{Binding TestFilesCommand}"/>
+                                <Separator/>
+                                <MenuItem Header="Add Files" Command="{Binding AddFilesCommand}"/>
+                                <MenuItem Header="Import Files" Command="{Binding ImportFilesCommand}"/>
+                                <MenuItem Header="Create Directory" Command="{Binding CreateDirectoryCommand}"/>
+                            </ContextMenu>
+                        </DataGrid.ContextMenu>
+                    </DataGrid>
+
+                    <!-- Center panel option 2: info panel (stub) -->
+                    <ScrollViewer IsVisible="{Binding ShowCenterInfoPanel}">
+                        <StackPanel Margin="8">
+                            <TextBlock Text="{Binding CenterInfoText1}" TextWrapping="Wrap"
+                                       FontWeight="Bold" Margin="0,0,0,4"/>
+                            <TextBlock Text="{Binding CenterInfoText2}" TextWrapping="Wrap"
+                                       IsVisible="{Binding CenterInfoText2,
+                                           Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                       Foreground="OrangeRed" Margin="0,0,0,8"/>
+                            <!-- Info key/value list -->
+                            <ItemsControl ItemsSource="{Binding CenterInfoList}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,1">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="120"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="{Binding Name}"
+                                                       FontWeight="SemiBold"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding Value}"
+                                                       TextWrapping="Wrap"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <!-- TODO: full info panel with notes, partition list, metadata list -->
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
 
                 <!-- Right splitter -->
                 <GridSplitter Grid.Column="3" Width="4"/>

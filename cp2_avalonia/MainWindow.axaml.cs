@@ -15,19 +15,27 @@
  * limitations under the License.
  */
 using System;
+using System.Collections;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
 
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 
 using AppCommon;
+using CommonUtil;
 using cp2_avalonia.Common;
+using DiskArc;
+using DiskArc.Multi;
 
 namespace cp2_avalonia {
     public partial class MainWindow : Window, INotifyPropertyChanged {
@@ -153,6 +161,14 @@ namespace cp2_avalonia {
             set { mMainPanelVisible = value; OnPropertyChanged(); }
         }
 
+        // ---- Triptych panel column widths ----
+        // Col 0 is set to a fixed pixel value so only the center column stretches on resize.
+        // Reading Width.Value (not ActualWidth) is reliable even before the panel is rendered.
+        public double LeftPanelWidth {
+            get => mainTriptychPanel.ColumnDefinitions[0].Width.Value;
+            set => mainTriptychPanel.ColumnDefinitions[0].Width = new GridLength(value);
+        }
+
         // ---- Program version ----
         public string ProgramVersionString => GlobalAppVersion.AppVersion.ToString();
 
@@ -221,6 +237,276 @@ namespace cp2_avalonia {
             set { mInfoBorderBrush = value; OnPropertyChanged(); }
         }
 
+        // ---- File list ----
+        public ObservableCollection<FileListItem> FileList { get; } = new();
+        public FileListItem? SelectedFileListItem {
+            get => fileListDataGrid?.SelectedItem as FileListItem;
+            set { if (fileListDataGrid != null) fileListDataGrid.SelectedItem = value; }
+        }
+
+        // ---- Tree selection helpers (read-only) ----
+        public ArchiveTreeItem? SelectedArchiveTreeItem =>
+            archiveTree?.SelectedItem as ArchiveTreeItem;
+        public DirectoryTreeItem? SelectedDirectoryTreeItem =>
+            directoryTree?.SelectedItem as DirectoryTreeItem;
+
+        // ---- Center panel toggle ----
+        public enum CenterPanelChange { Unknown = 0, Files, Info, Toggle }
+        private bool mShowCenterInfo;
+        public bool ShowCenterFileList => !mShowCenterInfo;
+        public bool ShowCenterInfoPanel => mShowCenterInfo;
+        private bool mHasInfoOnly;
+        private bool HasInfoOnly {
+            get => mHasInfoOnly;
+            set { mHasInfoOnly = value; }
+        }
+
+        private void SetShowCenterInfo(CenterPanelChange req) {
+            if (HasInfoOnly && req != CenterPanelChange.Info) {
+                Debug.WriteLine("Ignoring attempt to switch to file list");
+                return;
+            }
+            switch (req) {
+                case CenterPanelChange.Info:   mShowCenterInfo = true;  break;
+                case CenterPanelChange.Files:  mShowCenterInfo = false; break;
+                case CenterPanelChange.Toggle: mShowCenterInfo = !mShowCenterInfo; break;
+            }
+            OnPropertyChanged(nameof(ShowCenterFileList));
+            OnPropertyChanged(nameof(ShowCenterInfoPanel));
+            if (mShowCenterInfo) {
+                InfoBorderBrush = ToolbarHighlightBrush;
+                FullListBorderBrush = DirListBorderBrush = ToolbarNohiBrush;
+            } else if (ShowSingleDirFileList) {
+                DirListBorderBrush = ToolbarHighlightBrush;
+                FullListBorderBrush = InfoBorderBrush = ToolbarNohiBrush;
+            } else {
+                FullListBorderBrush = ToolbarHighlightBrush;
+                DirListBorderBrush = InfoBorderBrush = ToolbarNohiBrush;
+            }
+        }
+
+        private bool mIsFullListEnabled;
+        public bool IsFullListEnabled {
+            get => mIsFullListEnabled;
+            set { mIsFullListEnabled = value; OnPropertyChanged(); }
+        }
+
+        private bool mIsDirListEnabled;
+        public bool IsDirListEnabled {
+            get => mIsDirListEnabled;
+            set { mIsDirListEnabled = value; OnPropertyChanged(); }
+        }
+
+        private bool mIsResetSortEnabled;
+        public bool IsResetSortEnabled {
+            get => mIsResetSortEnabled;
+            set { mIsResetSortEnabled = value; OnPropertyChanged(); }
+        }
+
+        // ---- Single-dir vs full-list mode ----
+        private bool mShowSingleDirFileList;
+        public bool ShowSingleDirFileList {
+            get => mShowSingleDirFileList;
+            set {
+                mShowSingleDirFileList = value;
+                ShowCol_FileName = value;
+                ShowCol_PathName = !value;
+            }
+        }
+
+        private bool PreferSingleDirList {
+            get => AppSettings.Global.GetBool(AppSettings.FILE_LIST_PREFER_SINGLE, true);
+            set => AppSettings.Global.SetBool(AppSettings.FILE_LIST_PREFER_SINGLE, value);
+        }
+
+        // ---- Column visibility (also set via SetColumnVisible in code-behind) ----
+        private bool mShowCol_FileName;
+        public bool ShowCol_FileName {
+            get => mShowCol_FileName;
+            set { mShowCol_FileName = value; OnPropertyChanged(); SetColumnVisible("Filename", value); }
+        }
+
+        private bool mShowCol_PathName;
+        public bool ShowCol_PathName {
+            get => mShowCol_PathName;
+            set { mShowCol_PathName = value; OnPropertyChanged(); SetColumnVisible("Pathname", value); }
+        }
+
+        private bool mShowCol_Format;
+        public bool ShowCol_Format {
+            get => mShowCol_Format;
+            set { mShowCol_Format = value; OnPropertyChanged(); SetColumnVisible("Data Fmt", value); }
+        }
+
+        private bool mShowCol_RawLen;
+        public bool ShowCol_RawLen {
+            get => mShowCol_RawLen;
+            set { mShowCol_RawLen = value; OnPropertyChanged(); SetColumnVisible("Raw Len", value); }
+        }
+
+        private bool mShowCol_RsrcLen;
+        public bool ShowCol_RsrcLen {
+            get => mShowCol_RsrcLen;
+            set { mShowCol_RsrcLen = value; OnPropertyChanged(); SetColumnVisible("Rsrc Len", value); }
+        }
+
+        private bool mShowCol_TotalSize;
+        public bool ShowCol_TotalSize {
+            get => mShowCol_TotalSize;
+            set { mShowCol_TotalSize = value; OnPropertyChanged(); SetColumnVisible("Total Size", value); }
+        }
+
+        /// <summary>
+        /// Configures column visibility based on the type of content being shown.
+        /// </summary>
+        public void ConfigureCenterPanel(bool isInfoOnly, bool isArchive, bool isHierarchic,
+                bool hasRsrc, bool hasRaw) {
+            ShowSingleDirFileList = !(isArchive || (isHierarchic && !PreferSingleDirList));
+            HasInfoOnly = isInfoOnly;
+            if (HasInfoOnly) {
+                SetShowCenterInfo(CenterPanelChange.Info);
+            } else {
+                SetShowCenterInfo(CenterPanelChange.Files);
+            }
+            if (isInfoOnly) {
+                IsFullListEnabled = IsDirListEnabled = false;
+            } else if (isArchive) {
+                IsFullListEnabled = true;
+                IsDirListEnabled = false;
+            } else if (isHierarchic) {
+                IsFullListEnabled = IsDirListEnabled = true;
+            } else {
+                IsFullListEnabled = false;
+                IsDirListEnabled = true;
+            }
+            ShowCol_Format = isArchive;
+            ShowCol_RawLen = hasRaw;
+            ShowCol_RsrcLen = hasRsrc;
+            ShowCol_TotalSize = !isArchive;
+        }
+
+        private void SetColumnVisible(string header, bool visible) {
+            if (fileListDataGrid == null) {
+                return;
+            }
+            foreach (DataGridColumn col in fileListDataGrid.Columns) {
+                if (col.Header?.ToString() == header) {
+                    col.IsVisible = visible;
+                    return;
+                }
+            }
+        }
+
+        // ---- Center info panel content ----
+        private string mCenterInfoText1 = string.Empty;
+        public string CenterInfoText1 {
+            get => mCenterInfoText1;
+            set { mCenterInfoText1 = value; OnPropertyChanged(); }
+        }
+
+        private string mCenterInfoText2 = string.Empty;
+        public string CenterInfoText2 {
+            get => mCenterInfoText2;
+            set { mCenterInfoText2 = value; OnPropertyChanged(); }
+        }
+
+        public class CenterInfoItem {
+            public string Name { get; }
+            public string Value { get; }
+            public CenterInfoItem(string name, string value) { Name = name; Value = value; }
+        }
+        public ObservableCollection<CenterInfoItem> CenterInfoList { get; } = new();
+
+        public void ClearCenterInfo() {
+            ShowDiskUtilityButtons = false;
+            PartitionList.Clear();
+            ShowPartitionLayout = false;
+            NotesList.Clear();
+            ShowNotes = false;
+            MetadataList.Clear();
+        }
+
+        // ---- Info panel sub-sections ----
+        private bool mShowDiskUtilityButtons;
+        public bool ShowDiskUtilityButtons {
+            get => mShowDiskUtilityButtons;
+            set { mShowDiskUtilityButtons = value; OnPropertyChanged(); }
+        }
+
+        private bool mShowPartitionLayout;
+        public bool ShowPartitionLayout {
+            get => mShowPartitionLayout;
+            set { mShowPartitionLayout = value; OnPropertyChanged(); }
+        }
+
+        public class PartitionListItem {
+            public int Index { get; }
+            public long StartBlock { get; }
+            public long BlockCount { get; }
+            public string PartName { get; }
+            public string PartType { get; }
+            public Partition PartRef { get; }
+            public PartitionListItem(int index, Partition part) {
+                PartRef = part;
+                Index = index;
+                StartBlock = part.StartOffset / Defs.BLOCK_SIZE;
+                BlockCount = part.Length / Defs.BLOCK_SIZE;
+                PartName = string.Empty;
+                PartType = string.Empty;
+            }
+            public override string ToString() {
+                return "[Part: start=" + StartBlock + " count=" + BlockCount + "]";
+            }
+        }
+        public ObservableCollection<PartitionListItem> PartitionList { get; } = new();
+
+        public void SetPartitionList(IMultiPart parts) {
+            PartitionList.Clear();
+            for (int i = 0; i < parts.Count; i++) {
+                PartitionList.Add(new PartitionListItem(i + 1, parts[i]));
+            }
+            ShowPartitionLayout = (PartitionList.Count > 0);
+        }
+
+        private bool mShowNotes;
+        public bool ShowNotes {
+            get => mShowNotes;
+            set { mShowNotes = value; OnPropertyChanged(); }
+        }
+        public ObservableCollection<Notes.Note> NotesList { get; } = new();
+
+        public void SetNotesList(Notes notes) {
+            NotesList.Clear();
+            foreach (Notes.Note note in notes.GetNotes()) {
+                NotesList.Add(note);
+            }
+            ShowNotes = (notes.Count > 0);
+        }
+
+        public ObservableCollection<object> MetadataList { get; } = new();
+        public void SetMetadataList(IMetadata metaObj) {
+            MetadataList.Clear();
+            // TODO: implement metadata display in a later iteration
+        }
+
+        // ---- Scroll / focus helpers ----
+        public void FileList_ScrollToTop() {
+            if (FileList.Count > 0) {
+                fileListDataGrid.ScrollIntoView(FileList[0], null);
+            }
+        }
+
+        public void FileList_SetSelectionFocus() {
+            int idx = fileListDataGrid.SelectedIndex;
+            if (idx >= 0 && idx < FileList.Count) {
+                fileListDataGrid.ScrollIntoView(FileList[idx], null);
+            }
+        }
+
+        public void DirectoryTree_ScrollToTop() {
+            // TODO: Avalonia TreeView does not expose a direct ScrollToTop() method.
+        }
+
         public MainWindow() {
             // Initialize commands before InitializeComponent (AXAML bindings need them).
             ExitCommand = new RelayCommand(() => Close());
@@ -279,9 +565,29 @@ namespace cp2_avalonia {
             DefragmentCommand = new RelayCommand(() => NotImplemented("Defragment Filesystem"), () => false);
             CloseSubTreeCommand = new RelayCommand(() => NotImplemented("Close File Source"), () => false);
 
-            ShowFullListCommand = new RelayCommand(() => NotImplemented("Show Full List"), () => false);
-            ShowDirListCommand = new RelayCommand(() => NotImplemented("Show Directory List"), () => false);
-            ShowInfoCommand = new RelayCommand(() => NotImplemented("Show Information"), () => false);
+            ShowFullListCommand = new RelayCommand(
+                () => {
+                    PreferSingleDirList = false;
+                    if (ShowSingleDirFileList) {
+                        ShowSingleDirFileList = false;
+                        mMainCtrl.PopulateFileList(IFileEntry.NO_ENTRY, false);
+                    }
+                    SetShowCenterInfo(CenterPanelChange.Files);
+                },
+                () => IsFullListEnabled);
+            ShowDirListCommand = new RelayCommand(
+                () => {
+                    PreferSingleDirList = true;
+                    if (!ShowSingleDirFileList) {
+                        ShowSingleDirFileList = true;
+                        mMainCtrl.PopulateFileList(IFileEntry.NO_ENTRY, false);
+                    }
+                    SetShowCenterInfo(CenterPanelChange.Files);
+                },
+                () => IsDirListEnabled);
+            ShowInfoCommand = new RelayCommand(
+                () => SetShowCenterInfo(CenterPanelChange.Info),
+                () => mMainCtrl?.IsFileOpen ?? false);
 
             NavToParentDirCommand = new RelayCommand(() => NotImplemented("Go To Parent Directory"), () => false);
             NavToParentCommand = new RelayCommand(() => NotImplemented("Go To Parent"), () => false);
@@ -294,8 +600,20 @@ namespace cp2_avalonia {
             Debug_ShowDropTargetCommand = new RelayCommand(() => NotImplemented("Show Drop/Paste Target"));
             Debug_ConvertANICommand = new RelayCommand(() => NotImplemented("Convert ANI to GIF"), () => false);
 
-            ResetSortCommand = new RelayCommand(() => NotImplemented("Reset Sort"), () => false);
-            ToggleInfoCommand = new RelayCommand(() => NotImplemented("Toggle Information"), () => false);
+            ResetSortCommand = new RelayCommand(
+                () => {
+                    foreach (DataGridColumn col in fileListDataGrid.Columns) {
+                        // Avalonia 11 DataGridColumn has no public SortDirection setter;
+                        // clear the tracked tag so the next click defaults to ascending.
+                        col.Tag = null;
+                    }
+                    mMainCtrl.PopulateFileList(IFileEntry.NO_ENTRY, false);
+                    IsResetSortEnabled = false;
+                },
+                () => IsResetSortEnabled);
+            ToggleInfoCommand = new RelayCommand(
+                () => SetShowCenterInfo(CenterPanelChange.Toggle),
+                () => mMainCtrl?.IsFileOpen ?? false);
 
             InitializeComponent();
             DataContext = this;
@@ -314,10 +632,57 @@ namespace cp2_avalonia {
             }
         }
 
+        private void DirectoryTree_SelectionChanged(object? sender, SelectionChangedEventArgs e) {
+            if (directoryTree.SelectedItem is DirectoryTreeItem item) {
+                mMainCtrl.DirectoryTree_SelectionChanged(item);
+            } else {
+                mMainCtrl.DirectoryTree_SelectionChanged(null);
+            }
+        }
+
+        private void FileListDataGrid_DoubleTapped(object? sender, TappedEventArgs e) {
+            mMainCtrl.HandleFileListDoubleClick();
+        }
+
+        private void FileListDataGrid_SelectionChanged(object? sender, SelectionChangedEventArgs e) {
+            mMainCtrl.RefreshAllCommandStates();
+        }
+
+        /// <summary>
+        /// Handles DataGrid column sort clicks.  We supply a custom comparer to control secondary
+        /// sort keys; the collection is sorted in-place because Avalonia lacks ListCollectionView.
+        /// </summary>
+        private void FileListDataGrid_Sorting(object? sender, DataGridColumnEventArgs e) {
+            DataGridColumn col = e.Column;
+            e.Handled = true;   // prevent DataGrid's built-in sort from firing
+
+            // Determine new sort direction; default to ascending on first click per column.
+            bool wasAscending = col.Tag is System.ComponentModel.ListSortDirection tagDir
+                && tagDir == System.ComponentModel.ListSortDirection.Ascending;
+            System.ComponentModel.ListSortDirection direction = wasAscending
+                ? System.ComponentModel.ListSortDirection.Descending
+                : System.ComponentModel.ListSortDirection.Ascending;
+
+            // Clear sort indicator from all columns, then set on the active one.
+            foreach (DataGridColumn c in fileListDataGrid.Columns) {
+                c.Tag = null;
+            }
+            col.Tag = direction;
+
+            bool isAscending = (direction == System.ComponentModel.ListSortDirection.Ascending);
+            var comparer = new FileListItem.ItemComparer(col, isAscending);
+            List<FileListItem> sorted = FileList.OrderBy(x => x, comparer).ToList();
+            FileList.Clear();
+            foreach (FileListItem item in sorted) {
+                FileList.Add(item);
+            }
+            IsResetSortEnabled = true;
+        }
+
         internal void ClearTreesAndLists() {
             ArchiveTreeRoot.Clear();
             DirectoryTreeRoot.Clear();
-            // FileList.Clear();  // added in Iteration 4
+            FileList.Clear();
         }
 
         private async void NotImplemented(string featureName) {

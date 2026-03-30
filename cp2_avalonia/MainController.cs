@@ -226,65 +226,6 @@ namespace cp2_avalonia {
         }
 
         /// <summary>
-        /// Handles selection change in the archive tree view.  Called from MainWindow event
-        /// handler.
-        /// </summary>
-        internal void ArchiveTree_SelectionChanged(ArchiveTreeItem? newSel) {
-            Debug.WriteLine("Archive tree selection now: " + (newSel == null ? "none" : newSel));
-            if (newSel == null) {
-                mMainWin.DirectoryTreeRoot.Clear();
-                return;
-            }
-
-            mMainWin.DirectoryTreeRoot.Clear();
-
-            object currentWorkObject = newSel.WorkTreeNode.DAObject;
-
-            if (currentWorkObject is IFileSystem) {
-                IFileSystem fs = (IFileSystem)currentWorkObject;
-                Debug.Assert(fs.GetVolDirEntry() != IFileEntry.NO_ENTRY);
-                PopulateDirectoryTree(null, mMainWin.DirectoryTreeRoot, fs.GetVolDirEntry());
-                if (mMainWin.DirectoryTreeRoot.Count > 0) {
-                    mMainWin.DirectoryTreeRoot[0].IsSelected = true;
-                }
-            } else {
-                // Non-filesystem (archive, disk image, partition, etc.) — show a single
-                // placeholder entry in the directory tree.
-                string title;
-                if (currentWorkObject is IArchive) {
-                    title = "File Archive Entry List";
-                } else if (currentWorkObject is DiskArc.IDiskImage) {
-                    title = "Disk Image Information";
-                } else if (currentWorkObject is DiskArc.IMultiPart) {
-                    title = "Multi-Partition Information";
-                } else if (currentWorkObject is DiskArc.Multi.Partition) {
-                    title = "Partition Information";
-                } else {
-                    title = "Information";
-                }
-                DirectoryTreeItem newItem = new DirectoryTreeItem(null, title, IFileEntry.NO_ENTRY);
-                mMainWin.DirectoryTreeRoot.Add(newItem);
-                newItem.IsSelected = true;
-            }
-        }
-
-        /// <summary>
-        /// Populates the directory tree recursively from a filesystem volume directory.
-        /// </summary>
-        private void PopulateDirectoryTree(DirectoryTreeItem? parent,
-                ObservableCollection<DirectoryTreeItem> items, IFileEntry dirEntry) {
-            string name = dirEntry.FileName;
-            DirectoryTreeItem newItem = new DirectoryTreeItem(parent, name, dirEntry);
-            items.Add(newItem);
-
-            foreach (IFileEntry child in dirEntry) {
-                if (child.IsDirectory) {
-                    PopulateDirectoryTree(newItem, newItem.Items, child);
-                }
-            }
-        }
-
-        /// <summary>
         /// Determines the auto-open depth limit for a given parent/child kind pair.
         /// </summary>
         private static bool DepthLimit(WorkTree.DepthParentKind parentKind,
@@ -318,10 +259,6 @@ namespace cp2_avalonia {
             }
             sb.Append("CiderPress II");
             mMainWin.Title = sb.ToString();
-        }
-
-        private void ClearEntryCounts() {
-            mMainWin.CenterStatusText = string.Empty;
         }
 
         /// <summary>
@@ -445,7 +382,7 @@ namespace cp2_avalonia {
                 WindowPlacement.Save(mMainWin));
 
             // TODO: port when left/right panel width properties are added in Iteration N
-            // settings.SetInt(AppSettings.MAIN_LEFT_PANEL_WIDTH, (int)mMainWin.LeftPanelWidth);
+            settings.SetInt(AppSettings.MAIN_LEFT_PANEL_WIDTH, (int)mMainWin.LeftPanelWidth);
             // settings.SetBool(AppSettings.MAIN_RIGHT_PANEL_VISIBLE, mMainWin.ShowOptionsPanel);
 
             string settingsPath =
@@ -465,6 +402,11 @@ namespace cp2_avalonia {
             SettingsHolder settings = AppSettings.Global;
 
             mMainWin.ShowDebugMenu = settings.GetBool(AppSettings.DEBUG_MENU_ENABLED, false);
+
+            // Restore left panel width; setting a fixed pixel value means only the center
+            // column stretches when the window is resized (right panel is Width=Auto).
+            mMainWin.LeftPanelWidth =
+                settings.GetInt(AppSettings.MAIN_LEFT_PANEL_WIDTH, 300);
 
             UnpackRecentFileList();
         }

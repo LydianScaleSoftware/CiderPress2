@@ -129,7 +129,7 @@ namespace cp2_avalonia {
             DirectoryTreeItem? item = FindItemByEntry(tvRoot, dirEntry);
             if (item != null) {
                 BringItemIntoView(mainWin.directoryTree, item);
-                item.IsSelected = true;
+                mainWin.directoryTree.SelectedItem = item;
                 return true;
             } else {
                 return false;

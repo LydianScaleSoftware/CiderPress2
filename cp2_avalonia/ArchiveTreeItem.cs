@@ -245,7 +245,7 @@ namespace cp2_avalonia {
         /// </summary>
         public static void SelectItem(MainWindow mainWin, ArchiveTreeItem item) {
             BringItemIntoView(mainWin.archiveTree, item);
-            item.IsSelected = true;
+            mainWin.archiveTree.SelectedItem = item;
         }
 
         /// <summary>
@@ -256,10 +256,10 @@ namespace cp2_avalonia {
             ArchiveTreeItem? best = SelectBestFromR(root);
             if (best == null) {
                 BringItemIntoView(tv, root);
-                root.IsSelected = true;
+                tv.SelectedItem = root;
             } else {
                 BringItemIntoView(tv, best);
-                best.IsSelected = true;
+                tv.SelectedItem = best;
             }
         }
 

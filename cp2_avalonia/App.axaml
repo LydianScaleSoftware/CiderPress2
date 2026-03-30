@@ -1,5 +1,5 @@
-<!--
-Copyright 2023 faddenSoft
+<?xml version="1.0" encoding="UTF-8" ?>
+<!-- Copyright 2023 faddenSoft
 Copyright 2026 Lydian Scale Software
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,46 +12,73 @@ Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
-limitations under the License.
--->
-
+limitations under the License. -->
 <Application x:Class="cp2_avalonia.App"
              xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:common="clr-namespace:cp2_avalonia.Common"
              RequestedThemeVariant="Light">
-
     <Application.Styles>
         <FluentTheme />
-        <StyleInclude Source="avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml"/>
+        <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml" />
+        <StyleInclude Source="avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml" />
         <!-- Fade icon images when their parent toolbar button is disabled.
              Must live here (not in Icons.axaml) because ResourceDictionary
              cannot host free-standing selector styles. -->
         <Style Selector="Button:disabled Image">
-            <Setter Property="Opacity" Value="0.25"/>
+            <Setter Property="Opacity"
+                    Value="0.25" />
+        </Style>
+        <Style Selector="DataGridCell">
+            <Setter Property="Padding"
+                    Value="1,1" />
+            <Setter Property="FontSize"
+                    Value="14" />
+            <Setter Property="VerticalContentAlignment"
+                    Value="Center" />
+        </Style>
+        <Style Selector="DataGridColumnHeader">
+            <Setter Property="Padding"
+                    Value="1,1" />
+            <Setter Property="FontSize"
+                    Value="14" />
+        </Style>
+        <Style Selector="DataGridRow">
+            <Setter Property="MinHeight"
+                    Value="20" />
+            <Setter Property="Height"
+                    Value="20" />
+        </Style>
+        <Style Selector="TreeViewItem">
+            <!-- Reduce the vertical padding -->
+            <Setter Property="Padding"
+                    Value="2,2" />
+            <!-- Reduce the minimum row height -->
+            <Setter Property="MinHeight"
+                    Value="20" />
         </Style>
     </Application.Styles>
-
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <!-- Stub created in Step 8a; actual icons ported in Iteration 2 -->
-                <ResourceInclude Source="avares://CiderPress2/Res/Icons.axaml"/>
+                <ResourceInclude Source="avares://CiderPress2/Res/Icons.axaml" />
             </ResourceDictionary.MergedDictionaries>
-
             <FontFamily x:Key="GeneralMonoFont">Cascadia Mono, Consolas, Menlo, monospace</FontFamily>
             <FontFamily x:Key="ViewerMonoFont">Cascadia Mono, Consolas, Menlo, monospace</FontFamily>
-
-            <common:InverseBooleanConverter x:Key="InvertBool"/>
-
+            <x:Double x:Key="ControlContentThemeFontSize">14</x:Double>
+            <common:InverseBooleanConverter x:Key="InvertBool" />
             <!-- Checkerboard background for bitmap image display.
                  Replicates the pattern from cp2_wpf/App.xaml: 16x16 tile with #e8e8e8/#f0f0f0. -->
-            <DrawingBrush x:Key="CheckerBackground" TileMode="Tile"
+            <DrawingBrush x:Key="CheckerBackground"
+                          TileMode="Tile"
                           DestinationRect="0,0,16,16">
                 <DrawingBrush.Drawing>
                     <DrawingGroup>
-                        <GeometryDrawing Geometry="M0,0 H2 V2 H0Z" Brush="#e8e8e8"/>
-                        <GeometryDrawing Geometry="M0,0 H1 V1 H2 V2 H1 V1 H0Z" Brush="#f0f0f0"/>
+                        <GeometryDrawing Geometry="M0,0 H2 V2 H0Z"
+                                         Brush="#e8e8e8" />
+                        <GeometryDrawing Geometry="M0,0 H1 V1 H2 V2 H1 V1 H0Z"
+                                         Brush="#f0f0f0" />
                     </DrawingGroup>
                 </DrawingBrush.Drawing>
             </DrawingBrush>
