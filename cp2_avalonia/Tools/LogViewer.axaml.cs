@@ -46,9 +46,10 @@ namespace cp2_avalonia.Tools {
         /// Parameterless constructor required by the Avalonia XAML loader.
         /// </summary>
         public LogViewer() {
-            InitializeComponent();
             LogEntries = new ObservableCollection<LogEntry>();
             mLog = null!;
+
+            InitializeComponent();
             DataContext = this;
         }
 
@@ -57,13 +58,13 @@ namespace cp2_avalonia.Tools {
         /// </summary>
         /// <param name="log">Log to display.</param>
         public LogViewer(DebugMessageLog log) {
+            LogEntries = new ObservableCollection<LogEntry>();
+
             InitializeComponent();
             DataContext = this;
 
             // Always modeless — show in taskbar so it's not lost.
             ShowInTaskbar = true;
-
-            LogEntries = new ObservableCollection<LogEntry>();
 
             mLog = log;
             mLog.RaiseLogEvent += HandleLogEvent;

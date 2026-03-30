@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 faddenSoft
+ * Copyright 2019 faddenSoft
  * Copyright 2026 Lydian Scale Software
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,6 +21,7 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 
 using AppCommon;
+using cp2_avalonia.Actions;
 
 namespace cp2_avalonia.Common {
     /// <summary>
@@ -191,22 +192,50 @@ namespace cp2_avalonia.Common {
         /// Executes when a progress update is sent from the work thread.  The update can be
         /// a MessageBoxQuery, OverwriteQuery, or a plain string/percentage update.
         /// </summary>
-        private void ProgressChanged(object? sender, ProgressChangedEventArgs e) {
-            // Handle MessageBoxQuery.
-            if (e.UserState is MessageBoxQuery qq) {
-                // Temporary stub until Iteration 5 wires the real Avalonia dialog.
-                // Immediately return a sensible default to unblock the worker thread.
-                MBResult defaultResult =
-                    (qq.Button == MBButton.YesNo || qq.Button == MBButton.YesNoCancel)
-                    ? MBResult.Yes : MBResult.OK;
-                qq.SetResult(defaultResult);
+        private async void ProgressChanged(object? sender, ProgressChangedEventArgs e) {
+            // Handle OverwriteQuery — show the overwrite dialog and wait for user choice.
+            if (e.UserState is OverwriteQuery oq) {
+                var dialog = new OverwriteQueryDialog(oq.Facts);
+                bool? result = await dialog.ShowDialog<bool?>(this);
+                if (result == true) {
+                    oq.SetResult(dialog.Result, dialog.UseForAll);
+                } else {
+                    oq.SetResult(CallbackFacts.Results.Cancel, false);
+                }
                 return;
             }
 
-            // Handle OverwriteQuery.
-            if (e.UserState is OverwriteQuery oq) {
-                // TODO: Iteration 5 — show OverwriteQueryDialog.
-                oq.SetResult(CallbackFacts.Results.Skip, false);
+            // Handle MessageBoxQuery — show a simple modal message box.
+            if (e.UserState is MessageBoxQuery qq) {
+                var msgWin = new Window {
+                    Title = qq.Caption,
+                    Width = 400,
+                    SizeToContent = SizeToContent.Height,
+                    CanResize = false,
+                    ShowInTaskbar = false,
+                    WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                    Content = new Avalonia.Controls.StackPanel {
+                        Margin = new Avalonia.Thickness(16),
+                        Spacing = 12,
+                        Children = {
+                            new Avalonia.Controls.TextBlock {
+                                Text = qq.Text,
+                                TextWrapping = Avalonia.Media.TextWrapping.Wrap
+                            },
+                            new Avalonia.Controls.Button {
+                                Content = "OK",
+                                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                                Width = 80
+                            }
+                        }
+                    }
+                };
+                // Wire the OK button to close the window.
+                var sp = (Avalonia.Controls.StackPanel)msgWin.Content!;
+                var okBtn = (Avalonia.Controls.Button)sp.Children[1];
+                okBtn.Click += (_, _) => msgWin.Close();
+                await msgWin.ShowDialog(this);
+                qq.SetResult(MBResult.OK);
                 return;
             }
 

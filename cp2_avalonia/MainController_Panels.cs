@@ -226,7 +226,33 @@ namespace cp2_avalonia {
         }
 
         /// <summary>
-        /// Calls RaiseCanExecuteChanged() on all RelayCommands so the UI refreshes enabled state.
+        /// Closes the currently selected sub-tree node.
+        /// </summary>
+        public void CloseSubTree() {
+            ArchiveTreeItem? arcTreeSel = mMainWin.SelectedArchiveTreeItem;
+            if (arcTreeSel == null) return;
+            CloseSubTree(arcTreeSel);
+        }
+
+        /// <summary>
+        /// Closes a sub-tree node, removing it from the archive tree.
+        /// </summary>
+        internal void CloseSubTree(ArchiveTreeItem item) {
+            Debug.Assert(item.CanClose);
+            if (item.Parent == null) {
+                Debug.Assert(false, "cannot close root");
+                return;
+            }
+            WorkTree.Node workNode = item.WorkTreeNode;
+            ArchiveTreeItem parentItem = item.Parent;
+            WorkTree.Node parentNode = item.Parent.WorkTreeNode;
+            parentNode.CloseChild(workNode);
+            bool ok = parentItem.RemoveChild(item);
+            Debug.Assert(ok, "failed to remove child tree item");
+            parentItem.IsSelected = true;
+        }
+
+
         /// Should be called after any state change that might affect command availability
         /// (tree selection change, file list selection change, open/close).
         /// </summary>

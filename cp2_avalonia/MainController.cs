@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 faddenSoft
+ * Copyright 2023 faddenSoft
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,14 +14,18 @@
  * limitations under the License.
  */
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Platform.Storage;
 
 using AppCommon;
 using CommonUtil;
@@ -30,6 +34,7 @@ using cp2_avalonia.Common;
 using DiskArc;
 using DiskArc.Arc;
 using DiskArc.FS;
+using FileConv;
 
 namespace cp2_avalonia {
     /// <summary>
@@ -405,7 +410,13 @@ namespace cp2_avalonia {
             Debug.WriteLine("Applying app settings...");
             SettingsHolder settings = AppSettings.Global;
 
+            // In debug builds the menu is enabled by default so it's always visible during
+            // development; release builds require it to be explicitly enabled in settings.
+#if DEBUG
+            mMainWin.ShowDebugMenu = settings.GetBool(AppSettings.DEBUG_MENU_ENABLED, true);
+#else
             mMainWin.ShowDebugMenu = settings.GetBool(AppSettings.DEBUG_MENU_ENABLED, false);
+#endif
 
             // Restore left panel width; setting a fixed pixel value means only the center
             // column stretches when the window is resized (right panel is Width=Auto).
@@ -419,9 +430,10 @@ namespace cp2_avalonia {
         // Error helpers
 
         private void ShowFileError(string msg) {
-            // TODO: Iteration 5 — show Avalonia MessageBox.  For now just log it.
             Debug.WriteLine("ShowFileError: " + msg);
             AppHook.LogE("ShowFileError: " + msg);
+            // Show error dialog fire-and-forget (callers may be in sync context).
+            _ = ShowMessageAsync(msg, "Error");
         }
 
         // -----------------------------------------------------------------------------------------
@@ -512,12 +524,459 @@ namespace cp2_avalonia {
                 dlg.Closing += (sender, e) => {
                     Debug.WriteLine("Debug log viewer closed");
                     mDebugLogViewer = null;
+                    mMainWin.IsDebugLogVisible = false;
                 };
                 dlg.Show();
                 mDebugLogViewer = dlg;
             } else {
                 mDebugLogViewer.Close();
             }
+        }
+
+        // -----------------------------------------------------------------------------------------
+        // Actions → Extract / Export Files
+
+        /// <summary>
+        /// Handles Actions → Extract Files.
+        /// </summary>
+        public async Task ExtractFiles() {
+            await HandleExtractExport(null);
+        }
+
+        /// <summary>
+        /// Handles Actions → Export Files.
+        /// </summary>
+        public async Task ExportFiles() {
+            await HandleExtractExport(GetExportSpec());
+        }
+
+        private async Task HandleExtractExport(ConvConfig.FileConvSpec? exportSpec) {
+            if (!GetFileSelection(omitDir: false, omitOpenArc: false, closeOpenArc: true,
+                    oneMeansAll: false, out object? archiveOrFileSystem,
+                    out IFileEntry selectionDir, out List<IFileEntry>? selected, out int _)) {
+                return;
+            }
+            if (selected.Count == 0) {
+                await ShowMessageAsync("No files selected.", "Empty");
+                return;
+            }
+
+            // In full-list mode, use the volume dir as the base for path trimming.
+            if (archiveOrFileSystem is IFileSystem && !mMainWin.ShowSingleDirFileList) {
+                selectionDir = ((IFileSystem)archiveOrFileSystem).GetVolDirEntry();
+            }
+
+            string initialDir = AppSettings.Global.GetString(AppSettings.LAST_EXTRACT_DIR,
+                Environment.CurrentDirectory);
+
+            var topLevel = TopLevel.GetTopLevel(mMainWin);
+            var folders = await topLevel!.StorageProvider.OpenFolderPickerAsync(
+                new FolderPickerOpenOptions {
+                    Title = "Select destination for " +
+                        (exportSpec == null ? "extracted" : "exported") + " files",
+                    AllowMultiple = false,
+                    SuggestedStartLocation = await topLevel.StorageProvider
+                        .TryGetFolderFromPathAsync(initialDir)
+                });
+            if (folders.Count == 0) {
+                return;
+            }
+            string outputDir = folders[0].Path.LocalPath;
+
+            SettingsHolder settings = AppSettings.Global;
+            settings.SetString(AppSettings.LAST_EXTRACT_DIR, outputDir);
+
+            ExtractProgress prog = new ExtractProgress(archiveOrFileSystem, selectionDir,
+                    selected, outputDir, exportSpec, AppHook) {
+                Preserve = settings.GetEnum(AppSettings.EXT_PRESERVE_MODE,
+                    ExtractFileWorker.PreserveMode.None),
+                AddExportExt = settings.GetBool(AppSettings.EXT_ADD_EXPORT_EXT, true),
+                EnableMacOSZip = settings.GetBool(AppSettings.MAC_ZIP_ENABLED, true),
+                StripPaths = settings.GetBool(AppSettings.EXT_STRIP_PATHS_ENABLED, false),
+                RawMode = settings.GetBool(AppSettings.EXT_RAW_ENABLED, false),
+                DefaultSpecs = GetDefaultExportSpecs()
+            };
+            Debug.WriteLine("Extract: outputDir='" + outputDir +
+                "', selectionDir='" + selectionDir + "'");
+
+            WorkProgress workDialog = new WorkProgress(mMainWin, prog, false);
+            await workDialog.ShowDialog(mMainWin);
+            if (workDialog.DialogResult) {
+                mMainWin.PostNotification(exportSpec != null ? "Export successful"
+                    : "Extraction successful", true);
+            } else {
+                mMainWin.PostNotification("Cancelled", false);
+            }
+        }
+
+        // -----------------------------------------------------------------------------------------
+        // Actions → Add / Import Files
+
+        /// <summary>
+        /// Handles Actions → Add Files.
+        /// </summary>
+        public async Task AddFiles() {
+            await HandleAddImport(null);
+        }
+
+        /// <summary>
+        /// Handles Actions → Import Files.
+        /// </summary>
+        public async Task ImportFiles() {
+            await HandleAddImport(GetImportSpec());
+        }
+
+        private async Task HandleAddImport(ConvConfig.FileConvSpec? spec) {
+            string initialDir = AppSettings.Global.GetString(AppSettings.LAST_ADD_DIR,
+                Environment.CurrentDirectory);
+
+            var topLevel = TopLevel.GetTopLevel(mMainWin);
+            var folders = await topLevel!.StorageProvider.OpenFolderPickerAsync(
+                new FolderPickerOpenOptions {
+                    Title = spec == null ? "Select folder to add" : "Select folder to import",
+                    AllowMultiple = false,
+                    SuggestedStartLocation = await topLevel.StorageProvider
+                        .TryGetFolderFromPathAsync(initialDir)
+                });
+            if (folders.Count == 0) {
+                return;
+            }
+            string folderPath = folders[0].Path.LocalPath;
+            AppSettings.Global.SetString(AppSettings.LAST_ADD_DIR, folderPath);
+
+            // Pass the selected folder as a single-item path array.  ConfigureAddOpts sets
+            // Recurse = true so AddFileSet will descend into the folder.
+            string[] pathNames = new[] { folderPath };
+            await AddPaths(pathNames, IFileEntry.NO_ENTRY, spec);
+        }
+
+        /// <summary>
+        /// Handles a file-drop (drag from OS file manager) onto the file list.
+        /// </summary>
+        public async Task AddFileDrop(IFileEntry dropTarget, string[] pathNames) {
+            Debug.Assert(pathNames.Length > 0);
+            Debug.WriteLine("External file drop (target=" + dropTarget + "):");
+            if (!CheckPasteDropOkay()) {
+                return;
+            }
+            await AddPaths(pathNames, dropTarget,
+                mMainWin.IsChecked_ImportExport ? GetImportSpec() : null);
+        }
+
+        private async Task AddPaths(string[] pathNames, IFileEntry dropTarget,
+                ConvConfig.FileConvSpec? importSpec) {
+            Debug.WriteLine("Add paths (importSpec=" + importSpec + "):");
+            foreach (string path in pathNames) {
+                Debug.WriteLine("  " + path);
+            }
+
+            if (!GetSelectedArcDir(out object? archiveOrFileSystem, out DiskArcNode? daNode,
+                    out IFileEntry targetDir)) {
+                return;
+            }
+            if (dropTarget != IFileEntry.NO_ENTRY && dropTarget.IsDirectory) {
+                targetDir = dropTarget;
+            }
+
+            string basePath = Path.GetDirectoryName(pathNames[0]) ?? pathNames[0];
+            // When the entire selected item IS a folder (from OpenFolderPickerAsync), use its
+            // parent as the base path so AddFileSet processes it as a recursive root.
+            if (Directory.Exists(pathNames[0]) && pathNames.Length == 1) {
+                basePath = Path.GetDirectoryName(pathNames[0]) ?? pathNames[0];
+            }
+
+            AddFileSet.AddOpts addOpts = ConfigureAddOpts(importSpec != null);
+            AddFileSet fileSet;
+            try {
+                fileSet = new AddFileSet(basePath, pathNames, addOpts, importSpec, AppHook);
+            } catch (IOException ex) {
+                ShowFileError(ex.Message);
+                return;
+            }
+            if (fileSet.Count == 0) {
+                Debug.WriteLine("File set was empty");
+                return;
+            }
+
+            SettingsHolder settings = AppSettings.Global;
+            AddProgress prog =
+                new AddProgress(archiveOrFileSystem, daNode, fileSet, targetDir, AppHook) {
+                    DoCompress = settings.GetBool(AppSettings.ADD_COMPRESS_ENABLED, true),
+                    EnableMacOSZip = settings.GetBool(AppSettings.MAC_ZIP_ENABLED, true),
+                    StripPaths = settings.GetBool(AppSettings.ADD_STRIP_PATHS_ENABLED, false),
+                    RawMode = settings.GetBool(AppSettings.ADD_RAW_ENABLED, false),
+                };
+
+            WorkProgress workDialog = new WorkProgress(mMainWin, prog, false);
+            await workDialog.ShowDialog(mMainWin);
+            if (workDialog.DialogResult) {
+                mMainWin.PostNotification(importSpec == null ? "Files added" : "Files imported",
+                    true);
+            } else {
+                mMainWin.PostNotification("Cancelled", false);
+            }
+
+            // Refresh even if cancelled — partial progress may have occurred.
+            RefreshDirAndFileList();
+        }
+
+        /// <summary>
+        /// Performs pre-flight checks before add/paste/drop operations.
+        /// </summary>
+        internal bool CheckPasteDropOkay() {
+            if (!CanWrite) {
+                string msg = (CurrentWorkObject is IFileSystem)
+                    ? "Can't add files to a read-only filesystem."
+                    : "Can't add files to a read-only archive.";
+                // Show error via fire-and-forget (this is called from sync context).
+                _ = ShowMessageAsync(msg, "Unable to add");
+                return false;
+            }
+            if (!IsMultiFileItemSelected) {
+                _ = ShowMessageAsync("Can't add files to a single-file archive.", "Unable to add");
+                return false;
+            }
+            return true;
+        }
+
+        private AddFileSet.AddOpts ConfigureAddOpts(bool isImport) {
+            SettingsHolder settings = AppSettings.Global;
+            AddFileSet.AddOpts addOpts = new AddFileSet.AddOpts();
+            if (isImport) {
+                // Anything stored with preserved attributes should be added, not imported.
+                addOpts.ParseADF = addOpts.ParseAS = addOpts.ParseNAPS = addOpts.CheckNamed =
+                    addOpts.CheckFinderInfo = false;
+            } else {
+                addOpts.ParseADF = settings.GetBool(AppSettings.ADD_PRESERVE_ADF, true);
+                addOpts.ParseAS = settings.GetBool(AppSettings.ADD_PRESERVE_AS, true);
+                addOpts.ParseNAPS = settings.GetBool(AppSettings.ADD_PRESERVE_NAPS, true);
+                addOpts.CheckNamed = false;
+                addOpts.CheckFinderInfo = false;
+            }
+            addOpts.Recurse = settings.GetBool(AppSettings.ADD_RECURSE_ENABLED, true);
+            addOpts.StripExt = settings.GetBool(AppSettings.ADD_STRIP_EXT_ENABLED, true);
+            return addOpts;
+        }
+
+        // -----------------------------------------------------------------------------------------
+        // Converter spec helpers
+
+        private ConvConfig.FileConvSpec GetImportSpec() {
+            string convTag = AppSettings.Global.GetString(AppSettings.CONV_IMPORT_TAG, "text");
+            string settingKey = AppSettings.IMPORT_SETTING_PREFIX + convTag;
+            string convSettings = AppSettings.Global.GetString(settingKey, string.Empty);
+
+            ConvConfig.FileConvSpec? spec;
+            if (string.IsNullOrEmpty(convSettings)) {
+                spec = ConvConfig.CreateSpec(convTag);
+            } else {
+                spec = ConvConfig.CreateSpec(convTag + "," + convSettings);
+            }
+            if (spec == null) {
+                Debug.Assert(false, "Failed to parse import spec for tag: " + convTag);
+                spec = ConvConfig.CreateSpec(convTag) ?? ConvConfig.CreateSpec("text")!;
+            }
+            return spec;
+        }
+
+        private ConvConfig.FileConvSpec GetExportSpec(string? convTag = null) {
+            if (convTag == null) {
+                bool useBest = AppSettings.Global.GetBool(AppSettings.CONV_EXPORT_BEST, true);
+                convTag = useBest ? ConvConfig.BEST
+                    : AppSettings.Global.GetString(AppSettings.CONV_EXPORT_TAG, ConvConfig.BEST);
+            }
+            string settingKey = AppSettings.EXPORT_SETTING_PREFIX + convTag;
+            string convSettings = AppSettings.Global.GetString(settingKey, string.Empty);
+
+            ConvConfig.FileConvSpec? spec;
+            if (string.IsNullOrEmpty(convSettings)) {
+                spec = ConvConfig.CreateSpec(convTag);
+            } else {
+                spec = ConvConfig.CreateSpec(convTag + "," + convSettings);
+            }
+            if (spec == null) {
+                Debug.Assert(false, "Failed to parse export spec for tag: " + convTag);
+                spec = ConvConfig.CreateSpec(ConvConfig.BEST)!;
+            }
+            return spec;
+        }
+
+        private Dictionary<string, ConvConfig.FileConvSpec>? GetDefaultExportSpecs() {
+            Dictionary<string, ConvConfig.FileConvSpec> defaults =
+                new Dictionary<string, ConvConfig.FileConvSpec>();
+            List<string> tags = ExportFoundry.GetConverterTags();
+            foreach (string tag in tags) {
+                defaults[tag] = GetExportSpec(tag);
+            }
+            return defaults;
+        }
+
+        // -----------------------------------------------------------------------------------------
+        // File selection helper
+
+        /// <summary>
+        /// Gets the current selection from the file list DataGrid.
+        /// </summary>
+        public bool GetFileSelection(bool omitDir, bool omitOpenArc, bool closeOpenArc,
+                bool oneMeansAll,
+                [NotNullWhen(true)] out object? archiveOrFileSystem,
+                out IFileEntry selectionDir,
+                [NotNullWhen(true)] out List<IFileEntry>? selected,
+                out int firstSel) {
+            selected = null;
+            firstSel = 0;
+            if (!GetSelectedArcDir(out archiveOrFileSystem, out DiskArcNode? _,
+                    out selectionDir)) {
+                return false;
+            }
+
+            var dg = mMainWin.fileListDataGrid;
+            var listSel = dg.SelectedItems;
+            if (listSel == null || listSel.Count == 0) {
+                return false;
+            }
+
+            // In "one means all" mode with a single selection, expand to all items.
+            IEnumerable<FileListItem> itemsToProcess;
+            FileListItem? singleSelItem = null;
+            if (oneMeansAll && listSel.Count == 1) {
+                singleSelItem = listSel[0] as FileListItem;
+                itemsToProcess = mMainWin.FileList;
+            } else {
+                var temp = new List<FileListItem>();
+                foreach (object obj in listSel) {
+                    if (obj is FileListItem fli) temp.Add(fli);
+                }
+                itemsToProcess = temp;
+            }
+
+            selected = new List<IFileEntry>();
+            if (archiveOrFileSystem is IArchive) {
+                foreach (FileListItem listItem in itemsToProcess) {
+                    if (omitDir && listItem.FileEntry.IsDirectory) {
+                        continue;
+                    }
+                    selected.Add(listItem.FileEntry);
+                }
+            } else {
+                // Filesystem: collect entries, descending into subdirectories.
+                var knownItems = new Dictionary<IFileEntry, IFileEntry>();
+                foreach (FileListItem listItem in itemsToProcess) {
+                    if (!knownItems.ContainsKey(listItem.FileEntry)) {
+                        knownItems.Add(listItem.FileEntry, listItem.FileEntry);
+                    }
+                }
+                foreach (FileListItem listItem in itemsToProcess) {
+                    IFileEntry entry = listItem.FileEntry;
+                    if (entry.IsDirectory) {
+                        if (!omitDir) {
+                            selected.Add(entry);
+                            AddDirEntries(entry, knownItems, selected);
+                        }
+                    } else {
+                        selected.Add(entry);
+                    }
+                }
+                if (!omitDir) {
+                    selected = ShiftDirectories(selected);
+                }
+            }
+
+            // Handle open archives.
+            if (omitOpenArc || closeOpenArc) {
+                ArchiveTreeItem? arcTreeSel = mMainWin.SelectedArchiveTreeItem;
+                bool hasOpenChildren = arcTreeSel != null && arcTreeSel.Items.Count != 0;
+                if (hasOpenChildren) {
+                    for (int i = 0; i < selected.Count; i++) {
+                        IFileEntry entry = selected[i];
+                        if (entry.IsDirectory) continue;
+                        ArchiveTreeItem? treeItem =
+                            ArchiveTreeItem.FindItemByEntry(mMainWin.ArchiveTreeRoot, entry);
+                        if (treeItem != null) {
+                            if (omitOpenArc) {
+                                selected.RemoveAt(i--);
+                            } else if (closeOpenArc) {
+                                CloseSubTree(treeItem);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Find the index of the single originally-selected item.
+            if (singleSelItem != null) {
+                for (int i = 0; i < selected.Count; i++) {
+                    if (selected[i] == singleSelItem.FileEntry) {
+                        firstSel = i;
+                        break;
+                    }
+                }
+            }
+            return true;
+        }
+
+        private void AddDirEntries(IFileEntry entry,
+                Dictionary<IFileEntry, IFileEntry> excludes, List<IFileEntry> list) {
+            foreach (IFileEntry child in entry) {
+                if (!excludes.ContainsKey(child)) {
+                    list.Add(child);
+                }
+                if (child.IsDirectory) {
+                    AddDirEntries(child, excludes, list);
+                }
+            }
+        }
+
+        private List<IFileEntry> ShiftDirectories(List<IFileEntry> entries) {
+            // Ensure parent directories come before their contents by sorting on path length.
+            // This is a stable sort: shorter paths (parents) come first.
+            var dirs = new List<IFileEntry>();
+            var files = new List<IFileEntry>();
+            foreach (IFileEntry e in entries) {
+                if (e.IsDirectory) dirs.Add(e); else files.Add(e);
+            }
+            dirs.Sort((a, b) =>
+                string.Compare(a.FullPathName, b.FullPathName, StringComparison.Ordinal));
+            var result = new List<IFileEntry>(dirs.Count + files.Count);
+            result.AddRange(dirs);
+            result.AddRange(files);
+            return result;
+        }
+
+        // -----------------------------------------------------------------------------------------
+        // Message box helper
+
+        /// <summary>
+        /// Shows a simple modal message box with an OK button.
+        /// </summary>
+        private async Task ShowMessageAsync(string message, string title) {
+            var msgWin = new Window {
+                Title = title,
+                Width = 360,
+                SizeToContent = SizeToContent.Height,
+                CanResize = false,
+                ShowInTaskbar = false,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Content = new Avalonia.Controls.StackPanel {
+                    Margin = new Avalonia.Thickness(16),
+                    Spacing = 12,
+                    Children = {
+                        new Avalonia.Controls.TextBlock {
+                            Text = message,
+                            TextWrapping = Avalonia.Media.TextWrapping.Wrap
+                        },
+                        new Avalonia.Controls.Button {
+                            Content = "OK",
+                            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                            Width = 80
+                        }
+                    }
+                }
+            };
+            var sp = (Avalonia.Controls.StackPanel)msgWin.Content!;
+            var okBtn = (Avalonia.Controls.Button)sp.Children[1];
+            okBtn.Click += (_, _) => msgWin.Close();
+            await msgWin.ShowDialog(mMainWin);
         }
     }
 }

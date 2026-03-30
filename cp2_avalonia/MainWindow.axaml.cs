@@ -30,12 +30,16 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Platform.Storage;
+
+using Avalonia.Threading;
 
 using AppCommon;
 using CommonUtil;
 using cp2_avalonia.Common;
 using DiskArc;
 using DiskArc.Multi;
+using FileConv;
 
 namespace cp2_avalonia {
     public partial class MainWindow : Window, INotifyPropertyChanged {
@@ -117,7 +121,7 @@ namespace cp2_avalonia {
         public ICommand ToggleInfoCommand { get; }
 
         // ---- Bindable properties ----
-        private bool mShowDebugMenu = true;  // TODO: read from settings or #if DEBUG
+        private bool mShowDebugMenu = false;  // set by ApplyAppSettings()
         public bool ShowDebugMenu {
             get => mShowDebugMenu;
             set { mShowDebugMenu = value; OnPropertyChanged(); }
@@ -201,17 +205,210 @@ namespace cp2_avalonia {
             set { mRecentFilePath2 = value; OnPropertyChanged(); }
         }
 
-        // ---- Toolbar state ----
-        private bool mIsChecked_AddExtract = true;
+        // ---- Toolbar state: Add/Extract vs Import/Export mode ----
+        // These are AppSettings-backed toggling properties.  Only write the setting when
+        // the property is set to true, to prevent the RadioButton "false" feedback from
+        // overwriting the stored value.
         public bool IsChecked_AddExtract {
-            get => mIsChecked_AddExtract;
-            set { mIsChecked_AddExtract = value; OnPropertyChanged(); }
+            get => AppSettings.Global.GetBool(AppSettings.DDCP_ADD_EXTRACT, true);
+            set {
+                if (value) AppSettings.Global.SetBool(AppSettings.DDCP_ADD_EXTRACT, true);
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(IsChecked_ImportExport));
+            }
+        }
+        public bool IsChecked_ImportExport {
+            get => !AppSettings.Global.GetBool(AppSettings.DDCP_ADD_EXTRACT, true);
+            set {
+                if (value) AppSettings.Global.SetBool(AppSettings.DDCP_ADD_EXTRACT, false);
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(IsChecked_AddExtract));
+            }
         }
 
-        private bool mIsChecked_ImportExport = false;
-        public bool IsChecked_ImportExport {
-            get => mIsChecked_ImportExport;
-            set { mIsChecked_ImportExport = value; OnPropertyChanged(); }
+        // ---- Add/Import options ----
+        public bool IsChecked_AddCompress {
+            get => AppSettings.Global.GetBool(AppSettings.ADD_COMPRESS_ENABLED, true);
+            set { AppSettings.Global.SetBool(AppSettings.ADD_COMPRESS_ENABLED, value); OnPropertyChanged(); }
+        }
+        public bool IsChecked_AddRaw {
+            get => AppSettings.Global.GetBool(AppSettings.ADD_RAW_ENABLED, false);
+            set { AppSettings.Global.SetBool(AppSettings.ADD_RAW_ENABLED, value); OnPropertyChanged(); }
+        }
+        public bool IsChecked_AddRecurse {
+            get => AppSettings.Global.GetBool(AppSettings.ADD_RECURSE_ENABLED, true);
+            set { AppSettings.Global.SetBool(AppSettings.ADD_RECURSE_ENABLED, value); OnPropertyChanged(); }
+        }
+        public bool IsChecked_AddStripExt {
+            get => AppSettings.Global.GetBool(AppSettings.ADD_STRIP_EXT_ENABLED, true);
+            set { AppSettings.Global.SetBool(AppSettings.ADD_STRIP_EXT_ENABLED, value); OnPropertyChanged(); }
+        }
+        public bool IsChecked_AddStripPaths {
+            get => AppSettings.Global.GetBool(AppSettings.ADD_STRIP_PATHS_ENABLED, false);
+            set { AppSettings.Global.SetBool(AppSettings.ADD_STRIP_PATHS_ENABLED, value); OnPropertyChanged(); }
+        }
+        public bool IsChecked_AddPreserveADF {
+            get => AppSettings.Global.GetBool(AppSettings.ADD_PRESERVE_ADF, true);
+            set { AppSettings.Global.SetBool(AppSettings.ADD_PRESERVE_ADF, value); OnPropertyChanged(); }
+        }
+        public bool IsChecked_AddPreserveAS {
+            get => AppSettings.Global.GetBool(AppSettings.ADD_PRESERVE_AS, true);
+            set { AppSettings.Global.SetBool(AppSettings.ADD_PRESERVE_AS, value); OnPropertyChanged(); }
+        }
+        public bool IsChecked_AddPreserveNAPS {
+            get => AppSettings.Global.GetBool(AppSettings.ADD_PRESERVE_NAPS, true);
+            set { AppSettings.Global.SetBool(AppSettings.ADD_PRESERVE_NAPS, value); OnPropertyChanged(); }
+        }
+
+        // ---- Extract/Export options ----
+        public bool IsChecked_ExtAddExportExt {
+            get => AppSettings.Global.GetBool(AppSettings.EXT_ADD_EXPORT_EXT, true);
+            set { AppSettings.Global.SetBool(AppSettings.EXT_ADD_EXPORT_EXT, value); OnPropertyChanged(); }
+        }
+        public bool IsChecked_ExtRaw {
+            get => AppSettings.Global.GetBool(AppSettings.EXT_RAW_ENABLED, false);
+            set { AppSettings.Global.SetBool(AppSettings.EXT_RAW_ENABLED, value); OnPropertyChanged(); }
+        }
+        public bool IsChecked_ExtStripPaths {
+            get => AppSettings.Global.GetBool(AppSettings.EXT_STRIP_PATHS_ENABLED, false);
+            set { AppSettings.Global.SetBool(AppSettings.EXT_STRIP_PATHS_ENABLED, value); OnPropertyChanged(); }
+        }
+        public bool IsChecked_ExtPreserveNone {
+            get => AppSettings.Global.GetEnum(AppSettings.EXT_PRESERVE_MODE,
+                ExtractFileWorker.PreserveMode.None) == ExtractFileWorker.PreserveMode.None;
+            set { if (value) AppSettings.Global.SetEnum(AppSettings.EXT_PRESERVE_MODE,
+                ExtractFileWorker.PreserveMode.None); OnPropertyChanged(); }
+        }
+        public bool IsChecked_ExtPreserveAS {
+            get => AppSettings.Global.GetEnum(AppSettings.EXT_PRESERVE_MODE,
+                ExtractFileWorker.PreserveMode.None) == ExtractFileWorker.PreserveMode.AS;
+            set { if (value) AppSettings.Global.SetEnum(AppSettings.EXT_PRESERVE_MODE,
+                ExtractFileWorker.PreserveMode.AS); OnPropertyChanged(); }
+        }
+        public bool IsChecked_ExtPreserveADF {
+            get => AppSettings.Global.GetEnum(AppSettings.EXT_PRESERVE_MODE,
+                ExtractFileWorker.PreserveMode.None) == ExtractFileWorker.PreserveMode.ADF;
+            set { if (value) AppSettings.Global.SetEnum(AppSettings.EXT_PRESERVE_MODE,
+                ExtractFileWorker.PreserveMode.ADF); OnPropertyChanged(); }
+        }
+        public bool IsChecked_ExtPreserveNAPS {
+            get => AppSettings.Global.GetEnum(AppSettings.EXT_PRESERVE_MODE,
+                ExtractFileWorker.PreserveMode.None) == ExtractFileWorker.PreserveMode.NAPS;
+            set { if (value) AppSettings.Global.SetEnum(AppSettings.EXT_PRESERVE_MODE,
+                ExtractFileWorker.PreserveMode.NAPS); OnPropertyChanged(); }
+        }
+
+        // ---- Export/Import converter configuration ----
+        public class ConvItem {
+            public string Tag { get; }
+            public string Label { get; }
+            public ConvItem(string tag, string label) { Tag = tag; Label = label; }
+        }
+        public List<ConvItem> ImportConverters { get; } = new List<ConvItem>();
+        public List<ConvItem> ExportConverters { get; } = new List<ConvItem>();
+
+        private ConvItem? mSelectedImportConverter;
+        public ConvItem? SelectedImportConverter {
+            get => mSelectedImportConverter;
+            set {
+                mSelectedImportConverter = value;
+                if (value != null) {
+                    AppSettings.Global.SetString(AppSettings.CONV_IMPORT_TAG, value.Tag);
+                }
+                OnPropertyChanged();
+            }
+        }
+
+        private ConvItem? mSelectedExportConverter;
+        public ConvItem? SelectedExportConverter {
+            get => mSelectedExportConverter;
+            set {
+                mSelectedExportConverter = value;
+                if (value != null && !IsExportBestChecked) {
+                    AppSettings.Global.SetString(AppSettings.CONV_EXPORT_TAG, value.Tag);
+                }
+                OnPropertyChanged();
+            }
+        }
+
+        public bool IsExportBestChecked {
+            get => AppSettings.Global.GetBool(AppSettings.CONV_EXPORT_BEST, true);
+            set {
+                if (value) AppSettings.Global.SetBool(AppSettings.CONV_EXPORT_BEST, true);
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(IsExportComboChecked));
+            }
+        }
+        public bool IsExportComboChecked {
+            get => !AppSettings.Global.GetBool(AppSettings.CONV_EXPORT_BEST, true);
+            set {
+                if (value) AppSettings.Global.SetBool(AppSettings.CONV_EXPORT_BEST, false);
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(IsExportBestChecked));
+            }
+        }
+
+        /// <summary>
+        /// Populates ImportConverters and ExportConverters lists and sets defaults.
+        /// </summary>
+        private void InitImportExportConfig() {
+            for (int i = 0; i < ImportFoundry.GetCount(); i++) {
+                ImportFoundry.GetConverterInfo(i, out string tag, out string label,
+                    out string _, out _);
+                ImportConverters.Add(new ConvItem(tag, label));
+            }
+            ImportConverters.Sort((a, b) => string.Compare(a.Label, b.Label));
+
+            for (int i = 0; i < ExportFoundry.GetCount(); i++) {
+                ExportFoundry.GetConverterInfo(i, out string tag, out string label,
+                    out string _, out _);
+                ExportConverters.Add(new ConvItem(tag, label));
+            }
+            ExportConverters.Sort((a, b) => string.Compare(a.Label, b.Label));
+
+            // Set initial selection — may be overwritten when settings are loaded.
+            if (ImportConverters.Count > 0) mSelectedImportConverter = ImportConverters[0];
+            if (ExportConverters.Count > 0) mSelectedExportConverter = ExportConverters[0];
+        }
+
+        /// <summary>
+        /// Triggers OnPropertyChanged for all options panel bindings, ensuring the UI
+        /// reflects the current AppSettings values.
+        /// </summary>
+        public void PublishSideOptions() {
+            OnPropertyChanged(nameof(IsChecked_AddCompress));
+            OnPropertyChanged(nameof(IsChecked_AddRaw));
+            OnPropertyChanged(nameof(IsChecked_AddRecurse));
+            OnPropertyChanged(nameof(IsChecked_AddStripExt));
+            OnPropertyChanged(nameof(IsChecked_AddStripPaths));
+            OnPropertyChanged(nameof(IsChecked_AddPreserveADF));
+            OnPropertyChanged(nameof(IsChecked_AddPreserveAS));
+            OnPropertyChanged(nameof(IsChecked_AddPreserveNAPS));
+            OnPropertyChanged(nameof(IsChecked_ExtAddExportExt));
+            OnPropertyChanged(nameof(IsChecked_ExtRaw));
+            OnPropertyChanged(nameof(IsChecked_ExtStripPaths));
+            OnPropertyChanged(nameof(IsChecked_ExtPreserveNone));
+            OnPropertyChanged(nameof(IsChecked_ExtPreserveAS));
+            OnPropertyChanged(nameof(IsChecked_ExtPreserveADF));
+            OnPropertyChanged(nameof(IsChecked_ExtPreserveNAPS));
+            OnPropertyChanged(nameof(IsExportBestChecked));
+            OnPropertyChanged(nameof(IsExportComboChecked));
+            OnPropertyChanged(nameof(IsChecked_AddExtract));
+            OnPropertyChanged(nameof(IsChecked_ImportExport));
+
+            // Restore selected import/export converter from settings.
+            string importTag = AppSettings.Global.GetString(AppSettings.CONV_IMPORT_TAG, string.Empty);
+            if (!string.IsNullOrEmpty(importTag)) {
+                var item = ImportConverters.Find(c => c.Tag == importTag);
+                if (item != null) mSelectedImportConverter = item;
+            }
+            string exportTag = AppSettings.Global.GetString(AppSettings.CONV_EXPORT_TAG, string.Empty);
+            if (!string.IsNullOrEmpty(exportTag)) {
+                var item = ExportConverters.Find(c => c.Tag == exportTag);
+                if (item != null) mSelectedExportConverter = item;
+            }
+            OnPropertyChanged(nameof(SelectedImportConverter));
+            OnPropertyChanged(nameof(SelectedExportConverter));
         }
 
         // TODO (Iteration 15): Replace with a theme-aware accent brush for dark mode support,
@@ -546,10 +743,26 @@ namespace cp2_avalonia {
             EditAppSettingsCommand = new RelayCommand(() => NotImplemented("Settings"));
 
             ViewFilesCommand = new RelayCommand(() => NotImplemented("View Files"), () => false);
-            AddFilesCommand = new RelayCommand(() => NotImplemented("Add Files"), () => false);
-            ImportFilesCommand = new RelayCommand(() => NotImplemented("Import Files"), () => false);
-            ExtractFilesCommand = new RelayCommand(() => NotImplemented("Extract Files"), () => false);
-            ExportFilesCommand = new RelayCommand(() => NotImplemented("Export Files"), () => false);
+            AddFilesCommand = new RelayCommand(
+                async () => { try { await mMainCtrl.AddFiles(); } catch (Exception ex) {
+                    Debug.WriteLine("AddFiles exception: " + ex.Message); } },
+                () => mMainCtrl != null && mMainCtrl.IsFileOpen && mMainCtrl.CanWrite &&
+                     mMainCtrl.IsMultiFileItemSelected && ShowCenterFileList);
+            ImportFilesCommand = new RelayCommand(
+                async () => { try { await mMainCtrl.ImportFiles(); } catch (Exception ex) {
+                    Debug.WriteLine("ImportFiles exception: " + ex.Message); } },
+                () => mMainCtrl != null && mMainCtrl.IsFileOpen && mMainCtrl.CanWrite &&
+                     mMainCtrl.IsMultiFileItemSelected && ShowCenterFileList);
+            ExtractFilesCommand = new RelayCommand(
+                async () => { try { await mMainCtrl.ExtractFiles(); } catch (Exception ex) {
+                    Debug.WriteLine("ExtractFiles exception: " + ex.Message); } },
+                () => mMainCtrl != null && mMainCtrl.IsFileOpen && ShowCenterFileList &&
+                     mMainCtrl.AreFileEntriesSelected);
+            ExportFilesCommand = new RelayCommand(
+                async () => { try { await mMainCtrl.ExportFiles(); } catch (Exception ex) {
+                    Debug.WriteLine("ExportFiles exception: " + ex.Message); } },
+                () => mMainCtrl != null && mMainCtrl.IsFileOpen && ShowCenterFileList &&
+                     mMainCtrl.AreFileEntriesSelected);
             DeleteFilesCommand = new RelayCommand(() => NotImplemented("Delete Files"), () => false);
             TestFilesCommand = new RelayCommand(() => NotImplemented("Test Files"), () => false);
             EditAttributesCommand = new RelayCommand(() => NotImplemented("Edit Attributes"), () => false);
@@ -625,8 +838,67 @@ namespace cp2_avalonia {
 
             mMainCtrl = new MainController(this);
             WindowPlacement.TrackNormalBounds(this);
-            Loaded += (s, e) => mMainCtrl.WindowLoaded();
+            Loaded += (s, e) => {
+                mMainCtrl.WindowLoaded();
+                InitImportExportConfig();
+                // Register drag-drop on launch panel after the AXAML tree is built.
+                launchPanel.AddHandler(DragDrop.DropEvent, LaunchPanel_Drop);
+                launchPanel.AddHandler(DragDrop.DragOverEvent, LaunchPanel_DragOver);
+            };
             Closing += (s, e) => mMainCtrl.WindowClosing();
+        }
+
+        // ---- Drag-drop on launch panel ----
+
+        private void LaunchPanel_DragOver(object? sender, DragEventArgs e) {
+            if (e.Data.Contains(DataFormats.Files)) {
+                var files = e.Data.GetFiles()?.ToList();
+                if (files?.Count == 1) {
+                    e.DragEffects = DragDropEffects.Copy;
+                    e.Handled = true;
+                    return;
+                }
+            }
+            e.DragEffects = DragDropEffects.None;
+            e.Handled = true;
+        }
+
+        private void LaunchPanel_Drop(object? sender, DragEventArgs e) {
+            if (e.Data.Contains(DataFormats.Files)) {
+                var files = e.Data.GetFiles()?.ToList();
+                if (files?.Count == 1) {
+                    string? path = files[0].TryGetLocalPath();
+                    if (path != null) {
+                        // Fire-and-forget: DropOpenWorkFile is async but Drop handler is void.
+                        _ = mMainCtrl.DropOpenWorkFile(path);
+                    }
+                }
+            }
+        }
+
+        // ---- Toast notification (PostNotification) ----
+
+        private DispatcherTimer? mToastTimer;
+
+        /// <summary>
+        /// Shows a brief toast notification at the bottom of the window.
+        /// </summary>
+        /// <param name="msg">Message to display.</param>
+        /// <param name="success">True for a success (green) tint, false for error (red).</param>
+        public void PostNotification(string msg, bool success) {
+            toastText.Text = msg;
+            toastBorder.Background = success
+                ? new SolidColorBrush(Color.FromArgb(200, 0, 160, 0))
+                : new SolidColorBrush(Color.FromArgb(200, 200, 0, 0));
+            toastBorder.IsVisible = true;
+
+            mToastTimer?.Stop();
+            mToastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+            mToastTimer.Tick += (_, _) => {
+                toastBorder.IsVisible = false;
+                mToastTimer?.Stop();
+            };
+            mToastTimer.Start();
         }
 
         private void ArchiveTree_SelectionChanged(object? sender, SelectionChangedEventArgs e) {

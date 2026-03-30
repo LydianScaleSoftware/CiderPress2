@@ -54,6 +54,7 @@ limitations under the License.
         <KeyBinding Gesture="Ctrl+Shift+6" Command="{Binding RecentFile6Command}"/>
     </Window.KeyBindings>
 
+    <Grid>
     <DockPanel>
         <Menu DockPanel.Dock="Top">
             <MenuItem Header="_File">
@@ -259,7 +260,8 @@ limitations under the License.
         <Grid Name="mainGrid">
 
             <!-- Launch panel: shown when no file is open -->
-            <Grid Name="launchPanel" IsVisible="{Binding LaunchPanelVisible}">
+            <Grid Name="launchPanel" IsVisible="{Binding LaunchPanelVisible}"
+                  DragDrop.AllowDrop="True">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="4*"/>
@@ -529,15 +531,123 @@ limitations under the License.
                 <!-- Right splitter -->
                 <GridSplitter Grid.Column="3" Width="4"/>
 
-                <!-- Right panel: info panel (Iteration 7+) -->
+                <!-- Right panel: options panel -->
                 <Border Grid.Column="4" BorderBrush="LightGray" BorderThickness="1"
-                        CornerRadius="2" Margin="0,4" MinWidth="100">
-                    <TextBlock Text="(info panel - later iteration)"
-                               HorizontalAlignment="Center" VerticalAlignment="Center"
-                               Foreground="Gray"/>
+                        CornerRadius="2" Margin="0,4" MinWidth="200">
+                    <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel Margin="2">
+                            <!-- Add/Import Options header -->
+                            <Border Background="LightSteelBlue" Margin="0,0,0,2">
+                                <TextBlock Text="Add/Import Options" HorizontalAlignment="Center"
+                                           Padding="2"/>
+                            </Border>
+                            <StackPanel Margin="2,4,2,0">
+                                <CheckBox Content="Recurse Into Directories"
+                                          IsChecked="{Binding IsChecked_AddRecurse}"/>
+                                <CheckBox Content="Use Compression"
+                                          IsChecked="{Binding IsChecked_AddCompress}"/>
+                                <CheckBox Content="Strip Paths"
+                                          IsChecked="{Binding IsChecked_AddStripPaths}"/>
+                                <CheckBox Content="Raw (for DOS 3.x)"
+                                          IsChecked="{Binding IsChecked_AddRaw}"/>
+                                <Border BorderBrush="Gray" BorderThickness="1" CornerRadius="2"
+                                        Margin="0,4,0,0" Padding="4,2">
+                                    <StackPanel>
+                                        <TextBlock Text="Preservation Handling" FontWeight="SemiBold"
+                                                   Margin="0,0,0,2"/>
+                                        <CheckBox Content="AppleSingle"
+                                                  IsChecked="{Binding IsChecked_AddPreserveAS}"/>
+                                        <CheckBox Content="AppleDouble"
+                                                  IsChecked="{Binding IsChecked_AddPreserveADF}"/>
+                                        <CheckBox Content="NAPS"
+                                                  IsChecked="{Binding IsChecked_AddPreserveNAPS}"/>
+                                    </StackPanel>
+                                </Border>
+                                <Border BorderBrush="Gray" BorderThickness="1" CornerRadius="2"
+                                        Margin="0,4,0,0" Padding="4,2">
+                                    <StackPanel>
+                                        <TextBlock Text="Import Configuration" FontWeight="SemiBold"
+                                                   Margin="0,0,0,2"/>
+                                        <CheckBox Content="Strip Redundant Extensions"
+                                                  IsChecked="{Binding IsChecked_AddStripExt}"
+                                                  Margin="0,2,0,0"/>
+                                        <TextBlock Text="Conversion mode:" Margin="0,4,0,0"/>
+                                        <ComboBox Margin="0,4,0,0"
+                                                  ItemsSource="{Binding ImportConverters}"
+                                                  SelectedItem="{Binding SelectedImportConverter}"
+                                                  DisplayMemberBinding="{Binding Label}"/>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+
+                            <!-- Extract/Export Options header -->
+                            <Border Background="LightSteelBlue" Margin="0,16,0,2">
+                                <TextBlock Text="Extract/Export Options" HorizontalAlignment="Center"
+                                           Padding="2"/>
+                            </Border>
+                            <StackPanel Margin="2,4,2,0">
+                                <CheckBox Content="Strip Paths"
+                                          IsChecked="{Binding IsChecked_ExtStripPaths}"/>
+                                <CheckBox Content="Add Filename Ext to Exports"
+                                          IsChecked="{Binding IsChecked_ExtAddExportExt}"/>
+                                <CheckBox Content="Raw (for DOS 3.x)"
+                                          IsChecked="{Binding IsChecked_ExtRaw}"/>
+                                <Border BorderBrush="Gray" BorderThickness="1" CornerRadius="2"
+                                        Margin="0,4,0,0" Padding="4,2">
+                                    <StackPanel>
+                                        <TextBlock Text="Preservation Mode" FontWeight="SemiBold"
+                                                   Margin="0,0,0,2"/>
+                                        <RadioButton Content="None" GroupName="ExtPreserve"
+                                                     IsChecked="{Binding IsChecked_ExtPreserveNone}"/>
+                                        <RadioButton Content="AppleSingle" GroupName="ExtPreserve"
+                                                     IsChecked="{Binding IsChecked_ExtPreserveAS}"/>
+                                        <RadioButton Content="AppleDouble" GroupName="ExtPreserve"
+                                                     IsChecked="{Binding IsChecked_ExtPreserveADF}"/>
+                                        <RadioButton Content="NAPS" GroupName="ExtPreserve"
+                                                     IsChecked="{Binding IsChecked_ExtPreserveNAPS}"/>
+                                    </StackPanel>
+                                </Border>
+                                <Border BorderBrush="Gray" BorderThickness="1" CornerRadius="2"
+                                        Margin="0,4,0,8" Padding="4,2">
+                                    <StackPanel>
+                                        <TextBlock Text="Export Configuration" FontWeight="SemiBold"
+                                                   Margin="0,0,0,2"/>
+                                        <TextBlock Text="Conversion mode:"/>
+                                        <RadioButton Content="Best (automatic)" GroupName="ExportCfg"
+                                                     Margin="0,4,0,0"
+                                                     IsChecked="{Binding IsExportBestChecked}"/>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <RadioButton Grid.Column="0" Margin="0,8,0,0"
+                                                         GroupName="ExportCfg"
+                                                         IsChecked="{Binding IsExportComboChecked}"/>
+                                            <ComboBox Grid.Column="1" Margin="0,4,0,0"
+                                                      ItemsSource="{Binding ExportConverters}"
+                                                      SelectedItem="{Binding SelectedExportConverter}"
+                                                      DisplayMemberBinding="{Binding Label}"/>
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </StackPanel>
+                    </ScrollViewer>
                 </Border>
             </Grid>
         </Grid>
     </DockPanel>
+
+    <!-- Toast notification: overlaid at bottom-center, hidden by default -->
+    <Border Name="toastBorder" IsVisible="False"
+            HorizontalAlignment="Center" VerticalAlignment="Bottom"
+            Margin="0,0,0,40" Padding="16,8" CornerRadius="6"
+            Background="#C800A000">
+        <TextBlock Name="toastText" Foreground="White" FontWeight="SemiBold"
+                   HorizontalAlignment="Center"/>
+    </Border>
+
+    </Grid>
 
 </Window>

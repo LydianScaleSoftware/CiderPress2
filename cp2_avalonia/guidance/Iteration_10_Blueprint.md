@@ -165,6 +165,11 @@ EditMetadata use `SystemColors.WindowTextBrush` and `Brushes.Red` — in Avaloni
 >
 > `KeySyntaxText` / `ValueSyntaxText` in AddMetadata are getter-only properties set
 > once in the constructor — no `OnPropertyChanged` needed. Preserve this pattern.
+>
+> ⚠️ **Temporal binding risk (Pitfall #11):** Because `KeySyntaxText` /
+> `ValueSyntaxText` are getter-only with no `OnPropertyChanged`, they MUST be
+> initialized BEFORE `DataContext = this`. If set after, bindings read the default
+> (null/empty) and have no way to receive updates.
 
 **`EditMetadata.axaml` + `.cs`** (71 + 156 = 227 lines) **is a separate dialog that
 definitely exists and must be ported.** It differs from AddMetadata:
@@ -265,6 +270,11 @@ Read `cp2_wpf/SaveAsDisk.xaml`. Disk image format conversion dialog.
 - `SetDefaultFileType()` — complex fallback logic to pick a valid default
 - 10 pairs of `IsEnabled_FT_*` / `IsChecked_FT_*` properties that test format
   validity against the source chunk geometry
+
+  > ⚠️ **Temporal binding risk (Pitfall #11):** `SetDefaultFileType()` sets 10 pairs
+  > of `IsEnabled_FT_*` / `IsChecked_FT_*`. Ensure this method runs BEFORE
+  > `DataContext = this`, OR that all setters fire `OnPropertyChanged`. If backing
+  > fields are set directly after DataContext, bindings will show defaults.
 - `CreateImage()` — ~120 lines with `switch` over all 10 file types, creates the output
   disk image, calls `CopyDisk()`, handles NuFX `.sdk` two-phase creation
 - `CopyDisk()` — `internal static` method also called by `ReplacePartition`

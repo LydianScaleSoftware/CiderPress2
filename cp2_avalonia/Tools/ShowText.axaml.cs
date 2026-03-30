@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 faddenSoft
+ * Copyright 2019 faddenSoft
  * Copyright 2026 Lydian Scale Software
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -62,6 +62,8 @@ namespace cp2_avalonia.Tools {
         /// by ShowDialog(owner) or Show(owner).
         /// </remarks>
         public ShowText(Window? owner, string initialText) {
+            mDisplayText = initialText;
+
             InitializeComponent();
             DataContext = this;
 
@@ -69,8 +71,6 @@ namespace cp2_avalonia.Tools {
                 // Modeless dialogs can get lost, so show them in the task bar.
                 ShowInTaskbar = true;
             }
-
-            mDisplayText = initialText;
         }
 
         /// <summary>

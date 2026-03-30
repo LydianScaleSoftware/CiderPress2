@@ -179,6 +179,14 @@ centered container for error messages.
 tab when the current one becomes disabled (checks each tab's enabled state in priority
 order: Data → Rsrc → Note).
 
+> ⚠️ **Temporal binding risk (Pitfall #11):** The `Init()` method sets all
+> AXAML-bound properties (`IsTextVisible`, `IsBitmapVisible`, `HasPrevFile`,
+> `HasNextFile`, `PreviewBitmap`, converter lists, `IsSaveDefaultsEnabled`) after
+> construction. Because `DataContext = this` is set in the constructor, `Init()` MUST
+> use **property setters** (not backing fields) so that `OnPropertyChanged` fires for
+> every bound property. If backing fields are set directly, the bindings will still
+> show their default values.
+
 **`Init()` must call `ShowFile(true)` at the end.** The WPF version wires
 `SourceInitialized="Window_SourceInitialized"` which calls `magnificationSlider.Value = 1`,
 `UpdatePrevNextControls()`, and `ShowFile(true)`. Avalonia has no `SourceInitialized`

@@ -224,9 +224,18 @@ Key Avalonia conversion notes:
 > port (`bool IsDirSepTextVisible`) must initialize to `false` and set to `true` only
 > in the IArchive branch.
 
+> ⚠️ **Temporal binding risk (Pitfall #11):** `PrepareComment()` and all other
+> `Prepare*()` methods (`PrepareProTypeList`, `PrepareTimestamps`, `PrepareAccess`)
+> set backing fields directly. All `Prepare*()` calls MUST execute BEFORE
+> `InitializeComponent()` and `DataContext = this`. If any run after DataContext is
+> set, bindings for `CommentText`, `IsLockedOnlyVisible`, `IsAllFlagsVisible`,
+> `IsDirSepTextVisible`, `ProTypeList`, `CreateDate`/`ModDate` will see defaults
+> and never update (backing field writes don't fire `OnPropertyChanged`).
+>
 > **Comment field init:** `PrepareComment()` sets the backing field `mCommentText`
 > directly (not the property), avoiding `OnPropertyChanged` during construction. This
-> is the WPF pattern — preserve it in the Avalonia port. The Avalonia binding reads
+> is the WPF pattern — preserve it in the Avalonia port, but ONLY because all
+> `Prepare*()` calls run before `DataContext = this`. The Avalonia binding reads
 > from the property getter on first render, which returns `mCommentText`, so the
 > initial value is picked up correctly.
 

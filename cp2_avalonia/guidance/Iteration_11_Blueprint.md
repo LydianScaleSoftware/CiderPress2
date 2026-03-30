@@ -193,6 +193,13 @@ Read `cp2_wpf/EditSector.xaml.cs` (~1,100 lines) fully. This is a large file.
 **Key properties:**
 - `SectorData` (`List<SectorRow>`) — DataGrid source (NOT ObservableCollection)
 - `SectorDataLabel` (string) — e.g., "Track 0 ($00), Sector 0 ($0)" or "Block 0 ($00)"
+
+  > ⚠️ **Temporal binding risk (Pitfall #11):** `SectorData` is `List<SectorRow>` (not
+  > ObservableCollection), so reassigning the property after `DataContext = this`
+  > requires the setter to fire `OnPropertyChanged("SectorData")`. Initial
+  > construction of the list must occur before `DataContext = this`. Properties set
+  > in `OnOpened()` or later must use **property setters** (not backing fields) since
+  > DataContext is already set by that point.
 - `IOErrorMsg` / visibility properties — error display overlay
 - Sector/block/track number TextBoxes with validation
 - `IsDirty` — tracks whether buffer has unwritten modifications

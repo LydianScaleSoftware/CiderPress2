@@ -122,15 +122,15 @@ namespace cp2_avalonia {
         /// </remarks>
         public CreateDirectory(Window parent, IFileSystem fs, IFileEntry containingDir,
                 IsValidDirNameFunc func, string syntaxRules) {
-            InitializeComponent();
-            DataContext = this;
-
             mFileSystem = fs;
             mContainingDir = containingDir;
             mIsValidFunc = func;
             mSyntaxRulesText = syntaxRules;
-
             mNewFileName = "NEW.DIR";
+
+            InitializeComponent();
+            DataContext = this;
+
             UpdateControls();
         }
 

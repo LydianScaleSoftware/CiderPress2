@@ -100,11 +100,11 @@ detailed analysed of every source file, risk assessments, and the iteration plan
 
 Follow the existing faddenSoft coding style used throughout CiderPress II:
 
-- **License header:** Every new `.cs` file begins with the Apache 2.0 copyright header.
-  Preserve the original faddenSoft copyright and add the Lydian Scale Software line:
+- **License header:** Every new `.cs` file begins with the Apache 2.0 copyright header
+  with two copyright lines — faddenSoft first, then Lydian Scale Software:
   ```csharp
   /*
-   * Copyright 2023 faddenSoft
+   * Copyright <YEAR> faddenSoft
    * Copyright 2026 Lydian Scale Software
    *
    * Licensed under the Apache License, Version 2.0 (the "License");
@@ -122,10 +122,18 @@ Follow the existing faddenSoft coding style used throughout CiderPress II:
   ```
   Use the same dual-copyright pattern for `.axaml` XML comment headers.
 
+  **Determining the faddenSoft copyright year:**
+  - If the file is being ported or derived from an existing `cp2_wpf/` source file,
+    **read the WPF file first** and copy the exact `Copyright YYYY faddenSoft` line as-is,
+    preserving whatever year is in that file (e.g. `Copyright 2023 faddenSoft`).
+  - If no corresponding WPF file exists, or the WPF file has no faddenSoft copyright line,
+    use `Copyright 2026 faddenSoft`.
+  - **Never assume the year is 2023.** Always check the source file.
+
   > **Agent constraint:** The dual-copyright header is **mandatory** for every new `.cs`
   > and `.axaml` file created in `cp2_avalonia/`. Both lines must be present — the
-  > `faddenSoft` line first, followed by the `Lydian Scale Software` line. Never omit
-  > the second copyright line.
+  > `faddenSoft` line first (with the correct year from the source file or 2026 if new),
+  > followed by the `Lydian Scale Software` line. Never omit either line.
 
 - **Namespace:** `cp2_avalonia` (mirroring `cp2_wpf`). Sub-namespaces follow directory
   names: `cp2_avalonia.Actions`, `cp2_avalonia.Tools`, `cp2_avalonia.LibTest`,
@@ -155,9 +163,9 @@ Follow the existing faddenSoft coding style used throughout CiderPress II:
   Use the same pattern. Do **not** introduce `ReactiveUI` or `CommunityToolkit.Mvvm`
   source generators.
 
-- **Copyright year:** New files use dual copyright: `Copyright 2023 faddenSoft` on the
-  first line (preserving the original) and `Copyright 2026 Lydian Scale Software` on the
-  second line.
+- **Copyright year:** New files use dual copyright: the `faddenSoft` line uses the year
+  from the corresponding WPF source file (if one exists), or `2026` if the file is brand
+  new. The `Lydian Scale Software` line always uses `2026`.
 
 ---
 
@@ -494,3 +502,11 @@ behavior as closely as possible.
 8. **WPF `Visibility` enum** → Avalonia `IsVisible` boolean.
 9. **File dialog filters** — WPF pipe-delimited strings must become `FilePickerFileType`.
 10. **`RoutedUICommand`** does not exist — use `ICommand` properties + `HotKey`/`KeyBinding`.
+11. **Temporal binding order** — In every Window/UserControl constructor, initialize **all**
+    bound properties and backing fields **before** calling `InitializeComponent()` and
+    setting `DataContext = this`. If a property value is set via its backing field (e.g.
+    `mFoo = value` instead of `Foo = value`), then `OnPropertyChanged()` never fires, and
+    the AXAML binding will see the default/null value. Prefer inline field initializers
+    (`= new()`) for collections, and move all remaining assignments above
+    `InitializeComponent()`. This applies to both parameterless (previewer) and
+    parameterized constructors.

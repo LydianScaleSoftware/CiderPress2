@@ -194,6 +194,13 @@ file in this iteration.
    file type, volume name, volume number, custom size, reserve boot). **Save settings
    before calling `Close(true)`** in `OkButton_Click`.
 
+   > ⚠️ **Temporal binding risk (Pitfall #11):** The constructor restores ~20
+   > radio/checkbox backing fields from saved settings. All of these backing field
+   > assignments MUST execute BEFORE `InitializeComponent()` and `DataContext = this`.
+   > If placed after, the AXAML bindings will read default values and never update
+   > (backing field writes don't fire `OnPropertyChanged`). `UpdateControls()` uses
+   > property setters and can safely run after DataContext is set.
+
    > **`DialogResult = true` → `Close(true)`** in `OkButton_Click`. Remove
    > `Owner = owner` from the constructor (same pattern as all previous iterations).
 
