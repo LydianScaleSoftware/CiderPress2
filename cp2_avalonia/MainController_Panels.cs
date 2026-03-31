@@ -462,7 +462,11 @@ namespace cp2_avalonia {
                 IFileEntry curSel = IFileEntry.NO_ENTRY;
                 DirectoryTreeItem? dirTreeSel = mMainWin.SelectedDirectoryTreeItem;
                 if (dirTreeSel != null) {
-                    curSel = dirTreeSel.FileEntry;
+                    if (dirTreeSel.FileEntry.IsValid) {
+                        curSel = dirTreeSel.FileEntry;
+                    } else {
+                        Debug.WriteLine("Refresh: selected dir entry is no longer valid");
+                    }
                 } else {
                     Debug.WriteLine("Refresh: no dir tree sel");
                 }

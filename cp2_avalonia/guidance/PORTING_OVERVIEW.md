@@ -887,7 +887,20 @@ in the distribution (e.g., in a NOTICE or third-party licenses file).
 
 ---
 
-## 17. Reference Links
+## 17. Future Improvements and Corrections
+
+- **FileSelector dialog (Add/Import files):** The WPF app uses a custom `FileSelector` dialog
+  (`cp2_wpf/WPFCommon/FileSelector.xaml`) that supports simultaneous selection of both files
+  and folders (`SelMode.FilesAndFolders`). This is a mini file-browser with directory navigation
+  and multi-select. The Avalonia port currently uses `OpenFilePickerAsync` with
+  `AllowMultiple = true`, which only allows selecting individual files (not folders). A full
+  port of the `FileSelector` dialog is needed to restore the ability to add entire folders
+  with their directory structure intact via the Add/Import menu commands. (Drag-and-drop of
+  folders from the OS file manager still works via `AddFileDrop`.)
+
+---
+
+## 18. Reference Links
 
 - Avalonia UI: https://avaloniaui.net/
 - Avalonia docs: https://docs.avaloniaui.net/

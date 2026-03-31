@@ -722,8 +722,14 @@ namespace cp2_avalonia {
                 await dialog.ShowDialog(this);
             });
 
-            NewDiskImageCommand = new RelayCommand(() => NotImplemented("New Disk Image"));
-            NewFileArchiveCommand = new RelayCommand(() => NotImplemented("New File Archive"));
+            NewDiskImageCommand = new RelayCommand(async () => {
+                try { await mMainCtrl.NewDiskImage(); }
+                catch (Exception ex) { Debug.WriteLine("NewDiskImage exception: " + ex.Message); }
+            });
+            NewFileArchiveCommand = new RelayCommand(async () => {
+                try { await mMainCtrl.NewFileArchive(); }
+                catch (Exception ex) { Debug.WriteLine("NewFileArchive exception: " + ex.Message); }
+            });
             OpenCommand = new RelayCommand(async () => await mMainCtrl.OpenWorkFile());
             OpenPhysicalDriveCommand = new RelayCommand(() => NotImplemented("Open Physical Drive"));
             CloseCommand = new RelayCommand(

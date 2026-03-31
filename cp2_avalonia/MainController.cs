@@ -834,6 +834,109 @@ namespace cp2_avalonia {
         }
 
         // -----------------------------------------------------------------------------------------
+        // File → New Disk Image / New File Archive
+
+        /// <summary>
+        /// Handles File → New Disk Image.
+        /// </summary>
+        public async Task NewDiskImage() {
+            if (!CloseWorkFile()) {
+                return;
+            }
+            CreateDiskImage dialog = new CreateDiskImage(mMainWin, AppHook);
+            if (await dialog.ShowDialog<bool?>(mMainWin) != true) {
+                return;
+            }
+            if (!string.IsNullOrEmpty(dialog.PathName)) {
+                await DoOpenWorkFile(dialog.PathName, false);
+            }
+        }
+
+        /// <summary>
+        /// Handles File → New File Archive.
+        /// </summary>
+        public async Task NewFileArchive() {
+            CreateFileArchive dialog = new CreateFileArchive(mMainWin);
+            if (await dialog.ShowDialog<bool?>(mMainWin) != true) {
+                return;
+            }
+            if (!CloseWorkFile()) {
+                return;
+            }
+
+            string ext;
+            FilePickerFileType fileType;
+            switch (dialog.Kind) {
+                case DiskArc.Defs.FileKind.Binary2:
+                    ext = ".bny";
+                    fileType = new FilePickerFileType("Binary II") {
+                        Patterns = new[] { "*.bny", "*.bqy" }
+                    };
+                    break;
+                case DiskArc.Defs.FileKind.NuFX:
+                    ext = ".shk";
+                    fileType = new FilePickerFileType("NuFX Archive") {
+                        Patterns = new[] { "*.shk", "*.sdk", "*.bxy" }
+                    };
+                    break;
+                case DiskArc.Defs.FileKind.Zip:
+                    ext = ".zip";
+                    fileType = new FilePickerFileType("ZIP Archive") {
+                        Patterns = new[] { "*.zip" }
+                    };
+                    break;
+                default:
+                    Debug.Assert(false);
+                    return;
+            }
+
+            var topLevel = TopLevel.GetTopLevel(mMainWin);
+            var file = await topLevel!.StorageProvider.SaveFilePickerAsync(
+                new FilePickerSaveOptions {
+                    Title = "Create New Archive...",
+                    SuggestedFileName = "NewArchive" + ext,
+                    FileTypeChoices = new[] {
+                        fileType,
+                        new FilePickerFileType("All Files") { Patterns = new[] { "*" } }
+                    }
+                });
+            if (file == null) {
+                return;
+            }
+
+            string pathName = file.Path.LocalPath;
+            if (!pathName.ToLowerInvariant().EndsWith(ext)) {
+                pathName += ext;
+            }
+
+            IArchive archive;
+            switch (dialog.Kind) {
+                case DiskArc.Defs.FileKind.Binary2:
+                    archive = Binary2.CreateArchive(AppHook);
+                    break;
+                case DiskArc.Defs.FileKind.NuFX:
+                    archive = NuFX.CreateArchive(AppHook);
+                    break;
+                case DiskArc.Defs.FileKind.Zip:
+                    archive = Zip.CreateArchive(AppHook);
+                    break;
+                default:
+                    Debug.Assert(false);
+                    return;
+            }
+
+            try {
+                using (FileStream imgStream = new FileStream(pathName, FileMode.CreateNew)) {
+                    archive.StartTransaction();
+                    archive.CommitTransaction(imgStream);
+                }
+                await DoOpenWorkFile(pathName, false);
+            } catch (IOException ex) {
+                ShowFileError("Unable to create archive: " + ex.Message);
+            }
+        }
+
+        // -----------------------------------------------------------------------------------------
         // Debug log viewer
 
         /// <summary>
@@ -952,23 +1055,35 @@ namespace cp2_avalonia {
                 Environment.CurrentDirectory);
 
             var topLevel = TopLevel.GetTopLevel(mMainWin);
-            var folders = await topLevel!.StorageProvider.OpenFolderPickerAsync(
-                new FolderPickerOpenOptions {
-                    Title = spec == null ? "Select folder to add" : "Select folder to import",
-                    AllowMultiple = false,
+            var files = await topLevel!.StorageProvider.OpenFilePickerAsync(
+                new FilePickerOpenOptions {
+                    Title = spec == null ? "Select files to add" : "Select files to import",
+                    AllowMultiple = true,
                     SuggestedStartLocation = await topLevel.StorageProvider
                         .TryGetFolderFromPathAsync(initialDir)
                 });
-            if (folders.Count == 0) {
+            if (files.Count == 0) {
                 return;
             }
-            string folderPath = folders[0].Path.LocalPath;
-            AppSettings.Global.SetString(AppSettings.LAST_ADD_DIR, folderPath);
 
-            // Pass the selected folder as a single-item path array.  ConfigureAddOpts sets
-            // Recurse = true so AddFileSet will descend into the folder.
-            string[] pathNames = new[] { folderPath };
-            await AddPaths(pathNames, IFileEntry.NO_ENTRY, spec);
+            string[] pathNames = new string[files.Count];
+            for (int i = 0; i < files.Count; i++) {
+                pathNames[i] = files[i].Path.LocalPath;
+            }
+
+            // Compute the longest common directory prefix of all selected files.
+            // This preserves subdirectory structure when files are selected from
+            // different subdirectories (possible with some file pickers, e.g. KDE).
+            string basePath = Path.GetDirectoryName(Path.GetFullPath(pathNames[0])) ??
+                Path.GetFullPath(pathNames[0]);
+            for (int i = 1; i < pathNames.Length; i++) {
+                string dir = Path.GetDirectoryName(Path.GetFullPath(pathNames[i])) ??
+                    Path.GetFullPath(pathNames[i]);
+                basePath = GetCommonPathPrefix(basePath, dir);
+            }
+            AppSettings.Global.SetString(AppSettings.LAST_ADD_DIR, basePath);
+
+            await AddPaths(pathNames, IFileEntry.NO_ENTRY, spec, basePath);
         }
 
         /// <summary>
@@ -981,11 +1096,13 @@ namespace cp2_avalonia {
                 return;
             }
             await AddPaths(pathNames, dropTarget,
-                mMainWin.IsChecked_ImportExport ? GetImportSpec() : null);
+                mMainWin.IsChecked_ImportExport ? GetImportSpec() : null, null);
         }
 
+        /// <param name="explicitBasePath">If non-null, use this as the base path for
+        ///   relative storage names.  When null, derives from pathNames[0].</param>
         private async Task AddPaths(string[] pathNames, IFileEntry dropTarget,
-                ConvConfig.FileConvSpec? importSpec) {
+                ConvConfig.FileConvSpec? importSpec, string? explicitBasePath) {
             Debug.WriteLine("Add paths (importSpec=" + importSpec + "):");
             foreach (string path in pathNames) {
                 Debug.WriteLine("  " + path);
@@ -999,11 +1116,13 @@ namespace cp2_avalonia {
                 targetDir = dropTarget;
             }
 
-            string basePath = Path.GetDirectoryName(pathNames[0]) ?? pathNames[0];
-            // When the entire selected item IS a folder (from OpenFolderPickerAsync), use its
-            // parent as the base path so AddFileSet processes it as a recursive root.
-            if (Directory.Exists(pathNames[0]) && pathNames.Length == 1) {
-                basePath = Path.GetDirectoryName(pathNames[0]) ?? pathNames[0];
+            string basePath;
+            if (!string.IsNullOrEmpty(explicitBasePath)) {
+                basePath = Path.GetFullPath(explicitBasePath);
+            } else {
+                // Drag-and-drop: all files typically share the same parent directory.
+                basePath = Path.GetDirectoryName(Path.GetFullPath(pathNames[0])) ??
+                    Path.GetFullPath(pathNames[0]);
             }
 
             AddFileSet.AddOpts addOpts = ConfigureAddOpts(importSpec != null);
@@ -1039,6 +1158,35 @@ namespace cp2_avalonia {
 
             // Refresh even if cancelled — partial progress may have occurred.
             RefreshDirAndFileList();
+        }
+
+        /// <summary>
+        /// Returns the longest common directory prefix of two absolute directory paths.
+        /// For example, "/a/b/c" and "/a/b/d" yields "/a/b".
+        /// </summary>
+        private static string GetCommonPathPrefix(string path1, string path2) {
+            // Split on the directory separator and find the longest matching prefix.
+            char sep = Path.DirectorySeparatorChar;
+            string[] parts1 = path1.Split(sep);
+            string[] parts2 = path2.Split(sep);
+            int commonLen = Math.Min(parts1.Length, parts2.Length);
+            int lastMatch = 0;
+            for (int i = 0; i < commonLen; i++) {
+                if (!string.Equals(parts1[i], parts2[i], StringComparison.Ordinal)) {
+                    break;
+                }
+                lastMatch = i + 1;
+            }
+            if (lastMatch == 0) {
+                // No common prefix at all — fall back to root of first path.
+                return Path.GetPathRoot(path1) ?? path1;
+            }
+            string result = string.Join(sep, parts1, 0, lastMatch);
+            // Ensure we don't return an empty string for root paths (e.g. "/").
+            if (result.Length == 0) {
+                result = sep.ToString();
+            }
+            return result;
         }
 
         /// <summary>
