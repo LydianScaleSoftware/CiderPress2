@@ -767,13 +767,26 @@ namespace cp2_avalonia {
                     Debug.WriteLine("ExportFiles exception: " + ex.Message); } },
                 () => mMainCtrl != null && mMainCtrl.IsFileOpen && ShowCenterFileList &&
                      mMainCtrl.AreFileEntriesSelected);
-            DeleteFilesCommand = new RelayCommand(() => NotImplemented("Delete Files"), () => false);
+            DeleteFilesCommand = new RelayCommand(
+                async () => { try { await mMainCtrl.DeleteFiles(); } catch (Exception ex) {
+                    Debug.WriteLine("DeleteFiles exception: " + ex.Message); } },
+                () => mMainCtrl != null && mMainCtrl.IsFileOpen && mMainCtrl.CanWrite &&
+                     mMainCtrl.IsMultiFileItemSelected && ShowCenterFileList &&
+                     mMainCtrl.AreFileEntriesSelected);
             TestFilesCommand = new RelayCommand(() => NotImplemented("Test Files"), () => false);
-            EditAttributesCommand = new RelayCommand(() => NotImplemented("Edit Attributes"), () => false);
+            EditAttributesCommand = new RelayCommand(
+                async () => { try { await mMainCtrl.EditAttributes(); } catch (Exception ex) {
+                    Debug.WriteLine("EditAttributes exception: " + ex.Message); } },
+                () => mMainCtrl != null && mMainCtrl.IsFileOpen &&
+                     mMainCtrl.IsSingleEntrySelected);
             CreateDirectoryCommand = new RelayCommand(
                 async () => await mMainCtrl.CreateDirectory(),
                 () => mMainCtrl.IsHierarchicalFileSystemSelected && mMainCtrl.CanWrite);
-            EditDirAttributesCommand = new RelayCommand(() => NotImplemented("Edit Directory Attributes"), () => false);
+            EditDirAttributesCommand = new RelayCommand(
+                async () => { try { await mMainCtrl.EditDirAttributes(); } catch (Exception ex) {
+                    Debug.WriteLine("EditDirAttributes exception: " + ex.Message); } },
+                () => mMainCtrl != null && mMainCtrl.IsFileOpen &&
+                     mMainCtrl.IsFileSystemSelected);
             EditSectorsCommand = new RelayCommand(() => NotImplemented("Edit Sectors"), () => false);
             EditBlocksCommand = new RelayCommand(() => NotImplemented("Edit Blocks"), () => false);
             EditBlocksCPMCommand = new RelayCommand(() => NotImplemented("Edit Blocks (CP/M)"), () => false);

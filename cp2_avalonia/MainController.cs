@@ -513,6 +513,327 @@ namespace cp2_avalonia {
         }
 
         // -----------------------------------------------------------------------------------------
+        // Actions → Delete Files
+
+        /// <summary>
+        /// Handles Actions → Delete Files.
+        /// </summary>
+        public async Task DeleteFiles() {
+            if (!GetSelectedArcDir(out object? archiveOrFileSystem, out DiskArcNode? daNode,
+                    out IFileEntry unused)) {
+                return;
+            }
+
+            if (!GetFileSelection(omitDir: false, omitOpenArc: false, closeOpenArc: true,
+                    oneMeansAll: false, out archiveOrFileSystem, out IFileEntry unusedDir,
+                    out List<IFileEntry>? selected, out int firstSelIndex)) {
+                return;
+            }
+            if (selected.Count == 0) {
+                await ShowMessageAsync("No files selected.", "Empty");
+                return;
+            }
+
+            // We can't undo it, so get confirmation first.
+            string msg = string.Format("Delete {0} file {1}?", selected.Count,
+                selected.Count == 1 ? "entry" : "entries");
+            if (!await ShowConfirmAsync(msg, "Confirm Delete")) {
+                return;
+            }
+
+            SettingsHolder settings = AppSettings.Global;
+            DeleteProgress prog = new DeleteProgress(archiveOrFileSystem, daNode, selected,
+                    AppHook) {
+                DoCompress = settings.GetBool(AppSettings.ADD_COMPRESS_ENABLED, true),
+                EnableMacOSZip = settings.GetBool(AppSettings.MAC_ZIP_ENABLED, true),
+            };
+
+            WorkProgress workDialog = new WorkProgress(mMainWin, prog, false);
+            await workDialog.ShowDialog(mMainWin);
+            bool didCancel = !workDialog.DialogResult;
+            if (!didCancel) {
+                mMainWin.PostNotification("Deletion successful", true);
+            } else {
+                mMainWin.PostNotification("Cancelled", false);
+            }
+
+            if (!(didCancel && archiveOrFileSystem is IArchive)) {
+                // Put the selection on the item above the first one we deleted.
+                int selectIdx = Math.Max(0, Math.Min(firstSelIndex - 1,
+                    mMainWin.FileList.Count - 1));
+                if (mMainWin.FileList.Count > 0) {
+                    mMainWin.SelectedFileListItem = mMainWin.FileList[selectIdx];
+                }
+            }
+
+            RefreshDirAndFileList();
+        }
+
+        // -----------------------------------------------------------------------------------------
+        // Actions → Move Files (called from drag-drop, no menu command)
+
+        /// <summary>
+        /// Moves files to a new directory.  Called from drag-drop handlers (Iteration 13).
+        /// </summary>
+        public async Task MoveFiles(List<IFileEntry> moveList, IFileEntry targetDir) {
+            if (CurrentWorkObject is not IFileSystem) {
+                Debug.WriteLine("Ignoring move request in " + CurrentWorkObject);
+                return;
+            }
+            if (targetDir == IFileEntry.NO_ENTRY) {
+                Debug.Assert(false, "Drag target is NO_FILE");
+                return;
+            }
+            if (!CanWrite) {
+                await ShowMessageAsync("Drop target is not writable.", "Not Writable");
+                return;
+            }
+            if (targetDir.IsDubious || targetDir.IsDamaged) {
+                await ShowMessageAsync("Destination directory is not writable.", "Not Writable");
+                return;
+            }
+            if (!targetDir.IsDirectory) {
+                Debug.Assert(false, "bad move request");
+                return;
+            }
+
+            // Screen out invalid and no-op requests.
+            for (int i = moveList.Count - 1; i >= 0; i--) {
+                IFileEntry entry = moveList[i];
+                if (entry.ContainingDir == targetDir) {
+                    Debug.WriteLine("- ignoring non-move " + entry + " -> " + targetDir);
+                    moveList.RemoveAt(i);
+                    continue;
+                }
+                if (entry.IsDirectory) {
+                    IFileEntry checkEnt = targetDir;
+                    while (checkEnt != IFileEntry.NO_ENTRY) {
+                        if (checkEnt == entry) {
+                            await ShowMessageAsync(
+                                "Cannot move a directory into itself or a descendant.",
+                                "Bad Move");
+                            return;
+                        }
+                        checkEnt = checkEnt.ContainingDir;
+                    }
+                }
+            }
+            if (moveList.Count == 0) {
+                Debug.WriteLine("Nothing to move");
+                return;
+            }
+
+            if (!GetSelectedArcDir(out object? archiveOrFileSystem, out DiskArcNode? daNode,
+                    out IFileEntry unused)) {
+                Debug.Assert(false);
+                return;
+            }
+
+            SettingsHolder settings = AppSettings.Global;
+            MoveProgress prog = new MoveProgress(CurrentWorkObject, daNode, moveList, targetDir,
+                    AppHook) {
+                DoCompress = settings.GetBool(AppSettings.ADD_COMPRESS_ENABLED, true),
+            };
+
+            WorkProgress workDialog = new WorkProgress(mMainWin, prog, false);
+            await workDialog.ShowDialog(mMainWin);
+            if (workDialog.DialogResult) {
+                mMainWin.PostNotification("Move successful", true);
+            } else {
+                mMainWin.PostNotification("Cancelled", false);
+            }
+
+            // Clear selection since file list items' pathnames have changed.
+            mMainWin.fileListDataGrid.SelectedItems.Clear();
+
+            // Regenerate FileListItem for each moved entry (pathname fields may have changed).
+            foreach (IFileEntry entry in moveList) {
+                FileListItem? item = FileListItem.FindItemByEntry(mMainWin.FileList, entry,
+                        out int itemIndex);
+                if (item == null) {
+                    Debug.Assert(false, "unable to find entry: " + entry);
+                    continue;
+                }
+                FileListItem newItem = new FileListItem(entry, mFormatter);
+                mMainWin.FileList.RemoveAt(itemIndex);
+                mMainWin.FileList.Insert(itemIndex, newItem);
+                mMainWin.fileListDataGrid.SelectedItems.Add(newItem);
+            }
+
+            RefreshDirAndFileList();
+        }
+
+        // -----------------------------------------------------------------------------------------
+        // Actions → Edit Attributes / Edit Directory Attributes
+
+        /// <summary>
+        /// Handles Actions → Edit Attributes (file list selection).
+        /// </summary>
+        public async Task EditAttributes() {
+            ArchiveTreeItem? arcTreeSel = mMainWin.SelectedArchiveTreeItem;
+            FileListItem? fileItem = mMainWin.SelectedFileListItem;
+            if (arcTreeSel == null || fileItem == null) {
+                Debug.Assert(false);
+                return;
+            }
+
+            DirectoryTreeItem? dirTreeItem = null;
+            if (fileItem.FileEntry.IsDirectory) {
+                dirTreeItem = DirectoryTreeItem.FindItemByEntry(mMainWin.DirectoryTreeRoot,
+                    fileItem.FileEntry);
+            }
+
+            await EditAttributesImpl(arcTreeSel.WorkTreeNode, fileItem.FileEntry,
+                dirTreeItem, fileItem);
+        }
+
+        /// <summary>
+        /// Handles Actions → Edit Directory Attributes (directory tree selection).
+        /// </summary>
+        public async Task EditDirAttributes() {
+            ArchiveTreeItem? arcTreeSel = mMainWin.SelectedArchiveTreeItem;
+            DirectoryTreeItem? dirTreeSel = mMainWin.SelectedDirectoryTreeItem;
+            if (arcTreeSel == null || dirTreeSel == null) {
+                Debug.Assert(false);
+                return;
+            }
+
+            FileListItem? fileItem =
+                FileListItem.FindItemByEntry(mMainWin.FileList, dirTreeSel.FileEntry);
+            await EditAttributesImpl(arcTreeSel.WorkTreeNode, dirTreeSel.FileEntry,
+                dirTreeSel, fileItem);
+        }
+
+        private async Task EditAttributesImpl(WorkTree.Node workNode, IFileEntry entry,
+                DirectoryTreeItem? dirItem, FileListItem? fileItem) {
+            Debug.WriteLine("EditAttributes: " + entry);
+            object archiveOrFileSystem = workNode.DAObject;
+
+            bool isMacZip = false;
+            bool isMacZipEnabled = AppSettings.Global.GetBool(AppSettings.MAC_ZIP_ENABLED, true);
+            IFileEntry adfEntry = IFileEntry.NO_ENTRY;
+            IFileEntry adfArchiveEntry = IFileEntry.NO_ENTRY;
+            FileAttribs curAttribs = new FileAttribs(entry);
+
+            if (isMacZipEnabled && workNode.DAObject is Zip &&
+                    Zip.HasMacZipHeader((Zip)workNode.DAObject, entry, out adfEntry)) {
+                Zip arc = (Zip)workNode.DAObject;
+                // Must create dialog inside the using blocks so adfArchiveEntry remains valid.
+                using (Stream adfStream = ArcTemp.ExtractToTemp(arc, adfEntry,
+                        DiskArc.Defs.FilePart.DataFork)) {
+                    using (IArchive adfArchive = AppleSingle.OpenArchive(adfStream, AppHook)) {
+                        adfArchiveEntry = adfArchive.GetFirstEntry();
+                        curAttribs.GetFromAppleSingle(adfArchiveEntry);
+                        curAttribs.FullPathName = entry.FullPathName;
+                        isMacZip = true;
+
+                        bool isReadOnly;
+                        if (archiveOrFileSystem is IFileSystem fs) {
+                            isReadOnly = fs.IsReadOnly;
+                        } else if (archiveOrFileSystem is IArchive ia) {
+                            isReadOnly = ia.IsReadOnly;
+                        } else {
+                            isReadOnly = false;
+                        }
+
+                        EditAttributes dialog = new EditAttributes(mMainWin, archiveOrFileSystem,
+                            entry, adfArchiveEntry, curAttribs, isReadOnly);
+                        if (await dialog.ShowDialog<bool?>(mMainWin) != true) {
+                            return;
+                        }
+
+                        SettingsHolder settings = AppSettings.Global;
+                        EditAttributesProgress prog = new EditAttributesProgress(mMainWin,
+                                workNode.DAObject, workNode.FindDANode(), entry, adfEntry,
+                                dialog.NewAttribs, AppHook) {
+                            DoCompress = settings.GetBool(AppSettings.ADD_COMPRESS_ENABLED, true),
+                            EnableMacOSZip = isMacZipEnabled,
+                        };
+
+                        if (prog.DoUpdate(isMacZip)) {
+                            mMainWin.PostNotification("File attributes edited", true);
+                            FinishEditAttributes(entry, adfEntry, dialog.NewAttribs,
+                                isMacZip, fileItem, dirItem, archiveOrFileSystem);
+                        }
+                    }
+                }
+                RefreshDirAndFileList();
+                return;
+            }
+
+            // Non-MacZip path.
+            if (!isMacZip) {
+                bool isReadOnly;
+                if (archiveOrFileSystem is IFileSystem fs2) {
+                    isReadOnly = fs2.IsReadOnly;
+                } else if (archiveOrFileSystem is IArchive ia2) {
+                    isReadOnly = ia2.IsReadOnly;
+                } else {
+                    isReadOnly = false;
+                }
+
+                EditAttributes dialog2 = new EditAttributes(mMainWin, archiveOrFileSystem,
+                    entry, IFileEntry.NO_ENTRY, curAttribs, isReadOnly);
+                if (await dialog2.ShowDialog<bool?>(mMainWin) != true) {
+                    return;
+                }
+
+                SettingsHolder settings2 = AppSettings.Global;
+                EditAttributesProgress prog2 = new EditAttributesProgress(mMainWin,
+                        workNode.DAObject, workNode.FindDANode(), entry, IFileEntry.NO_ENTRY,
+                        dialog2.NewAttribs, AppHook) {
+                    DoCompress = settings2.GetBool(AppSettings.ADD_COMPRESS_ENABLED, true),
+                    EnableMacOSZip = isMacZipEnabled,
+                };
+
+                if (prog2.DoUpdate(false)) {
+                    mMainWin.PostNotification("File attributes edited", true);
+                    FinishEditAttributes(entry, IFileEntry.NO_ENTRY, dialog2.NewAttribs,
+                        false, fileItem, dirItem, archiveOrFileSystem);
+                }
+            }
+
+            RefreshDirAndFileList();
+        }
+
+        private void FinishEditAttributes(IFileEntry entry, IFileEntry adfEntry,
+                FileAttribs newAttribs, bool isMacZip, FileListItem? fileItem,
+                DirectoryTreeItem? dirItem, object archiveOrFileSystem) {
+            if (fileItem != null) {
+                FileListItem newFli;
+                if (isMacZip) {
+                    newFli = new FileListItem(entry, adfEntry, newAttribs, mFormatter);
+                } else {
+                    newFli = new FileListItem(entry, mFormatter);
+                }
+                int index = mMainWin.FileList.IndexOf(fileItem);
+                if (index >= 0) {
+                    mMainWin.FileList[index] = newFli;
+                    mMainWin.SelectedFileListItem = newFli;
+                }
+
+                ArchiveTreeItem? ati =
+                    ArchiveTreeItem.FindItemByEntry(mMainWin.ArchiveTreeRoot, entry);
+                if (ati != null) {
+                    ati.Name = entry.FileName;
+                }
+            }
+
+            if (dirItem != null) {
+                dirItem.Name = entry.FileName;
+
+                if (entry.IsDirectory && entry.ContainingDir == IFileEntry.NO_ENTRY) {
+                    ArchiveTreeItem? ati =
+                        ArchiveTreeItem.FindItemByDAObject(mMainWin.ArchiveTreeRoot,
+                        archiveOrFileSystem);
+                    if (ati != null) {
+                        ati.Name = entry.FileName;
+                    }
+                }
+            }
+        }
+
+        // -----------------------------------------------------------------------------------------
         // Debug log viewer
 
         /// <summary>
@@ -977,6 +1298,49 @@ namespace cp2_avalonia {
             var okBtn = (Avalonia.Controls.Button)sp.Children[1];
             okBtn.Click += (_, _) => msgWin.Close();
             await msgWin.ShowDialog(mMainWin);
+        }
+
+        /// <summary>
+        /// Shows a confirmation dialog with OK and Cancel buttons.  Returns true if OK was
+        /// clicked.
+        /// </summary>
+        private async Task<bool> ShowConfirmAsync(string message, string title) {
+            bool result = false;
+            var confirmWin = new Window {
+                Title = title,
+                Width = 380,
+                SizeToContent = SizeToContent.Height,
+                CanResize = false,
+                ShowInTaskbar = false,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Content = new Avalonia.Controls.StackPanel {
+                    Margin = new Avalonia.Thickness(16),
+                    Spacing = 12,
+                    Children = {
+                        new Avalonia.Controls.TextBlock {
+                            Text = message,
+                            TextWrapping = Avalonia.Media.TextWrapping.Wrap
+                        },
+                        new Avalonia.Controls.StackPanel {
+                            Orientation = Avalonia.Layout.Orientation.Horizontal,
+                            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+                            Spacing = 8,
+                            Children = {
+                                new Avalonia.Controls.Button { Content = "OK", Width = 80 },
+                                new Avalonia.Controls.Button { Content = "Cancel", Width = 80 }
+                            }
+                        }
+                    }
+                }
+            };
+            var outerSp = (Avalonia.Controls.StackPanel)confirmWin.Content!;
+            var btnSp = (Avalonia.Controls.StackPanel)outerSp.Children[1];
+            var okBtn = (Avalonia.Controls.Button)btnSp.Children[0];
+            var cancelBtn = (Avalonia.Controls.Button)btnSp.Children[1];
+            okBtn.Click += (_, _) => { result = true; confirmWin.Close(); };
+            cancelBtn.Click += (_, _) => confirmWin.Close();
+            await confirmWin.ShowDialog(mMainWin);
+            return result;
         }
     }
 }
