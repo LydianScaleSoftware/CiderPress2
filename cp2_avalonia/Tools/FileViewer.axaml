@@ -1,0 +1,334 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!-- Copyright 2023 faddenSoft
+Copyright 2026 Lydian Scale Software
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License. -->
+<Window x:Class="cp2_avalonia.Tools.FileViewer"
+        xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:cp2_avalonia.Tools"
+        xmlns:common="clr-namespace:cp2_avalonia.Common"
+        xmlns:avaloniaEdit="clr-namespace:AvaloniaEdit;assembly=AvaloniaEdit"
+        mc:Ignorable="d"
+        Title="File Viewer"
+        Width="801"
+        Height="700"
+        MinWidth="700"
+        MinHeight="400"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner">
+    <Window.KeyBindings>
+        <KeyBinding Gesture="F3"
+                    Command="{Binding FindNextCommand}" />
+        <KeyBinding Gesture="Shift+F3"
+                    Command="{Binding FindPrevCommand}" />
+    </Window.KeyBindings>
+    <Window.Styles>
+        <!-- Bold tab header when the tab is enabled -->
+        <Style Selector="TabItem:enabled /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="FontWeight"
+                    Value="Bold" />
+        </Style>
+    </Window.Styles>
+    <Grid Margin="0,8">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <!-- Prev/next navigation buttons -->
+        <Button Grid.Row="0"
+                Grid.RowSpan="2"
+                Grid.Column="0"
+                Height="50"
+                Width="20"
+                FontSize="16"
+                Margin="0,0,0,80"
+                HorizontalContentAlignment="Center"
+                VerticalContentAlignment="Center"
+                Content="&lt;"
+                FontFamily="{StaticResource ViewerMonoFont}"
+                Padding="0"
+                ToolTip.Tip="{Binding PrevFileTip}"
+                IsEnabled="{Binding HasPrevFile}"
+                Click="PrevFile_Click" />
+        <Button Grid.Row="0"
+                Grid.RowSpan="2"
+                Grid.Column="2"
+                Height="50"
+                Width="20"
+                FontSize="16"
+                Margin="0,0,0,80"
+                HorizontalContentAlignment="Center"
+                VerticalContentAlignment="Center"
+                Content=">"
+                FontFamily="{StaticResource ViewerMonoFont}"
+                Padding="0"
+                ToolTip.Tip="{Binding NextFileTip}"
+                IsEnabled="{Binding HasNextFile}"
+                Click="NextFile_Click" />
+        <Border Grid.Row="0"
+                Grid.Column="1"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                BorderThickness="1"
+                CornerRadius="4"
+                Padding="0">
+        <TabControl Name="tabControl"
+                    TabStripPlacement="Bottom"
+                    SelectionChanged="TabControl_SelectionChanged">
+            <!-- Data Fork tab -->
+            <TabItem Name="dataTabItem"
+                     Header="Data Fork"
+                     IsEnabled="{Binding IsDataTabEnabled}">
+                <Grid>
+                    <!-- TextEditor for simple and fancy text content -->
+                    <avaloniaEdit:TextEditor Name="dataForkTextEditor"
+                                             IsReadOnly="True"
+                                             FontFamily="{StaticResource ViewerMonoFont}"
+                                             FontSize="12"
+                                             ShowLineNumbers="False"
+                                             WordWrap="True"
+                                             IsVisible="{Binding IsTextVisible}" />
+                    <!-- Bitmap viewer with checkerboard background -->
+                    <ScrollViewer IsVisible="{Binding IsBitmapVisible}"
+                                  HorizontalScrollBarVisibility="Auto"
+                                  VerticalScrollBarVisibility="Auto">
+                        <Border BorderThickness="0"
+                                HorizontalAlignment="Stretch"
+                                Background="{StaticResource CheckerBackground}">
+                            <Image Name="previewImage"
+                                   RenderOptions.BitmapInterpolationMode="None"
+                                   Source="{Binding PreviewBitmap}" />
+                        </Border>
+                    </ScrollViewer>
+                </Grid>
+            </TabItem>
+            <!-- Resource Fork tab -->
+            <TabItem Name="rsrcTabItem"
+                     Header="Resource Fork"
+                     IsEnabled="{Binding IsRsrcTabEnabled}">
+                <avaloniaEdit:TextEditor Name="rsrcForkTextEditor"
+                                         IsReadOnly="True"
+                                         FontFamily="{StaticResource ViewerMonoFont}"
+                                         FontSize="12"
+                                         WordWrap="True" />
+            </TabItem>
+            <!-- Notes tab -->
+            <TabItem Name="noteTabItem"
+                     Header="Notes"
+                     IsEnabled="{Binding IsNoteTabEnabled}">
+                <avaloniaEdit:TextEditor Name="noteTextEditor"
+                                         IsReadOnly="True"
+                                         FontFamily="{StaticResource ViewerMonoFont}"
+                                         FontSize="12"
+                                         WordWrap="True" />
+            </TabItem>
+        </TabControl>
+        </Border>
+        <!-- Bottom panel -->
+        <Grid Grid.Row="1"
+              Grid.Column="1"
+              Margin="0,8,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <!-- Left: converter selection and options -->
+            <StackPanel Grid.Column="0">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="Conversion:"
+                               Margin="0,2,4,0" />
+                    <ComboBox Name="convComboBox"
+                              Width="240"
+                              HorizontalAlignment="Left"
+                              SelectionChanged="ConvComboBox_SelectionChanged" />
+                </StackPanel>
+                <common:GroupBox Header="Options"
+                                 MinHeight="120"
+                                 IsEnabled="{Binding IsOptionsBoxEnabled}">
+                    <StackPanel>
+                        <TextBlock Name="noOptions"
+                                   Text="(none)"
+                                   HorizontalAlignment="Center" />
+                        <CheckBox Name="checkBox1"
+                                  Content="Check 1"
+                                  Margin="0,2,0,0" />
+                        <CheckBox Name="checkBox2"
+                                  Content="Check 2"
+                                  Margin="0,2,0,0" />
+                        <CheckBox Name="checkBox3"
+                                  Content="Check 3"
+                                  Margin="0,2,0,0" />
+                        <StackPanel Name="stringInput1"
+                                    Orientation="Horizontal"
+                                    Margin="0,2,0,0">
+                            <TextBlock Name="stringInput1_Label"
+                                       Text="Entry label:"
+                                       Margin="0,0,8,0" />
+                            <TextBox Name="stringInput1_Box"
+                                     Width="70"
+                                     Text="100" />
+                        </StackPanel>
+                        <common:GroupBox Name="multiGroup1"
+                                         Header="Multi Group 1">
+                            <StackPanel>
+                                <RadioButton Name="radioButton1_1"
+                                             GroupName="group1"
+                                             Content="Radio 1"
+                                             Margin="0,2,0,0" />
+                                <RadioButton Name="radioButton1_2"
+                                             GroupName="group1"
+                                             Content="Radio 2"
+                                             Margin="0,2,0,0" />
+                                <RadioButton Name="radioButton1_3"
+                                             GroupName="group1"
+                                             Content="Radio 3"
+                                             Margin="0,2,0,0" />
+                                <RadioButton Name="radioButton1_4"
+                                             GroupName="group1"
+                                             Content="Radio 4"
+                                             Margin="0,2,0,0" />
+                            </StackPanel>
+                        </common:GroupBox>
+                        <common:GroupBox Name="multiGroup2"
+                                         Header="Multi Group 2">
+                            <StackPanel>
+                                <RadioButton Name="radioButton2_1"
+                                             GroupName="group2"
+                                             Content="Radio 1"
+                                             Margin="0,2,0,0" />
+                                <RadioButton Name="radioButton2_2"
+                                             GroupName="group2"
+                                             Content="Radio 2"
+                                             Margin="0,2,0,0" />
+                                <RadioButton Name="radioButton2_3"
+                                             GroupName="group2"
+                                             Content="Radio 3"
+                                             Margin="0,2,0,0" />
+                                <RadioButton Name="radioButton2_4"
+                                             GroupName="group2"
+                                             Content="Radio 4"
+                                             Margin="0,2,0,0" />
+                            </StackPanel>
+                        </common:GroupBox>
+                    </StackPanel>
+                </common:GroupBox>
+                <Button Width="180"
+                        Margin="0,4,0,0"
+                        Content="Save as _Default Configuration"
+                        IsEnabled="{Binding IsSaveDefaultsEnabled}"
+                        Click="SaveDefaultsButton_Click" />
+            </StackPanel>
+            <!-- Right: view controls -->
+            <DockPanel Grid.Column="1"
+                       LastChildFill="False"
+                       Margin="8,0,0,0">
+                <StackPanel DockPanel.Dock="Top"
+                            Orientation="Horizontal">
+                    <Button Width="90"
+                            Content="_Text"
+                            Margin="8,0,0,0"
+                            Click="SelectPlainText_Click" />
+                    <Button Width="90"
+                            Content="_Hex Dump"
+                            Margin="8,0,0,0"
+                            Click="SelectHexDump_Click" />
+                    <Button Width="90"
+                            Content="_Best"
+                            Margin="8,0,0,0"
+                            Click="SelectBest_Click" />
+                </StackPanel>
+                <Grid DockPanel.Dock="Top"
+                      Margin="0,12,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0"
+                               Text="Find:" />
+                    <TextBox Grid.Column="1"
+                             Margin="4,0,0,0"
+                             Name="searchStringTextBox"
+                             Text="{Binding SearchString}"
+                             IsEnabled="{Binding IsFindEnabled}"
+                             KeyDown="SearchStringTextBox_KeyDown" />
+                    <Button Grid.Column="2"
+                            Width="70"
+                            Margin="4,0,0,0"
+                            Content="Prev"
+                            IsEnabled="{Binding IsFindButtonsEnabled}"
+                            Command="{Binding FindPrevCommand}" />
+                    <Button Grid.Column="3"
+                            Width="70"
+                            Margin="4,0,0,0"
+                            Content="Next"
+                            IsEnabled="{Binding IsFindButtonsEnabled}"
+                            Command="{Binding FindNextCommand}" />
+                </Grid>
+                <DockPanel DockPanel.Dock="Top"
+                           Margin="0,8,0,0">
+                    <TextBlock DockPanel.Dock="Left"
+                               Text="Graphics zoom:"
+                               Margin="0,0,4,0" />
+                    <TextBox DockPanel.Dock="Right"
+                             Width="34"
+                             Margin="4,0,0,0"
+                             HorizontalContentAlignment="Center"
+                             IsReadOnly="True"
+                             Text="{Binding GraphicsZoomStr, FallbackValue=1X}" />
+                    <Slider Name="magnificationSlider"
+                            Minimum="0"
+                            Maximum="4"
+                            TickFrequency="1"
+                            IsSnapToTickEnabled="True"
+                            Value="1"
+                            ValueChanged="MagnificationSlider_ValueChanged" />
+                </DockPanel>
+                <CheckBox DockPanel.Dock="Top"
+                          Margin="0,8,0,0"
+                          Content="Open _raw (DOS 3.x only)"
+                          IsEnabled="{Binding IsDOSRawEnabled}"
+                          IsChecked="{Binding IsDOSRaw}" />
+                <DockPanel DockPanel.Dock="Bottom"
+                           Margin="0,8,0,0"
+                           LastChildFill="False">
+                    <Button DockPanel.Dock="Right"
+                            Width="70"
+                            Margin="8,0,0,0"
+                            Content="Done"
+                            Click="DoneButton_Click" />
+                    <Button DockPanel.Dock="Right"
+                            Content="_Export..."
+                            Width="70"
+                            Margin="8,0,0,0"
+                            IsEnabled="{Binding IsExportEnabled}"
+                            Click="ExportButton_Click" />
+                    <Button DockPanel.Dock="Right"
+                            Content="Copy"
+                            Width="70"
+                            Margin="8,0,0,0"
+                            IsEnabled="{Binding IsExportEnabled}"
+                            Click="CopyButton_Click" />
+                </DockPanel>
+            </DockPanel>
+        </Grid>
+    </Grid>
+</Window>

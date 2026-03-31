@@ -742,7 +742,11 @@ namespace cp2_avalonia {
             SelectAllCommand = new RelayCommand(() => NotImplemented("Select All"), () => false);
             EditAppSettingsCommand = new RelayCommand(() => NotImplemented("Settings"));
 
-            ViewFilesCommand = new RelayCommand(() => NotImplemented("View Files"), () => false);
+            ViewFilesCommand = new RelayCommand(
+                async () => { try { await mMainCtrl.ViewFiles(); } catch (Exception ex) {
+                    Debug.WriteLine("ViewFiles exception: " + ex.Message); } },
+                () => mMainCtrl != null && mMainCtrl.IsFileOpen &&
+                     mMainCtrl.AreFileEntriesSelected && ShowCenterFileList);
             AddFilesCommand = new RelayCommand(
                 async () => { try { await mMainCtrl.AddFiles(); } catch (Exception ex) {
                     Debug.WriteLine("AddFiles exception: " + ex.Message); } },

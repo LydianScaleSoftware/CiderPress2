@@ -20,6 +20,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
+using System.Threading.Tasks;
 using System.Text;
 
 using Avalonia.Input;
@@ -904,15 +905,35 @@ namespace cp2_avalonia {
             }
 
             // View the selection.
-            ViewFiles();
+            _ = ViewFiles();
         }
 
         /// <summary>
-        /// View selected files.  Stub — full implementation in a later iteration.
+        /// View selected files.
         /// </summary>
-        private void ViewFiles() {
-            // TODO: port FileViewer (Iteration 7+)
-            Debug.WriteLine("ViewFiles: not yet implemented");
+        public async Task ViewFiles() {
+            if (!GetFileSelection(omitDir: true, omitOpenArc: true, closeOpenArc: false,
+                    oneMeansAll: true, out object? archiveOrFileSystem, out IFileEntry _,
+                    out List<IFileEntry>? selected, out int firstSel)) {
+                await ShowMessageAsync("GetFileSelection returned false — no selection could " +
+                    "be determined.", "ViewFiles Debug");
+                return;
+            }
+            if (selected.Count == 0 || firstSel < 0) {
+                await ShowMessageAsync("No viewable files selected (can't view directories " +
+                    "or open disks/archives).\nselected.Count=" + selected.Count +
+                    " firstSel=" + firstSel, "Empty");
+                return;
+            }
+
+            try {
+                var dialog = new cp2_avalonia.Tools.FileViewer();
+                dialog.Init(mMainWin, archiveOrFileSystem, selected, firstSel, AppHook);
+                await dialog.ShowDialog<object?>(mMainWin);
+            } catch (Exception ex) {
+                await ShowMessageAsync("FileViewer threw an exception:\n" + ex.Message +
+                    "\n\n" + ex.StackTrace, "ViewFiles Error");
+            }
         }
     }
 }

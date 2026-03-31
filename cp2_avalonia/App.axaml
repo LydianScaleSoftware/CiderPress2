@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8" ?>
+<?xml version="1.0" encoding="UTF-8"?>
 <!-- Copyright 2023 faddenSoft
 Copyright 2026 Lydian Scale Software
 
@@ -57,6 +57,12 @@ limitations under the License. -->
             <Setter Property="MinHeight"
                     Value="20" />
         </Style>
+        <Style Selector="TabItem">
+            <Setter Property="FontSize"
+                    Value="14" />
+                    <Setter Property="Padding"
+                    Value="6,2" />
+        </Style>
     </Application.Styles>
     <Application.Resources>
         <ResourceDictionary>
@@ -64,8 +70,8 @@ limitations under the License. -->
                 <!-- Stub created in Step 8a; actual icons ported in Iteration 2 -->
                 <ResourceInclude Source="avares://CiderPress2/Res/Icons.axaml" />
             </ResourceDictionary.MergedDictionaries>
-            <FontFamily x:Key="GeneralMonoFont">Cascadia Mono, Consolas, Menlo, monospace</FontFamily>
-            <FontFamily x:Key="ViewerMonoFont">Cascadia Mono, Consolas, Menlo, monospace</FontFamily>
+            <FontFamily x:Key="GeneralMonoFont">Cascadia Mono, Consolas, DejaVu Sans Mono, Liberation Mono, Menlo, monospace</FontFamily>
+            <FontFamily x:Key="ViewerMonoFont">Cascadia Mono, Consolas, DejaVu Sans Mono, Liberation Mono, Menlo, monospace</FontFamily>
             <x:Double x:Key="ControlContentThemeFontSize">14</x:Double>
             <common:InverseBooleanConverter x:Key="InvertBool" />
             <!-- Checkerboard background for bitmap image display.
