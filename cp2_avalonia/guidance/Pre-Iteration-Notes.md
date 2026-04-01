@@ -510,3 +510,21 @@ behavior as closely as possible.
     (`= new()`) for collections, and move all remaining assignments above
     `InitializeComponent()`. This applies to both parameterless (previewer) and
     parameterized constructors.
+12. **`TextBox.TextChanged` fires asynchronously** — Unlike WPF (which fires `TextChanged`
+    synchronously during property assignment), Avalonia dispatches `TextChanged` via the UI
+    thread dispatcher. This means a guard flag like `mIsConfiguring = false` set
+    synchronously at the end of a configuration method will already be cleared by the time
+    the `TextChanged` event fires, causing handlers to run with partially-configured state.
+    Always defer the flag reset using the dispatcher:
+    ```csharp
+    // WRONG (WPF pattern — breaks in Avalonia):
+    ConfigureControls(...);
+    mIsConfiguring = false;
+
+    // CORRECT (Avalonia pattern):
+    ConfigureControls(...);
+    Avalonia.Threading.Dispatcher.UIThread.Post(() => mIsConfiguring = false);
+    ```
+    When porting WPF code that uses `mIsConfiguring` (or any similar guard flag) around
+    `TextBox` value assignments, always cross-check against the already-ported
+    `FileViewer.axaml.cs` which established this pattern first.

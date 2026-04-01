@@ -939,5 +939,65 @@ namespace cp2_avalonia {
                     "\n\n" + ex.StackTrace, "ViewFiles Error");
             }
         }
+
+        // -----------------------------------------------------------------------------------------
+        // Metadata
+
+        /// <summary>
+        /// Handles a double-click on a metadata list entry.
+        /// </summary>
+        public async Task HandleMetadataDoubleClick(MainWindow.MetadataItem item,
+                int row, int col) {
+            IMetadata? metaObj = CurrentWorkObject as IMetadata;
+            if (metaObj == null) {
+                Debug.Assert(false);
+                return;
+            }
+            EditMetadata dialog = new EditMetadata(metaObj, item.Key);
+            bool? result = await dialog.ShowDialog<bool?>(mMainWin);
+            if (result == true) {
+                if (dialog.DoDelete) {
+                    metaObj.DeleteMetaEntry(dialog.KeyText);
+                    mMainWin.RemoveMetadata(item.Key);
+                } else {
+                    metaObj.SetMetaValue(item.Key, dialog.ValueText);
+                    string? fancyValue = metaObj.GetMetaValue(item.Key, true);
+                    if (fancyValue != null) {
+                        mMainWin.UpdateMetadata(item.Key, fancyValue);
+                    }
+                }
+                if (metaObj is IDiskImage diskImg) {
+                    diskImg.Flush();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Handles a click on the "Add Metadata Entry" button.
+        /// </summary>
+        public async Task HandleMetadataAddEntry() {
+            IMetadata? metaObj = CurrentWorkObject as IMetadata;
+            if (metaObj == null) {
+                Debug.Assert(false);
+                return;
+            }
+            if (metaObj is Woz woz && !woz.HasMeta) {
+                woz.AddMETA();
+                mMainWin.SetMetadataList(metaObj);
+            }
+            AddMetadata dialog = new AddMetadata(metaObj);
+            bool? result = await dialog.ShowDialog<bool?>(mMainWin);
+            if (result == true) {
+                metaObj.SetMetaValue(dialog.KeyText, dialog.ValueText);
+                if (metaObj is IDiskImage diskImg) {
+                    diskImg.Flush();
+                }
+                IMetadata.MetaEntry? entry = metaObj.GetMetaEntry(dialog.KeyText);
+                if (entry != null) {
+                    string? value = metaObj.GetMetaValue(dialog.KeyText, true) ?? dialog.ValueText;
+                    mMainWin.AddMetadata(entry, value);
+                }
+            }
+        }
     }
 }

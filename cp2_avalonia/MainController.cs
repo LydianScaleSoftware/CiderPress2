@@ -34,7 +34,9 @@ using cp2_avalonia.Common;
 using DiskArc;
 using DiskArc.Arc;
 using DiskArc.FS;
+using DiskArc.Multi;
 using FileConv;
+using static DiskArc.Defs;
 
 namespace cp2_avalonia {
     /// <summary>
@@ -424,6 +426,13 @@ namespace cp2_avalonia {
                 settings.GetInt(AppSettings.MAIN_LEFT_PANEL_WIDTH, 300);
 
             UnpackRecentFileList();
+
+            if (mWorkTree != null) {
+                RefreshDirAndFileList();
+            }
+            AppHook.SetOptionEnum(DAAppHook.AUDIO_DEC_ALG,
+                settings.GetEnum(AppSettings.AUDIO_DECODE_ALG,
+                    CassetteDecoder.Algorithm.ZeroCross));
         }
 
         // -----------------------------------------------------------------------------------------
@@ -1410,6 +1419,339 @@ namespace cp2_avalonia {
             result.AddRange(dirs);
             result.AddRange(files);
             return result;
+        }
+
+        // -----------------------------------------------------------------------------------------
+        // EditAppSettings
+
+        /// <summary>
+        /// Handles Edit : Application Settings.
+        /// </summary>
+        public async Task EditAppSettings() {
+            EditAppSettings dlg = new EditAppSettings(mMainWin);
+            dlg.SettingsApplied += ApplyAppSettings;
+            await dlg.ShowDialog<bool?>(mMainWin);
+            // Settings are applied via raised event.
+        }
+
+        // -----------------------------------------------------------------------------------------
+        // Find Files
+
+        /// <summary>
+        /// This keeps track of state while we're traversing the tree, trying to find matches.
+        /// </summary>
+        private class FindFileState {
+            public ArchiveTreeItem mCurrentArchive;
+            public IFileEntry mCurrentEntry;
+
+            public bool mFoundCurrent;
+
+            public ArchiveTreeItem? mFirstArchive;
+            public IFileEntry mFirstEntry = IFileEntry.NO_ENTRY;
+            public ArchiveTreeItem? mPrevArchive;
+            public IFileEntry mPrevEntry = IFileEntry.NO_ENTRY;
+            public ArchiveTreeItem? mNextArchive;
+            public IFileEntry mNextEntry = IFileEntry.NO_ENTRY;
+            public ArchiveTreeItem? mLastArchive;
+            public IFileEntry mLastEntry = IFileEntry.NO_ENTRY;
+
+            public FindFileState(ArchiveTreeItem currentArchive, IFileEntry currentEntry) {
+                mCurrentArchive = currentArchive;
+                mCurrentEntry = currentEntry;
+            }
+
+            public override string ToString() {
+                return "[FindRes: current=" + mCurrentEntry +
+                    "\r\n  first=" + mFirstEntry +
+                    "\r\n  prev=" + mPrevEntry +
+                    "\r\n  next=" + mNextEntry +
+                    "\r\n  last=" + mLastEntry +
+                    "\r\n]";
+            }
+        }
+
+        /// <summary>
+        /// Handles Edit : Find Files.  Displays the modeless Find File dialog.
+        /// </summary>
+        public async Task FindFiles() {
+            FindFile dialog = new FindFile();
+            dialog.FindRequested += DoFindFiles;
+            await dialog.ShowDialog<bool?>(mMainWin);
+        }
+
+        /// <summary>
+        /// Does the actual work of finding matching files.
+        /// </summary>
+        private void DoFindFiles(FindFile.FindFileReq req) {
+            Debug.WriteLine("Find Files: " + req);
+
+            ArchiveTreeItem? arcTreeSel = mMainWin.SelectedArchiveTreeItem;
+            if (arcTreeSel == null) {
+                Debug.WriteLine("No archive entry selected");
+                return;
+            }
+
+            object? arcObj = arcTreeSel.WorkTreeNode.DAObject;
+            if (arcObj is not IArchive && arcObj is not IFileSystem) {
+                Debug.WriteLine("Can't start with this archive object: " + arcObj);
+                return;
+            }
+
+            IFileEntry selEntry;
+            IList listSel = mMainWin.fileListDataGrid.SelectedItems;
+            if (listSel.Count == 0) {
+                var allItems = mMainWin.FileList;
+                if (allItems.Count == 0) {
+                    Debug.WriteLine("Empty archive/FS selected, can't search");
+                    return;
+                }
+                selEntry = allItems[0].FileEntry;
+            } else {
+                selEntry = ((FileListItem)listSel[0]!).FileEntry;
+            }
+
+            Debug.WriteLine("FIND starting from " + arcTreeSel + " / " + selEntry);
+            FindFileState results = new FindFileState(arcTreeSel, selEntry);
+            FindInTree(mMainWin.ArchiveTreeRoot, req, results);
+            Debug.WriteLine("FIND results: " + results);
+
+            if (results.mFirstArchive == null) {
+                mMainWin.PostNotification("No matches found", false);
+                return;
+            }
+
+            ArchiveTreeItem newTreeItem;
+            IFileEntry newEntry;
+            if (req.Forward) {
+                if (results.mNextArchive != null) {
+                    newTreeItem = results.mNextArchive;
+                    newEntry = results.mNextEntry;
+                } else {
+                    newTreeItem = results.mFirstArchive;
+                    newEntry = results.mFirstEntry;
+                }
+            } else {
+                if (results.mPrevArchive != null) {
+                    newTreeItem = results.mPrevArchive;
+                    newEntry = results.mPrevEntry;
+                } else {
+                    newTreeItem = results.mLastArchive!;
+                    newEntry = results.mLastEntry;
+                }
+            }
+
+            ArchiveTreeItem.SelectItem(mMainWin, newTreeItem);
+            if (newEntry.ContainingDir != IFileEntry.NO_ENTRY) {
+                DirectoryTreeItem.SelectItemByEntry(mMainWin, newEntry.ContainingDir);
+            }
+            FileListItem.SelectAndView(mMainWin, newEntry);
+        }
+
+        private static void FindInTree(ObservableCollection<ArchiveTreeItem> tvRoot,
+                FindFile.FindFileReq req, FindFileState results) {
+            foreach (ArchiveTreeItem treeItem in tvRoot) {
+                object daObject = treeItem.WorkTreeNode.DAObject;
+                if (!req.CurrentArchiveOnly || treeItem == results.mCurrentArchive) {
+                    if (daObject is IArchive) {
+                        FindInArchive(treeItem, req, results);
+                    } else if (daObject is IFileSystem) {
+                        FindInFileSystem(treeItem, ((IFileSystem)daObject).GetVolDirEntry(),
+                            req, results);
+                    }
+                }
+                FindInTree(treeItem.Items, req, results);
+            }
+        }
+
+        private static void FindInArchive(ArchiveTreeItem treeItem, FindFile.FindFileReq req,
+                FindFileState results) {
+            bool macZipEnabled = AppSettings.Global.GetBool(AppSettings.MAC_ZIP_ENABLED, true);
+            IArchive arc = (IArchive)treeItem.WorkTreeNode.DAObject;
+            foreach (IFileEntry entry in arc) {
+                if (macZipEnabled && entry.IsMacZipHeader()) {
+                    continue;
+                }
+                if (entry == results.mCurrentEntry) {
+                    results.mFoundCurrent = true;
+                }
+                if (EntryMatches(entry, req)) {
+                    UpdateFindState(treeItem, entry, results);
+                }
+            }
+        }
+
+        private static void FindInFileSystem(ArchiveTreeItem treeItem, IFileEntry dir,
+                FindFile.FindFileReq req, FindFileState results) {
+            foreach (IFileEntry entry in dir) {
+                if (entry == results.mCurrentEntry) {
+                    results.mFoundCurrent = true;
+                }
+                if (EntryMatches(entry, req)) {
+                    UpdateFindState(treeItem, entry, results);
+                }
+                if (entry.IsDirectory) {
+                    FindInFileSystem(treeItem, entry, req, results);
+                }
+            }
+        }
+
+        private static bool EntryMatches(IFileEntry entry, FindFile.FindFileReq req) {
+            return entry.FileName.Contains(req.FileName,
+                    StringComparison.InvariantCultureIgnoreCase);
+        }
+
+        private static void UpdateFindState(ArchiveTreeItem treeItem, IFileEntry matchEntry,
+                FindFileState results) {
+            results.mLastArchive = treeItem;
+            results.mLastEntry = matchEntry;
+            if (results.mFirstArchive == null) {
+                results.mFirstArchive = treeItem;
+                results.mFirstEntry = matchEntry;
+            }
+            if (matchEntry != results.mCurrentEntry) {
+                if (!results.mFoundCurrent) {
+                    results.mPrevArchive = treeItem;
+                    results.mPrevEntry = matchEntry;
+                } else if (results.mNextArchive == null) {
+                    results.mNextArchive = treeItem;
+                    results.mNextEntry = matchEntry;
+                }
+            }
+        }
+
+        // -----------------------------------------------------------------------------------------
+        // Replace Partition / Save As Disk Image
+
+        /// <summary>
+        /// Handles Actions : Replace Partition.
+        /// </summary>
+        public async Task ReplacePartition() {
+            Debug.Assert(mWorkTree != null);
+            ArchiveTreeItem? arcTreeSel = mMainWin.SelectedArchiveTreeItem;
+            if (arcTreeSel == null) {
+                Debug.Assert(false);
+                return;
+            }
+            WorkTree.Node workNode = arcTreeSel.WorkTreeNode;
+            Debug.Assert(workNode.DAObject == CurrentWorkObject);
+            DiskArc.Multi.Partition? dstPartition = workNode.DAObject as DiskArc.Multi.Partition;
+            if (dstPartition == null) {
+                Debug.Assert(false);
+                return;
+            }
+
+            // Ask the user to pick a source disk image.
+            string? pathName = await PlatformUtil.AskFileToOpen(mMainWin);
+            if (string.IsNullOrEmpty(pathName)) {
+                return;
+            }
+            string ext = Path.GetExtension(pathName);
+
+            FileStream stream;
+            try {
+                stream = new FileStream(pathName, FileMode.Open, FileAccess.Read);
+            } catch (Exception ex) {
+                await ShowMessageAsync("Unable to open file: " + ex.Message, "I/O Error");
+                return;
+            }
+
+            using (stream) {
+                FileAnalyzer.AnalysisResult result = FileAnalyzer.Analyze(stream, ext, AppHook,
+                    out FileKind kind, out SectorOrder orderHint);
+                string errMsg;
+                switch (result) {
+                    case FileAnalyzer.AnalysisResult.DubiousSuccess:
+                    case FileAnalyzer.AnalysisResult.FileDamaged:
+                        errMsg = "File is not usable due to possible damage.";
+                        break;
+                    case FileAnalyzer.AnalysisResult.UnknownExtension:
+                        errMsg = "File format not recognized.";
+                        break;
+                    case FileAnalyzer.AnalysisResult.ExtensionMismatch:
+                        errMsg = "File appears to have the wrong extension.";
+                        break;
+                    case FileAnalyzer.AnalysisResult.NotImplemented:
+                        errMsg = "Support for this type of file has not been implemented.";
+                        break;
+                    case FileAnalyzer.AnalysisResult.Success:
+                        errMsg = Defs.IsDiskImageFile(kind) ? string.Empty : "File is not a disk image.";
+                        break;
+                    default:
+                        errMsg = "Internal error: unexpected result from analyzer: " + result;
+                        break;
+                }
+                if (!string.IsNullOrEmpty(errMsg)) {
+                    await ShowMessageAsync(errMsg, "Unable to use file");
+                    return;
+                }
+
+                using IDiskImage? diskImage = FileAnalyzer.PrepareDiskImage(stream, kind, AppHook);
+                if (diskImage == null) {
+                    await ShowMessageAsync(
+                        "Unable to prepare disk image, type=" + ThingString.FileKind(kind) + ".",
+                        "Unable to use file");
+                    return;
+                }
+                if (!diskImage.AnalyzeDisk(null, orderHint, IDiskImage.AnalysisDepth.ChunksOnly)) {
+                    await ShowMessageAsync("Unable to determine format of disk image contents.",
+                        "Unable to use file");
+                    return;
+                }
+                Debug.Assert(diskImage.ChunkAccess != null);
+
+                bool wasClosed = false;
+                ReplacePartition.EnableWriteFunc func = delegate () {
+                    Debug.Assert(mWorkTree.CheckHealth());
+                    workNode.CloseChildren();
+                    dstPartition.CloseContents();
+                    Debug.Assert(mWorkTree.CheckHealth());
+                    arcTreeSel.Items.Clear();
+                    wasClosed = true;
+                    return true;
+                };
+
+                ReplacePartition dialog = new ReplacePartition(dstPartition,
+                    diskImage.ChunkAccess, func, mFormatter, AppHook);
+                bool? dlgResult = await dialog.ShowDialog<bool?>(mMainWin);
+                if (dlgResult == true) {
+                    mMainWin.PostNotification("Completed", true);
+                }
+
+                try {
+                    var waitCursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Wait);
+                    mMainWin.Cursor = waitCursor;
+                    try {
+                        if (wasClosed) {
+                            mWorkTree.ReprocessPartition(workNode);
+                            foreach (WorkTree.Node childNode in workNode) {
+                                ArchiveTreeItem.ConstructTree(arcTreeSel, childNode);
+                            }
+                        }
+                    } finally {
+                        mMainWin.Cursor = null;
+                        waitCursor.Dispose();
+                    }
+                } catch (Exception ex) {
+                    Debug.WriteLine("ReplacePartition post-processing exception: " + ex.Message);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Handles Actions : Save As Disk Image.
+        /// </summary>
+        public async Task SaveAsDiskImage() {
+            IChunkAccess? chunks = GetCurrentWorkChunks();
+            if (chunks == null) {
+                Debug.Assert(false);
+                return;
+            }
+
+            SaveAsDisk dialog = new SaveAsDisk(CurrentWorkObject!, chunks, mFormatter, AppHook);
+            bool? result = await dialog.ShowDialog<bool?>(mMainWin);
+            if (result == true) {
+                mMainWin.PostNotification("Saved", true);
+            }
         }
 
         // -----------------------------------------------------------------------------------------

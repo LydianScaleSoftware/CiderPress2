@@ -18,6 +18,8 @@ using System;
 using System.IO;
 using System.Threading.Tasks;
 using Avalonia.Controls;
+using Avalonia.Layout;
+using Avalonia.Media;
 using Avalonia.Platform.Storage;
 
 namespace cp2_avalonia.Common {
@@ -90,6 +92,42 @@ namespace cp2_avalonia.Common {
         /// </summary>
         public static bool IsAdministrator() {
             return Environment.IsPrivilegedProcess;
+        }
+
+        /// <summary>
+        /// Shows a simple modal message box with an OK button.
+        /// </summary>
+        /// <param name="owner">Parent window.</param>
+        /// <param name="message">Text to display.</param>
+        /// <param name="title">Window title.</param>
+        public static async Task ShowMessageAsync(Window owner, string message, string title) {
+            var dlg = new Window {
+                Title = title,
+                Width = 380,
+                SizeToContent = SizeToContent.Height,
+                CanResize = false,
+                ShowInTaskbar = false,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Content = new Avalonia.Controls.StackPanel {
+                    Margin = new Avalonia.Thickness(16),
+                    Spacing = 12,
+                    Children = {
+                        new Avalonia.Controls.TextBlock {
+                            Text = message,
+                            TextWrapping = Avalonia.Media.TextWrapping.Wrap
+                        },
+                        new Avalonia.Controls.Button {
+                            Content = "OK",
+                            Width = 80,
+                            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center
+                        }
+                    }
+                }
+            };
+            var sp = (Avalonia.Controls.StackPanel)dlg.Content!;
+            var btn = (Avalonia.Controls.Button)sp.Children[1];
+            btn.Click += (_, _) => dlg.Close();
+            await dlg.ShowDialog(owner);
         }
     }
 }

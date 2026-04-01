@@ -160,5 +160,9 @@ namespace cp2_avalonia {
         private void OkButton_Click(object? sender, RoutedEventArgs e) {
             Close(true);
         }
+
+        private void CancelButton_Click(object? sender, RoutedEventArgs e) {
+            Close(false);
+        }
     }
 }

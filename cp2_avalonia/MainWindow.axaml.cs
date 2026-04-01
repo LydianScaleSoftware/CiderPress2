@@ -621,6 +621,8 @@ namespace cp2_avalonia {
             NotesList.Clear();
             ShowNotes = false;
             MetadataList.Clear();
+            ShowMetadata = false;
+            CanAddMetadataEntry = false;
         }
 
         // ---- Info panel sub-sections ----
@@ -680,10 +682,80 @@ namespace cp2_avalonia {
             ShowNotes = (notes.Count > 0);
         }
 
-        public ObservableCollection<object> MetadataList { get; } = new();
+        public class MetadataItem : INotifyPropertyChanged {
+            public string Key { get; private set; }
+            public string Value { get; private set; }
+            public string? Description { get; private set; }
+            public string? ValueSyntax { get; private set; }
+            public bool CanEdit { get; private set; }
+
+            public MetadataItem(string key, string value, string description,
+                    string valueSyntax, bool canEdit) {
+                Key = key;
+                Value = value;
+                Description = string.IsNullOrEmpty(description) ? null : description;
+                ValueSyntax = string.IsNullOrEmpty(valueSyntax) ? null : valueSyntax;
+                CanEdit = canEdit;
+            }
+
+            public event PropertyChangedEventHandler? PropertyChanged;
+            public void SetValue(string value) {
+                Value = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Value)));
+            }
+        }
+
+        public ObservableCollection<MetadataItem> MetadataList { get; } = new();
+
+        private bool mShowMetadata;
+        public bool ShowMetadata {
+            get => mShowMetadata;
+            set { mShowMetadata = value; OnPropertyChanged(); }
+        }
+
+        private bool mCanAddMetadataEntry;
+        public bool CanAddMetadataEntry {
+            get => mCanAddMetadataEntry;
+            set { mCanAddMetadataEntry = value; OnPropertyChanged(); }
+        }
+
         public void SetMetadataList(IMetadata metaObj) {
             MetadataList.Clear();
-            // TODO: implement metadata display in a later iteration
+            List<IMetadata.MetaEntry> entries = metaObj.GetMetaEntries();
+            foreach (IMetadata.MetaEntry met in entries) {
+                string? value = metaObj.GetMetaValue(met.Key, true);
+                if (value == null) {
+                    value = "!NOT FOUND!";
+                }
+                MetadataList.Add(new MetadataItem(met.Key, value, met.Description,
+                    met.ValueSyntax, met.CanEdit));
+            }
+            ShowMetadata = true;
+            CanAddMetadataEntry = metaObj.CanAddNewEntries;
+        }
+
+        public void UpdateMetadata(string key, string value) {
+            foreach (MetadataItem item in MetadataList) {
+                if (item.Key == key) {
+                    item.SetValue(value);
+                    break;
+                }
+            }
+        }
+
+        public void AddMetadata(IMetadata.MetaEntry met, string value) {
+            MetadataList.Add(new MetadataItem(met.Key, value, met.Description,
+                met.ValueSyntax, met.CanEdit));
+        }
+
+        public void RemoveMetadata(string key) {
+            for (int i = 0; i < MetadataList.Count; i++) {
+                if (MetadataList[i].Key == key) {
+                    MetadataList.RemoveAt(i);
+                    return;
+                }
+            }
+            Debug.Assert(false, "Key not found: " + key);
         }
 
         // ---- Scroll / focus helpers ----
@@ -744,9 +816,14 @@ namespace cp2_avalonia {
 
             CopyCommand = new RelayCommand(() => NotImplemented("Copy"), () => false);
             PasteCommand = new RelayCommand(() => NotImplemented("Paste"), () => false);
-            FindCommand = new RelayCommand(() => NotImplemented("Find"), () => false);
+            FindCommand = new RelayCommand(
+                async () => { try { await mMainCtrl.FindFiles(); } catch (Exception ex) {
+                    Debug.WriteLine("FindFiles exception: " + ex.Message); } },
+                () => mMainCtrl != null && mMainCtrl.IsFileOpen && mMainCtrl.AreFileEntriesSelected);
             SelectAllCommand = new RelayCommand(() => NotImplemented("Select All"), () => false);
-            EditAppSettingsCommand = new RelayCommand(() => NotImplemented("Settings"));
+            EditAppSettingsCommand = new RelayCommand(
+                async () => { try { await mMainCtrl.EditAppSettings(); } catch (Exception ex) {
+                    Debug.WriteLine("EditAppSettings exception: " + ex.Message); } });
 
             ViewFilesCommand = new RelayCommand(
                 async () => { try { await mMainCtrl.ViewFiles(); } catch (Exception ex) {
@@ -796,8 +873,16 @@ namespace cp2_avalonia {
             EditSectorsCommand = new RelayCommand(() => NotImplemented("Edit Sectors"), () => false);
             EditBlocksCommand = new RelayCommand(() => NotImplemented("Edit Blocks"), () => false);
             EditBlocksCPMCommand = new RelayCommand(() => NotImplemented("Edit Blocks (CP/M)"), () => false);
-            SaveAsDiskImageCommand = new RelayCommand(() => NotImplemented("Save As Disk Image"), () => false);
-            ReplacePartitionCommand = new RelayCommand(() => NotImplemented("Replace Partition Contents"), () => false);
+            SaveAsDiskImageCommand = new RelayCommand(
+                async () => { try { await mMainCtrl.SaveAsDiskImage(); } catch (Exception ex) {
+                    Debug.WriteLine("SaveAsDiskImage exception: " + ex.Message); } },
+                () => mMainCtrl != null && mMainCtrl.IsFileOpen &&
+                     mMainCtrl.IsDiskOrPartitionSelected && mMainCtrl.HasChunks);
+            ReplacePartitionCommand = new RelayCommand(
+                async () => { try { await mMainCtrl.ReplacePartition(); } catch (Exception ex) {
+                    Debug.WriteLine("ReplacePartition exception: " + ex.Message); } },
+                () => mMainCtrl != null && mMainCtrl.IsFileOpen &&
+                     mMainCtrl.CanWrite && mMainCtrl.IsPartitionSelected);
             ScanForBadBlocksCommand = new RelayCommand(() => NotImplemented("Scan for Bad Blocks"), () => false);
             ScanForSubVolCommand = new RelayCommand(() => NotImplemented("Scan for Sub-Volumes"), () => false);
             DefragmentCommand = new RelayCommand(() => NotImplemented("Defragment Filesystem"), () => false);

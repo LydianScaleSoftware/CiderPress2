@@ -54,7 +54,7 @@ limitations under the License.
             <Button Name="okButton" Content="OK" IsDefault="True" Width="70"
                     IsEnabled="{Binding IsValid}" Click="OkButton_Click"/>
             <Button Name="cancelButton" Content="Cancel" IsCancel="True"
-                    Width="70" Margin="4,0,0,0"/>
+                    Width="70" Margin="4,0,0,0" Click="CancelButton_Click"/>
         </StackPanel>
     </Grid>
 </Window>
