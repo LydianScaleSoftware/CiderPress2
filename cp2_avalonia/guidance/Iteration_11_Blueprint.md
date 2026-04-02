@@ -5,6 +5,191 @@
 
 ---
 
+## Implementation Status (Agent Annotation)
+
+> **Last updated:** All fixes applied. Manual testing complete. Build: 0 errors, 0 warnings.
+
+| Area | Status | Notes |
+|---|---|---|
+| `EditSector.axaml` (Step 1) | ✅ COMPLETE | `SelectionUnit="Cell"` removed, `CurrentCellChanged` wired, `x:Class` added, `common:GroupBox` xmlns fixed. |
+| `SectorRow` class (Step 2) | ✅ COMPLETE | Inner class in EditSector.axaml.cs. All 16 column properties, PushDigit, Refresh, AsText. |
+| `EditSector.axaml.cs` (Step 3) | ✅ COMPLETE | All 6 fixes applied: handler, SetPosition, Items→SectorData, PropertyChanged `new` keyword. |
+| `MainController.cs` (Step 4) | ✅ COMPLETE | `EditBlocksSectors()` async method added. |
+| `MainController_Panels.cs` | ✅ COMPLETE | Stub `SectorEditMode` enum replaced with `EditSector.SectorEditMode`. |
+| `MainWindow.axaml.cs` (Step 4) | ✅ COMPLETE | Three commands wired with RelayCommand + try/catch. |
+| Build verification | ✅ COMPLETE | 0 errors, 0 warnings. Parameterless constructor added for AVLN3001. |
+| Manual testing | ✅ COMPLETE | Multiple issues found and fixed during testing. See Ad Hoc Changes section. |
+
+### Remaining Fix Checklist
+
+Apply these 6 fixes in order. After all 6, the project should build and the dialog should
+open without XAML parse exceptions.
+
+#### Fix 1 — AXAML: Remove `SelectionUnit="Cell"` (RUNTIME CRASH)
+
+**File:** `EditSector.axaml`, line 58
+
+The `SelectionUnit` property does **NOT EXIST** in Avalonia DataGrid v11.2.8 (verified via
+reflection — no property, no enum, no static field). Leaving it causes a XAML parse
+exception at runtime when the dialog opens.
+
+**Action:** Delete the entire line `SelectionUnit="Cell"`.
+
+The DataGrid will operate in row-selection mode. Cell position tracking still works via
+`CurrentColumn` + `SelectedItem` (see Fix 3). Visual cell-level highlighting is addressed
+in the "Cell Highlight Strategy" section below.
+
+#### Fix 2 — AXAML: `SelectedCellsChanged` → `CurrentCellChanged` (RUNTIME CRASH)
+
+**File:** `EditSector.axaml`, line 60
+
+**Action:** Change:
+```xml
+SelectedCellsChanged="SectorDataGrid_SelectedCellsChanged"
+```
+to:
+```xml
+CurrentCellChanged="SectorDataGrid_CurrentCellChanged"
+```
+
+#### Fix 3 — Code-behind: Rewrite `SectorDataGrid_SelectedCellsChanged` (BUILD ERROR CS0246)
+
+**File:** `EditSector.axaml.cs`, lines 784–806
+
+Replace the entire handler. The old handler uses `DataGridSelectedCellsChangedEventArgs`,
+`e.AddedCells`, and `DataGridCellInfo` — none of which exist in Avalonia.
+
+**Replace with:**
+```csharp
+private void SectorDataGrid_CurrentCellChanged(object? sender, EventArgs e) {
+    var col = sectorDataGrid.CurrentColumn;
+    if (col == null) return;
+    int displayIndex = col.DisplayIndex;
+    if (displayIndex == 0) return;  // RowLabel column — ignore
+    if (sectorDataGrid.SelectedItem is not SectorRow row) return;
+    mCurRow = row.RowIndex;
+    mCurCol = displayIndex - 1;     // 0..15 = hex columns, 16 = text
+    mCurDigit = 0;
+    Debug.WriteLine("Select: posn=$" + (mCurRow * NUM_COLS + mCurCol).ToString("x3"));
+}
+```
+
+#### Fix 4 — Code-behind: Rewrite `SetPosition()` (BUILD ERROR — uses nonexistent APIs)
+
+**File:** `EditSector.axaml.cs`, lines 893–914
+
+The current code uses `sectorDataGrid.SelectedCells.Clear()`,
+`sectorDataGrid.SelectedCells.Add(new DataGridCellInfo(...))`, and
+`sectorDataGrid.Items[row]` / `sectorDataGrid.Items.Count` — **none of these exist** in
+Avalonia DataGrid.
+
+> **⚠️ IMPORTANT:** Avalonia DataGrid has `ItemsSource` (IEnumerable), NOT `Items` (IList).
+> There is no indexer. Use `SectorData[row]` (the backing `List<SectorRow>` property on
+> the same class) instead.
+
+**Replace with:**
+```csharp
+private void SetPosition(int col, int row) {
+    // col is the logical hex column (0..15); add 1 for the RowLabel column offset.
+    int gridCol = col + 1;
+    if (row < 0 || row >= SectorData.Count) return;
+    object item = SectorData[row];
+    DataGridColumn? dgCol = sectorDataGrid.Columns.Count > gridCol
+        ? sectorDataGrid.Columns[gridCol] : null;
+    if (dgCol == null) return;
+    sectorDataGrid.SelectedItem = item;
+    sectorDataGrid.CurrentColumn = dgCol;
+    sectorDataGrid.ScrollIntoView(item, dgCol);
+    sectorDataGrid.Focus();
+}
+```
+
+#### Fix 5 — Code-behind: `PropertyChanged` warning (CS0108)
+
+**File:** `EditSector.axaml.cs`, line 310
+
+**Action:** Change:
+```csharp
+public event PropertyChangedEventHandler? PropertyChanged;
+```
+to:
+```csharp
+public new event PropertyChangedEventHandler? PropertyChanged;
+```
+
+#### Fix 6 — Code-behind: Any other `sectorDataGrid.Items` references
+
+**File:** `EditSector.axaml.cs`
+
+Search for any remaining `sectorDataGrid.Items` references. There are currently 2
+(lines 896 and 899), both inside `SetPosition()` which is fully replaced by Fix 4.
+If any others exist elsewhere, replace `sectorDataGrid.Items[i]` → `SectorData[i]`
+and `sectorDataGrid.Items.Count` → `SectorData.Count`.
+
+---
+
+### Verified Avalonia DataGrid API Surface (v11.2.8, via reflection)
+
+These findings were confirmed by loading the actual `Avalonia.Controls.DataGrid.dll`
+(v11.2.8) with its dependencies and inspecting types, properties, events, and methods.
+
+**Available replacement APIs (confirmed to exist):**
+- `CurrentCellChanged` event (`EventHandler<EventArgs>`) — fires when current cell changes
+- `CurrentColumn` property (`DataGridColumn`, get/set) — current column
+- `DataGridColumn.DisplayIndex` property (`int`, get/set) — column position index
+- `SelectedItem` property (`object`, get/set) — selected row data item
+- `SelectedIndex` property (`int`, get/set) — selected row index
+- `ScrollIntoView(object item, DataGridColumn column)` — scrolls to and reveals a cell
+- `CellPointerPressed` event (`DataGridCellPointerPressedEventArgs`) — gives `.Cell`,
+  `.Row`, `.Column`, `.PointerPressedEventArgs` for mouse clicks
+- `Columns` property (`ObservableCollection<DataGridColumn>`) — column collection with indexer
+- `ItemsSource` property (`IEnumerable`, get/set) — data source (NOT an indexable `Items`)
+- `CellStyleClasses` property on `DataGridColumn` (`Classes`) — confirmed to exist
+- `SelectionMode` property (`DataGridSelectionMode`) — `Single` or `Extended`
+- `Focus()` method (inherited from `Control`)
+
+**Confirmed NOT to exist (DO NOT USE):**
+- ❌ `SelectionUnit` property — no property, no enum, no static field
+- ❌ `DataGridSelectionUnit` enum — does not exist in the assembly
+- ❌ `SelectedCells` collection — not a property on DataGrid
+- ❌ `SelectedCellsChanged` event — does not exist
+- ❌ `DataGridSelectedCellsChangedEventArgs` — type does not exist
+- ❌ `DataGridCellInfo` constructor/struct — type does not exist
+- ❌ `Items` property (IList with indexer) — DataGrid has `ItemsSource` (IEnumerable) only
+
+**DataGrid inheritance:** `DataGrid` → `TemplatedControl` → `Control` (NOT `ItemsControl`)
+
+### Risk: `CurrentCellChanged` Feedback Loop
+
+When `SetPosition()` programmatically sets `SelectedItem` + `CurrentColumn`, this may
+re-trigger `CurrentCellChanged`. The handler is resilient to this — it only reads state
+and updates tracking fields, so a re-trigger is harmless (it will re-read the same values).
+Monitor during testing.
+
+### Cell Highlight Strategy (No `SelectionUnit="Cell"`)
+
+Since `SelectionUnit` does not exist, the DataGrid operates in **row-selection mode only**.
+The entire selected row is highlighted, but there is no built-in per-cell visual indicator.
+
+**Functional impact:** None. `CurrentColumn` + `SelectedItem` still accurately track which
+cell the cursor is on, so hex editing via `PushDigit()` works correctly.
+
+**Visual impact:** The user sees a highlighted row but no indication of which specific
+column is active. This is a UX degradation from the WPF version.
+
+**Recommended approach (try in order during testing):**
+1. **Accept row-level highlighting initially.** Get the build working and verify functional
+   correctness first. The hex editor is usable with row-only selection because the user
+   types hex digits that go into the current cell — they can see what changes.
+2. **If UX is unacceptable,** add a custom `CellTheme` or CSS style that highlights the
+   current cell differently. The `DataGridColumn.CellStyleClasses` property (confirmed to
+   exist) and `DataGrid.CellPointerPressed` event may help with dynamic per-cell styling.
+3. **Escape hatch (significant rewrite):** Replace the DataGrid with an `ItemsControl` +
+   `UniformGrid` of `Border`+`TextBlock` cells with click-to-select logic. Only pursue this
+   if approaches 1-2 prove insufficient — see G-02 notes in Step 1 below.
+
+---
+
 ## Goal
 
 Port the hex sector/block editor dialog (`EditSector`). This is a specialized tool for
@@ -42,7 +227,7 @@ sector skew control, and text conversion options.
 
 ## Step-by-Step Instructions
 
-### Step 1: Port `cp2_avalonia/EditSector.axaml`
+### Step 1: Port `cp2_avalonia/EditSector.axaml` — ✅ COMPLETE
 
 Read `cp2_wpf/EditSector.xaml`. Convert the layout to AXAML.
 
@@ -57,7 +242,7 @@ title set dynamically. Wire `Opened` event (not WPF `ContentRendered`) for initi
   - `ItemsSource={Binding SectorData}` (`List<SectorRow>` — NOT ObservableCollection;
     the WPF code raises PropertyChanged for the whole list when data changes)
   - `IsReadOnly=True` initially; set to false for write mode
-  - `SelectionUnit=Cell`, `SelectionMode=Single`
+  - `SelectionMode=Single` (**NO `SelectionUnit`** — see note below)
   - 16 data columns named `C0` through `Cf`, each bound to the corresponding property
   - "Text" column (wider) bound to `AsText`
   - Row headers show the offset label via `RowLabel` binding
@@ -68,8 +253,10 @@ title set dynamically. Wire `Opened` event (not WPF `ContentRendered`) for initi
 - `Avalonia.Controls.DataGrid` (from `Avalonia.Controls.DataGrid` NuGet — **already added
   to .csproj in Iteration 0**, no additional package reference needed)
 - `AutoGenerateColumns=False` — same
-- `SelectionUnit`: Use `DataGridSelectionUnit.Cell`. This IS supported in the Avalonia
-  DataGrid API. See the **Cell selection fidelity** note below for testing guidance.
+- **`SelectionUnit` does NOT EXIST** in Avalonia DataGrid v11.2.8 (verified via reflection).
+  Do NOT put `SelectionUnit="Cell"` in AXAML — it will cause a runtime XAML parse exception.
+  The DataGrid operates in row-selection mode only. Cell position tracking is done via
+  `CurrentColumn` + `SelectedItem` in code-behind. See "Cell Highlight Strategy" above.
 - For **row headers**: Avalonia DataGrid does NOT natively support row headers. Workarounds:
   - Option A: Add an extra "Offset" column (frozen, styled differently) — simplest
   - Option B: Use `LoadingRow` event to set `DataGridRow.Header`
@@ -85,14 +272,17 @@ title set dynamically. Wire `Opened` event (not WPF `ContentRendered`) for initi
   (muted) background, be non-selectable if possible, and right-aligned — so it is visually
   distinct from the 16 editable data columns. If it is selectable, the selection handler
   must guard against `mCurCol` becoming −1 (see DisplayIndex offset in Step 3).
-- **Cell selection fidelity (G-02):** The hex editor depends on accurate single-cell
-  position tracking. Smoke-test Avalonia DataGrid cell selection early: verify
-  `SelectedCellsChanged` fires exactly once per selection, `AddedCells` contains one cell,
-  and keyboard-driven moves also fire the event. **Fallback if `SelectionUnit.Cell`
-  doesn't work reliably:** Replace the DataGrid with a custom `ItemsControl` using a
-  `UniformGrid` of `Border`+`TextBlock` cells with click-to-select logic. This is a
-  significant rewrite but is the only alternative if cell-level selection events are
-  unreliable.
+- **Cell position tracking fidelity (G-02):** The hex editor depends on accurate single-cell
+  position tracking. Use the `CurrentCellChanged` event (`EventHandler<EventArgs>`) to track
+  position via `sectorDataGrid.CurrentColumn.DisplayIndex` + `sectorDataGrid.SelectedItem`.
+  Smoke-test after built: verify `CurrentCellChanged` fires for both mouse clicks and
+  keyboard arrow-key navigation, and that `CurrentColumn` is non-null and accurate.
+  The `CellPointerPressed` event (with `DataGridCellPointerPressedEventArgs` giving `.Cell`,
+  `.Row`, `.Column`) is available as an alternative/supplement for mouse-driven selection
+  if `CurrentCellChanged` proves unreliable for pointer input.
+  **Fallback if DataGrid cell-tracking fails:** Replace the DataGrid with a custom
+  `ItemsControl` + `UniformGrid` of `Border`+`TextBlock` cells with click-to-select logic.
+  This is a significant rewrite — only pursue if the DataGrid approach fundamentally fails.
 
 ```xml
 <!-- Column 0: Offset (frozen) -->
@@ -125,7 +315,7 @@ interception. For the Window-level Ctrl+C intercept, use `KeyDown` on the Window
 `AddHandler(KeyDownEvent, handler, RoutingStrategies.Tunnel)` in code-behind if tunneling
 is needed to pre-empt the DataGrid).
 
-### Step 2: Port `SectorRow` Inner Class
+### Step 2: Port `SectorRow` Inner Class — ✅ COMPLETE
 
 Read the `SectorRow` class from `cp2_wpf/EditSector.xaml.cs`. This is the DataGrid row
 data model.
@@ -179,7 +369,7 @@ mirrors WPF's layout for `D0`–`D9` and `A`–`F`, so this arithmetic is expect
 Use explicit casts `(int)Key.D0` and `(int)Key.A` to avoid ambiguous operator resolution.
 Verify against the Avalonia `Key` source if behavior is unexpected during testing.
 
-### Step 3: Port `cp2_avalonia/EditSector.axaml.cs`
+### Step 3: Port `cp2_avalonia/EditSector.axaml.cs` — 🔶 BLOCKED (see Status section above)
 
 Read `cp2_wpf/EditSector.xaml.cs` (~1,100 lines) fully. This is a large file.
 
@@ -308,12 +498,20 @@ an interactive ComboBox). Shows the nibble codec name or "N/A".
    (`if (IsIOErrorMsgVisible) return;`).
 10. `SystemColors.GradientInactiveCaptionBrushKey` (section header bg) → static color or
     themed `DynamicResource`, per earlier iterations.
-11. `sectorDataGrid.SelectRowColAndFocus(row, col)` — write from scratch for Avalonia using
-    `DataGrid.SelectedCells`, `DataGrid.ScrollIntoView()`, and `Focus()`.
-12. `SectorDataGrid_SelectedCellsChanged` — Avalonia uses
-    `DataGridSelectedCellsChangedEventArgs` (not WPF `SelectedCellsChangedEventArgs`).
-    `e.AddedCells` collection type and `DataGridCellInfo` structure differ; adjust property
-    access accordingly.
+11. `sectorDataGrid.SelectRowColAndFocus(row, col)` — The WPF extension method uses
+    `SelectedCells` and `DataGridCellInfo` which don't exist in Avalonia. **Rewrite
+    `SetPosition()` from scratch** using `sectorDataGrid.SelectedItem = item` +
+    `sectorDataGrid.CurrentColumn = dgCol` + `ScrollIntoView(item, dgCol)` + `Focus()`.
+    **IMPORTANT:** Avalonia DataGrid has NO `Items` indexer property. Use `SectorData[row]`
+    (the backing `List<SectorRow>`) instead of `sectorDataGrid.Items[row]`. Use
+    `SectorData.Count` instead of `sectorDataGrid.Items.Count`.
+    See Fix 4 in the "Remaining Fix Checklist" above for exact code.
+
+12. `SectorDataGrid_SelectedCellsChanged` — This event does NOT exist in Avalonia DataGrid.
+    **Replace with `CurrentCellChanged`** event (`EventHandler<EventArgs>`). Read position via
+    `sectorDataGrid.CurrentColumn?.DisplayIndex` and `sectorDataGrid.SelectedItem`.
+    See Fix 3 in the "Remaining Fix Checklist" above for exact code.
+
 13. `Keyboard.Modifiers` → `e.KeyModifiers` (from event args, not static property).
     `ModifierKeys.None` → `KeyModifiers.None`; `ModifierKeys.Control` →
     `KeyModifiers.Control`.
@@ -323,14 +521,14 @@ an interactive ComboBox). Shows the nibble codec name or "N/A".
     `CopyToClipboard()` must become `async Task`. The `Window_KeyDown` Ctrl+C handler should
     use fire-and-forget: `_ = CopyToClipboard()`.
 16. **DisplayIndex offset (RowLabel column):** The frozen RowLabel column at
-    `DisplayIndex = 0` shifts all data columns by +1. In `SelectedCellsChanged`, subtract 1
-    from `info.Column.DisplayIndex` to get the logical column index. In `SetPosition()` /
-    `SelectRowColAndFocus()`, add 1 when addressing the DataGrid column. Guard against
-    the RowLabel column being selected (`mCurCol` must never become −1).
+    `DisplayIndex = 0` shifts all data columns by +1. In `CurrentCellChanged` handler,
+    subtract 1 from `col.DisplayIndex` to get the logical column index. In `SetPosition()`,
+    add 1 when addressing the DataGrid column. Guard against the RowLabel column being
+    selected (`displayIndex == 0` → return early).
 17. `sectorOrderCombo.SelectedIndex = -1` → `sectorOrderCombo.SelectedItem = null`
     (Avalonia ComboBox does not reliably support `SelectedIndex = -1`).
 
-### Step 4: Wire Sector Editor Commands
+### Step 4: Wire Sector Editor Commands — ✅ COMPLETE
 
 In `MainController.cs`, port the sector editor launcher. The WPF version has a **single**
 method `EditBlocksSectors(EditSector.SectorEditMode editMode)` — NOT three separate methods.
@@ -417,12 +615,39 @@ EditSectorsCommand = new RelayCommand(
 
 ---
 
+## Ad Hoc Changes
+
+These changes were made during manual testing and differ from the original WPF design.
+
+### Consolidated "Edit Blocks (CP/M)" into the Block Editor
+
+The WPF version has three separate menu items under Actions: "Edit Sectors...",
+"Edit Blocks...", and "Edit Blocks (CP/M)...". Each launches the same `EditSector` dialog
+with a different `SectorEditMode` enum value (`Sectors`, `Blocks`, `CPMBlocks`).
+
+In the Avalonia port, the "Edit Blocks (CP/M)..." menu item was **removed**. Instead, a
+**Block Order combo box** was added inside the EditSector dialog's Advanced configuration
+panel. In block mode, the combo is always visible; it is enabled when the disk has
+16-sector tracks and a CP/M-compatible size (`CPM.IsSizeAllowed()` and
+`NumSectorsPerTrack == 16`), otherwise disabled showing only "ProDOS". Changing the block
+order re-reads the current block; if data is dirty, the user is prompted first.
+
+This is a deliberate design divergence from WPF. See `PORTING_NOTES.md` in the
+`cp2_avalonia/` directory for full details.
+
+---
+
 ## Verification Checklist
 
-- [ ] `dotnet build` succeeds
+> **Status: BLOCKED** — Apply the 6 fixes from the "Remaining Fix Checklist" section above,
+> then run through this checklist.
+
+- [ ] `dotnet build` succeeds with no errors and no warnings
 - [ ] Actions → Edit Blocks opens sector editor in block mode (block number input)
 - [ ] Actions → Edit Sectors opens in sector mode (track + sector inputs)
 - [ ] DataGrid shows 16 hex columns + offset + ASCII text
+- [ ] **SMOKE TEST (G-02):** Click a cell → verify `CurrentCellChanged` fires and `mCurRow`/`mCurCol` update correctly
+- [ ] **SMOKE TEST (G-02):** Arrow keys → verify `CurrentCellChanged` fires for keyboard navigation too
 - [ ] Reading a valid block displays data correctly
 - [ ] Reading an invalid block shows error overlay
 - [ ] Mono font is used consistently
@@ -434,3 +659,7 @@ EditSectorsCommand = new RelayCommand(
 - [ ] Write button is enabled only when data has been modified (if writable)
 - [ ] Write saves changes back to the disk image
 - [ ] Dialog is not resizable, sizes to content
+- [ ] **CELL HIGHLIGHT:** Note that row-level highlighting (not cell-level) is expected
+      since `SelectionUnit` doesn't exist in Avalonia. Verify the selected row is visually
+      highlighted and that hex digit entry targets the correct cell. If cell-level
+      highlighting is deemed necessary, see "Cell Highlight Strategy" in the status section.

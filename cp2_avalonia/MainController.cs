@@ -1738,6 +1738,77 @@ namespace cp2_avalonia {
         }
 
         /// <summary>
+        /// Handles Actions : Edit Sectors / Blocks / Blocks (CP/M).
+        /// </summary>
+        public async Task EditBlocksSectors(EditSector.SectorEditMode editMode) {
+            Debug.Assert(mWorkTree != null);
+            ArchiveTreeItem? arcTreeSel = mMainWin.SelectedArchiveTreeItem;
+            if (arcTreeSel == null) {
+                Debug.Assert(false);
+                return;
+            }
+            WorkTree.Node workNode = arcTreeSel.WorkTreeNode;
+            object daObject = workNode.DAObject;
+            IChunkAccess? chunks;
+            if (daObject is IDiskImage) {
+                chunks = ((IDiskImage)daObject).ChunkAccess;
+            } else if (daObject is Partition) {
+                chunks = ((Partition)daObject).ChunkAccess;
+            } else {
+                Debug.Assert(false, "unexpected sector edit target: " + daObject);
+                return;
+            }
+            if (chunks == null) {
+                await ShowMessageAsync("Disk sector format not recognized", "Trouble");
+                return;
+            }
+
+            bool writeEnabled = false;
+            EditSector.EnableWriteFunc? func = null;
+            if (!chunks.IsReadOnly) {
+                func = delegate () {
+                    Debug.Assert(mWorkTree.CheckHealth());
+                    workNode.CloseChildren();
+                    if (daObject is IDiskImage) {
+                        ((IDiskImage)daObject).CloseContents();
+                    } else if (daObject is Partition) {
+                        ((Partition)daObject).CloseContents();
+                    }
+                    Debug.Assert(mWorkTree.CheckHealth());
+                    arcTreeSel.Items.Clear();
+                    writeEnabled = true;
+                    return true;
+                };
+            }
+
+            EditSector dialog = new EditSector(chunks, editMode, func, mFormatter);
+            await dialog.ShowDialog<bool?>(mMainWin);
+            Debug.WriteLine("After dialog, enabled=" + writeEnabled);
+
+            if (daObject is IDiskImage) {
+                ((IDiskImage)daObject).Flush();
+            }
+
+            if (writeEnabled) {
+                var waitCursor = new Avalonia.Input.Cursor(StandardCursorType.Wait);
+                mMainWin.Cursor = waitCursor;
+                try {
+                    if (daObject is IDiskImage) {
+                        mWorkTree.ReprocessDiskImage(workNode);
+                    } else if (daObject is Partition) {
+                        mWorkTree.ReprocessPartition(workNode);
+                    }
+                    foreach (WorkTree.Node childNode in workNode) {
+                        ArchiveTreeItem.ConstructTree(arcTreeSel, childNode);
+                    }
+                } finally {
+                    mMainWin.Cursor = null;
+                    waitCursor.Dispose();
+                }
+            }
+        }
+
+        /// <summary>
         /// Handles Actions : Save As Disk Image.
         /// </summary>
         public async Task SaveAsDiskImage() {

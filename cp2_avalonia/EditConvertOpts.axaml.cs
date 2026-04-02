@@ -112,6 +112,10 @@ namespace cp2_avalonia {
             InitializeComponent();
             DataContext = this;
 
+            // InitializeComponent() resets Title from the AXAML default; re-apply it.
+            Title = isExport ? "Edit Export Conversion Options"
+                             : "Edit Import Conversion Options";
+
             // Build the control map BEFORE setting SelectedIndex so that if SelectionChanged
             // fires synchronously, ConfigureControls() finds a populated map.
             CreateControlMap();

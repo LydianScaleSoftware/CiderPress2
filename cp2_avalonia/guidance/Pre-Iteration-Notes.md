@@ -447,7 +447,20 @@ needs to change to `"cp2_avalonia"` and move to `sTargets` (cross-platform targe
 
 ## 9. Testing Strategy
 
-- After each iteration, the app should **build and run** without errors.
+- After each iteration, the app should **build and run** without errors **and without warnings**.
+  Both compiler warnings (CS-prefixed) and Avalonia XAML warnings (AVLN-prefixed) must be
+  resolved before an iteration is considered complete. Do not suppress warnings with
+  `#pragma warning disable` or `<NoWarn>` — fix the underlying cause instead.
+  Common patterns:
+  - **AVLN3001** ("no public constructor found"): Add a parameterless public constructor
+    that null-initializes required reference fields and calls `InitializeComponent()`.
+    Follow the pattern in `EditAttributes.axaml.cs`. Every dialog window with a
+    parameterized constructor must have this companion constructor.
+  - **CS8618** (non-nullable field uninitialized): Initialize the field in the
+    parameterless constructor. Use `null!` for object references that the real constructor
+    always supplies, or initialize with a sensible default value (e.g., `Brushes.Black`
+    for `IBrush` fields).
+  - **CS0108** (hides inherited member): Use the `new` keyword when intentionally hiding.
 - Unfinished features show "Not Implemented" message boxes — the app should never crash
   due to an unported feature.
 - The `DiskArcTests` and `FileConvTests` projects provide comprehensive unit tests for the

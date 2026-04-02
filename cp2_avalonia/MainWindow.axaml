@@ -110,8 +110,6 @@ limitations under the License.
                 <Separator/>
                 <MenuItem Header="Edit Sectors..." Command="{Binding EditSectorsCommand}"/>
                 <MenuItem Header="Edit Blocks..." Command="{Binding EditBlocksCommand}"/>
-                <MenuItem Header="Edit Blocks (CP/M)..."
-                          Command="{Binding EditBlocksCPMCommand}"/>
                 <MenuItem Header="Save As Disk Image..."
                           Command="{Binding SaveAsDiskImageCommand}"/>
                 <MenuItem Header="Replace Partition Contents..."

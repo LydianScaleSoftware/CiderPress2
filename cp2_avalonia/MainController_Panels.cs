@@ -47,18 +47,15 @@ namespace cp2_avalonia {
         /// </summary>
         private object? CurrentWorkObject { get; set; }
 
-        // Local equivalent of WPF's EditSector.SectorEditMode enum.
-        private enum SectorEditMode { Blocks, CPMBlocks, Sectors }
-
         // True if blocks/sectors are readable.
         public bool CanEditBlocks {
-            get { return CanAccessChunk(SectorEditMode.Blocks); }
+            get { return CanAccessChunk(EditSector.SectorEditMode.Blocks); }
         }
         public bool CanEditBlocksCPM {
-            get { return CanAccessChunk(SectorEditMode.CPMBlocks); }
+            get { return CanAccessChunk(EditSector.SectorEditMode.CPMBlocks); }
         }
         public bool CanEditSectors {
-            get { return CanAccessChunk(SectorEditMode.Sectors); }
+            get { return CanAccessChunk(EditSector.SectorEditMode.Sectors); }
         }
 
         public bool HasChunks { get { return GetCurrentWorkChunks() != null; } }
@@ -66,15 +63,15 @@ namespace cp2_avalonia {
         /// <summary>
         /// Determines whether the current work object can be sector-edited as blocks or sectors.
         /// </summary>
-        private bool CanAccessChunk(SectorEditMode mode) {
+        private bool CanAccessChunk(EditSector.SectorEditMode mode) {
             IChunkAccess? chunks = GetCurrentWorkChunks();
             if (chunks != null) {
                 switch (mode) {
-                    case SectorEditMode.Sectors:
+                    case EditSector.SectorEditMode.Sectors:
                         return chunks.HasSectors;
-                    case SectorEditMode.Blocks:
+                    case EditSector.SectorEditMode.Blocks:
                         return chunks.HasBlocks;
-                    case SectorEditMode.CPMBlocks:
+                    case EditSector.SectorEditMode.CPMBlocks:
                         return chunks.HasBlocks && CPM.IsSizeAllowed(chunks.FormattedLength);
                 }
             }
@@ -276,7 +273,6 @@ namespace cp2_avalonia {
             (mMainWin.EditDirAttributesCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (mMainWin.EditSectorsCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (mMainWin.EditBlocksCommand as RelayCommand)?.RaiseCanExecuteChanged();
-            (mMainWin.EditBlocksCPMCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (mMainWin.SaveAsDiskImageCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (mMainWin.ReplacePartitionCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (mMainWin.ScanForBadBlocksCommand as RelayCommand)?.RaiseCanExecuteChanged();

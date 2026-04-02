@@ -86,7 +86,6 @@ namespace cp2_avalonia {
         public ICommand EditDirAttributesCommand { get; }
         public ICommand EditSectorsCommand { get; }
         public ICommand EditBlocksCommand { get; }
-        public ICommand EditBlocksCPMCommand { get; }
         public ICommand SaveAsDiskImageCommand { get; }
         public ICommand ReplacePartitionCommand { get; }
         public ICommand ScanForBadBlocksCommand { get; }
@@ -870,9 +869,14 @@ namespace cp2_avalonia {
                     Debug.WriteLine("EditDirAttributes exception: " + ex.Message); } },
                 () => mMainCtrl != null && mMainCtrl.IsFileOpen &&
                      mMainCtrl.IsFileSystemSelected);
-            EditSectorsCommand = new RelayCommand(() => NotImplemented("Edit Sectors"), () => false);
-            EditBlocksCommand = new RelayCommand(() => NotImplemented("Edit Blocks"), () => false);
-            EditBlocksCPMCommand = new RelayCommand(() => NotImplemented("Edit Blocks (CP/M)"), () => false);
+            EditSectorsCommand = new RelayCommand(
+                async () => { try { await mMainCtrl.EditBlocksSectors(EditSector.SectorEditMode.Sectors); }
+                    catch (Exception ex) { Debug.WriteLine("EditSectors failed: " + ex); } },
+                () => mMainCtrl != null && mMainCtrl.IsFileOpen && mMainCtrl.CanEditSectors);
+            EditBlocksCommand = new RelayCommand(
+                async () => { try { await mMainCtrl.EditBlocksSectors(EditSector.SectorEditMode.Blocks); }
+                    catch (Exception ex) { Debug.WriteLine("EditBlocks failed: " + ex); } },
+                () => mMainCtrl != null && mMainCtrl.IsFileOpen && mMainCtrl.CanEditBlocks);
             SaveAsDiskImageCommand = new RelayCommand(
                 async () => { try { await mMainCtrl.SaveAsDiskImage(); } catch (Exception ex) {
                     Debug.WriteLine("SaveAsDiskImage exception: " + ex.Message); } },
