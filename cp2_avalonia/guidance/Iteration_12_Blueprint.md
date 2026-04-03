@@ -306,15 +306,15 @@ If not, add explicit `<ProjectReference>` entries or `<CopyToOutputDirectory>` i
 
 ## Verification Checklist
 
-- [ ] `dotnet build` succeeds
-- [ ] DEBUG menu → Run DiskArc Tests opens test runner with colored progress output
-- [ ] DEBUG menu → Run FileConv Tests opens test runner with different DLL
-- [ ] Tests execute in background without freezing UI
-- [ ] Progress shown with pass/fail coloring in the RichTextBox/AvaloniaEdit area
-- [ ] Per-test failure details selectable via ComboBox + displayed in TextBox
-- [ ] Scroll to see all results
-- [ ] Can close dialog during or after tests
-- [ ] DEBUG menu → Bulk Compress Test opens compression tool
-- [ ] Can select file, choose compression format, run test
-- [ ] Actions → Test Files tests selected files in archive/filesystem (uses TestProgress)
-- [ ] Test Files shows progress via WorkProgress dialog
+- [x] `dotnet build` succeeds
+- [x] DEBUG menu → Run DiskArc Tests opens test runner with colored progress output
+- [x] DEBUG menu → Run FileConv Tests opens test runner with different DLL
+- [x] Tests execute in background without freezing UI
+- [x] Progress shown with pass/fail coloring in the RichTextBox/AvaloniaEdit area
+- [x] Per-test failure details selectable via ComboBox + displayed in TextBox
+- [x] Scroll to see all results
+- [x] Can close dialog during or after tests
+- [x] DEBUG menu → Bulk Compress Test opens compression tool
+- [x] Can select file, choose compression format, run test
+- [x] Actions → Test Files tests selected files in archive/filesystem (uses TestProgress)
+- [x] Test Files shows progress via WorkProgress dialog

@@ -855,7 +855,11 @@ namespace cp2_avalonia {
                 () => mMainCtrl != null && mMainCtrl.IsFileOpen && mMainCtrl.CanWrite &&
                      mMainCtrl.IsMultiFileItemSelected && ShowCenterFileList &&
                      mMainCtrl.AreFileEntriesSelected);
-            TestFilesCommand = new RelayCommand(() => NotImplemented("Test Files"), () => false);
+            TestFilesCommand = new RelayCommand(
+                async () => { try { await mMainCtrl.TestFiles(); }
+                              catch (Exception ex) { Debug.WriteLine("TestFiles failed: " + ex); } },
+                () => mMainCtrl != null && mMainCtrl.IsFileOpen && ShowCenterFileList
+                     && mMainCtrl.AreFileEntriesSelected);
             EditAttributesCommand = new RelayCommand(
                 async () => { try { await mMainCtrl.EditAttributes(); } catch (Exception ex) {
                     Debug.WriteLine("EditAttributes exception: " + ex.Message); } },
@@ -919,9 +923,15 @@ namespace cp2_avalonia {
             NavToParentDirCommand = new RelayCommand(() => NotImplemented("Go To Parent Directory"), () => false);
             NavToParentCommand = new RelayCommand(() => NotImplemented("Go To Parent"), () => false);
 
-            Debug_DiskArcLibTestCommand = new RelayCommand(() => NotImplemented("DiskArc Library Tests"));
-            Debug_FileConvLibTestCommand = new RelayCommand(() => NotImplemented("FileConv Library Tests"));
-            Debug_BulkCompressTestCommand = new RelayCommand(() => NotImplemented("Bulk Compression Test"));
+            Debug_DiskArcLibTestCommand = new RelayCommand(
+                async () => { try { await mMainCtrl.Debug_DiskArcLibTests(); }
+                              catch (Exception ex) { Debug.WriteLine("DiskArcLibTests failed: " + ex); } });
+            Debug_FileConvLibTestCommand = new RelayCommand(
+                async () => { try { await mMainCtrl.Debug_FileConvLibTests(); }
+                              catch (Exception ex) { Debug.WriteLine("FileConvLibTests failed: " + ex); } });
+            Debug_BulkCompressTestCommand = new RelayCommand(
+                async () => { try { await mMainCtrl.Debug_BulkCompressTest(); }
+                              catch (Exception ex) { Debug.WriteLine("BulkCompressTest failed: " + ex); } });
             Debug_ShowSystemInfoCommand = new RelayCommand(() => NotImplemented("System Info"));
             Debug_ShowDebugLogCommand = new RelayCommand(() => {
                 mMainCtrl.Debug_ShowDebugLog();

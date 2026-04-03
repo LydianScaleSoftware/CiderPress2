@@ -579,6 +579,53 @@ namespace cp2_avalonia {
         }
 
         // -----------------------------------------------------------------------------------------
+        // Actions → Test Files
+
+        /// <summary>
+        /// Handles Actions → Test Files.
+        /// </summary>
+        public async Task TestFiles() {
+            if (!GetFileSelection(omitDir: false, omitOpenArc: false, closeOpenArc: true,
+                    oneMeansAll: false, out object? archiveOrFileSystem,
+                    out IFileEntry unusedDir, out List<IFileEntry>? selected, out int unused)) {
+                return;
+            }
+            if (selected.Count == 0) {
+                await ShowMessageAsync("No files selected.", "Empty");
+                return;
+            }
+
+            Actions.TestProgress prog = new Actions.TestProgress(archiveOrFileSystem, selected,
+                    AppHook) {
+                EnableMacOSZip = AppSettings.Global.GetBool(AppSettings.MAC_ZIP_ENABLED, true),
+            };
+            WorkProgress workDialog = new WorkProgress(mMainWin, prog, false);
+            await workDialog.ShowDialog(mMainWin);
+            if (workDialog.DialogResult) {
+                List<Actions.TestProgress.Failure>? results = prog.FailureResults!;
+                if (results.Count != 0) {
+                    System.Text.StringBuilder sb = new System.Text.StringBuilder();
+                    sb.Append("Failures: ");
+                    sb.AppendLine(results.Count.ToString());
+                    sb.AppendLine();
+                    foreach (Actions.TestProgress.Failure failure in results) {
+                        sb.Append(failure.Entry.FullPathName);
+                        sb.Append(" (");
+                        sb.Append(failure.Part);
+                        sb.AppendLine(")");
+                    }
+                    Tools.ShowText reportDialog = new Tools.ShowText(mMainWin, sb.ToString());
+                    reportDialog.Title = "Failures";
+                    reportDialog.Show();
+                } else {
+                    mMainWin.PostNotification("Tests successful, no failures", true);
+                }
+            } else {
+                mMainWin.PostNotification("Cancelled", false);
+            }
+        }
+
+        // -----------------------------------------------------------------------------------------
         // Actions → Move Files (called from drag-drop, no menu command)
 
         /// <summary>
@@ -964,6 +1011,35 @@ namespace cp2_avalonia {
             } else {
                 mDebugLogViewer.Close();
             }
+        }
+
+        // -----------------------------------------------------------------------------------------
+        // Debug → Library Tests / Bulk Compress
+
+        /// <summary>
+        /// Opens the DiskArc library test runner dialog.
+        /// </summary>
+        public async Task Debug_DiskArcLibTests() {
+            LibTest.TestManager dialog = new LibTest.TestManager("DiskArcTests.dll",
+                "DiskArcTests.ITest");
+            await dialog.ShowDialog(mMainWin);
+        }
+
+        /// <summary>
+        /// Opens the FileConv library test runner dialog.
+        /// </summary>
+        public async Task Debug_FileConvLibTests() {
+            LibTest.TestManager dialog = new LibTest.TestManager("FileConvTests.dll",
+                "FileConvTests.ITest");
+            await dialog.ShowDialog(mMainWin);
+        }
+
+        /// <summary>
+        /// Opens the bulk compression test dialog.
+        /// </summary>
+        public async Task Debug_BulkCompressTest() {
+            LibTest.BulkCompress dialog = new LibTest.BulkCompress(AppHook);
+            await dialog.ShowDialog(mMainWin);
         }
 
         // -----------------------------------------------------------------------------------------

@@ -88,3 +88,20 @@ Two Avalonia-specific issues were discovered during this work:
    `DataContext` is set, Avalonia doesn't see the changes because `List<T>` does not
    implement `INotifyCollectionChanged`. Fix: set `combo.ItemsSource = list` directly in
    code-behind after populating the list.
+---
+
+## Iteration 12: Library Tests & Bulk Compress
+
+### TestManager — Output select area
+
+**WPF behavior:** The ComboBox and detail TextBox below the progress area are simply blank
+until tests have been run and failures have occurred.
+
+**Avalonia change:** The ComboBox is disabled and the TextBox shows explanatory placeholder
+text in both the "not yet run" and "all passed" states:
+- Before any run: `"(No test results yet. Run the tests first. ...)"` 
+- After a passing run: `"All tests passed. No failures to report."`
+- After a run with failures: ComboBox enabled; selecting an entry shows the exception
+  details in the TextBox.
+
+This makes the purpose of the controls unambiguous without requiring a test failure.
