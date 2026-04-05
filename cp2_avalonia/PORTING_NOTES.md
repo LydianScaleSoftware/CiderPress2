@@ -223,7 +223,130 @@ retroactively re-extracted.
 
 | File | Change |
 |---|---|
-| `cp2_avalonia/MainController.cs` | Added `mCachedClipEntries` and `mClipTempDir` fields. `CopyToClipboard()` now extracts `ForeignEntries` to a temp dir, builds `text/uri-list` from `file://` URIs, and sets both text and URI data on the clipboard. Added `ClearClipboardIfPending()`, `CleanupClipTemp()`, `PasteExternalFiles()`, `GetClipboardUriList()`, and `TryGetClipFormat()` helpers. `PasteOrDrop()` falls back to `text/uri-list` when CP2 JSON is not found. `CloseWorkFile()` calls `ClearClipboardIfPending()`. `WindowClosing()` calls `CleanupClipTemp()`. |
+| `cp2_avalonia/MainController.cs` | Added `mCachedClipEntries` and `mClipTempDir` fields. `CopyToClipboard()` now extracts `ForeignEntries` to a temp dir, builds `text/uri-list` from `file://` URIs, and sets both text and URI data on the clipboard. Also buffers each `XferEntry`'s file data as base64 into `ClipFileEntry.DataBase64` so the JSON is self-contained for cross-instance paste. Added `ClearClipboardIfPending()`, `CleanupClipTemp()`, `PasteExternalFiles()`, `GetClipboardUriList()`, and `TryGetClipFormat()` helpers. `PasteOrDrop()` falls back to `text/uri-list` when CP2 JSON is not found; for cross-instance paste, uses `DataBase64` from the deserialized entries. `CloseWorkFile()` calls `ClearClipboardIfPending()`. `WindowClosing()` calls `CleanupClipTemp()`. |
 | `cp2_avalonia/MainWindow.axaml.cs` | `IsChecked_AddExtract` and `IsChecked_ImportExport` setters now call `mMainCtrl.ClearClipboardIfPending()` when toggled on. |
+| `AppCommon/ClipFileEntry.cs` | **(Outside `cp2_avalonia` tree.)** Added `DataBase64` property — base64-encoded file contents populated at copy time, enabling cross-instance paste without a live `StreamGenerator`. |
+
+---
+
+## Drag-and-Drop to/from Desktop and Between Instances — Not Available on X11
+
+**Iteration:** 13 (Clipboard & Advanced Drag-and-Drop)
+
+### WPF Behavior
+
+The WPF version uses `VirtualFileDataObject` (VFDO), a Windows COM mechanism that
+implements the OLE drag-and-drop protocol. Dragging files from the CP2 file list to
+Windows Explorer (or another application) works seamlessly — file contents are streamed on
+demand through the VFDO callbacks. Dragging between two instances of CP2 also works: the
+receiving instance reads `ClipInfo`/stream data from the VFDO.
+
+### Avalonia Behavior (Linux / X11)
+
+Dragging files **to the desktop, to a file manager, or between separate CP2 instances** is
+**not available**.
+
+Avalonia 11.2.x has no implementation of the XDND protocol (the X11 standard for
+drag-and-drop between windows). The only drag source on X11 is `InProcessDragSource`, a
+pure-Avalonia fallback that tracks pointer events through Avalonia's own input manager and
+raises `RawDragEvent` to Avalonia visual tree nodes within the same process. When the
+pointer leaves the Avalonia window, the `InProcessDragSource` receives a `LeaveWindow`
+event and cancels the drag — it has no mechanism to negotiate with external X11 windows.
+
+This means:
+
+- **CP2 → Desktop / file manager:** Not possible. The desktop shows a "not allowed" cursor
+  because it never receives an XDND enter message.
+- **Desktop / file manager → CP2:** Works (Avalonia does handle *inbound* XDND drops from
+  external sources).
+- **CP2 instance → CP2 instance:** Not possible for the same reason as the desktop case.
+- **Within a single CP2 instance:** Works. Internal drag-move between directories uses the
+  `InProcessDragSource` with a custom `INTERNAL_DRAG_FORMAT` data format, which is purely
+  in-process.
+
+Users should use **clipboard copy / paste** (Ctrl+C / Ctrl+V) or the **menu commands**
+(Actions → Extract Files, Actions → Export Files, Edit → Copy / Paste, etc.) to transfer
+files between CP2 and the desktop.
+
+### Rationale
+
+There is no practical workaround for the missing XDND support short of implementing the
+protocol from scratch via X11 P/Invoke calls, which is far beyond the scope of the port.
+Future Windows and macOS builds may regain full drag-to-desktop support using their native
+DnD APIs (OLE on Windows, `NSPasteboardItem` on macOS).
+
+### Files Changed
+
+| File | Change |
+|---|---|
+| `cp2_avalonia/MainWindow.axaml.cs` | `StartFileListDragAsync` sets only `INTERNAL_DRAG_FORMAT` for in-process drag-move. Comment documents the XDND limitation. |
 
 This makes the purpose of the controls unambiguous without requiring a test failure.
+
+---
+
+## Full File List Syncs Directory Tree Selection
+
+**Iteration:** 13 (UI Polish)
+
+### WPF Behavior
+
+The WPF version does not sync the directory tree when a file is selected in the full
+(flattened) file list.
+
+### Avalonia Behavior
+
+When viewing a hierarchical filesystem in the full file list mode, selecting a file now
+updates the directory tree to highlight the containing directory of the selected file.
+Selecting a directory entry highlights that directory itself in the tree.  If multiple
+files are selected across different directories, the last selection wins.
+
+A `mSyncingSelection` guard in `MainController` prevents infinite recursion between the
+directory tree and file list selection handlers (directory tree change → file list select →
+directory tree change → ...).
+
+This only applies in full-list mode on filesystems.  In single-directory mode or for
+archives, the behavior is unchanged.
+
+### Files Changed
+
+| File | Change |
+|---|---|
+| `cp2_avalonia/MainController_Panels.cs` | Added `mSyncingSelection` guard and `SyncDirectoryTreeToFileSelection()` method. Also added early return in `DirectoryTree_SelectionChanged` when guard is set. |
+
+---
+
+## Archive Tree Auto-Refresh After Add/Paste
+
+### Problem
+
+When a disk image or file archive is added (via Add Files or Paste) into a file archive
+such as a ZIP, the new entry appeared in the file list but was not automatically opened as
+a sub-volume in the Archive Contents tree.  The user had to double-click the entry to force
+it open.  Both the WPF and Avalonia versions had this limitation — the initial WorkTree
+scan discovers sub-volumes, but entries added later were not re-scanned.
+
+### Solution
+
+Added `TryOpenNewSubVolumes()` in `MainController_Panels.cs`.  After a successful add or
+paste into a file archive, the method iterates the archive's entries and attempts
+`WorkTree.TryCreateSub()` on any entry not already present in the archive tree.
+`TryCreateSub` handles the "is this a recognizable format?" check internally, so only
+genuine sub-volumes are opened.  New tree items are added via
+`ArchiveTreeItem.ConstructTree()`.
+
+This is called after `RefreshDirAndFileList()` in both the add-files and paste completion
+paths.  It only applies to `IArchive` objects (file archives like ZIP, NuFX, etc.).
+
+### Behavioral Difference from WPF
+
+This is new behavior — the WPF version also requires a manual double-click to open
+newly added sub-volumes.  The Avalonia version now handles this automatically.
+
+### Files Changed
+
+| File | Change |
+|---|---|
+| `cp2_avalonia/MainController_Panels.cs` | Added `TryOpenNewSubVolumes()` method |
+| `cp2_avalonia/MainController.cs` | Added `TryOpenNewSubVolumes()` call after add-files and paste completion |
+| `cp2_avalonia/MainWindow.axaml.cs` | `FileListDataGrid_SelectionChanged` now calls `SyncDirectoryTreeToFileSelection()`. |

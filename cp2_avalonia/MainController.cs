@@ -329,6 +329,7 @@ namespace cp2_avalonia {
             mMainWin.RecentFilePath2 = path2;
             mMainWin.RecentFileName2 = string.IsNullOrEmpty(path2) ? string.Empty :
                 Path.GetFileName(path2);
+            mMainWin.PopulateRecentFilesMenu(RecentFilePaths);
         }
 
         /// <summary>
@@ -1244,6 +1245,7 @@ namespace cp2_avalonia {
 
             // Refresh even if cancelled — partial progress may have occurred.
             RefreshDirAndFileList();
+            TryOpenNewSubVolumes();
         }
 
         /// <summary>
@@ -1466,6 +1468,17 @@ namespace cp2_avalonia {
             // Only serialize direct-transfer (non-export) entries.  Export mode produces no
             // streamable data that a same-process paste could re-read.
             List<ClipFileEntry> xferEntries = clipSet.XferEntries;
+
+            // Buffer file data as base64 into each entry so the JSON contains everything
+            // needed for cross-instance paste.
+            foreach (ClipFileEntry entry in xferEntries) {
+                if (entry.mStreamGen != null && !entry.Attribs.IsDirectory) {
+                    using MemoryStream ms = new MemoryStream();
+                    entry.mStreamGen.OutputToStream(ms);
+                    entry.DataBase64 = Convert.ToBase64String(ms.ToArray());
+                }
+            }
+
             ClipInfo clipInfo = new ClipInfo(xferEntries, GlobalAppVersion.AppVersion);
             if (exportSpec != null) {
                 clipInfo.IsExport = true;
@@ -1598,14 +1611,6 @@ namespace cp2_avalonia {
                 return;
             }
 
-            if (clipInfo.ProcessId != Environment.ProcessId) {
-                await ShowMessageAsync(
-                    "Cross-instance paste is not supported in this version.\n\n" +
-                    "Both archives must be open in the same CiderPress II window.",
-                    "Cross-Instance Paste Not Supported");
-                return;
-            }
-
             if (clipInfo.ClipEntries!.Count == 0) {
                 Debug.WriteLine("Pasting empty file set");
                 return;
@@ -1616,7 +1621,8 @@ namespace cp2_avalonia {
             // For same-process paste, use the cached entries which have live stream
             // generators.  The deserialized entries lost mStreamGen during JSON
             // serialization (it's a non-serialized field).
-            if (mCachedClipEntries != null &&
+            if (clipInfo.ProcessId == Environment.ProcessId &&
+                    mCachedClipEntries != null &&
                     mCachedClipEntries.Count == clipInfo.ClipEntries.Count) {
                 clipInfo.ClipEntries = mCachedClipEntries;
             }
@@ -1638,18 +1644,21 @@ namespace cp2_avalonia {
                 return;
             }
 
-            // Stream generator: for same-process paste, buffer data from the source entry.
+            // Stream generator: for same-process paste, use the live StreamGenerator;
+            // for cross-instance paste, use the base64 data from the JSON.
             ClipPasteWorker.ClipStreamGenerator streamGen =
                 delegate (ClipFileEntry clipEntry) {
-                    if (clipEntry.mStreamGen == null) {
-                        return null;
+                    if (clipEntry.mStreamGen != null) {
+                        System.IO.MemoryStream ms = new System.IO.MemoryStream();
+                        clipEntry.mStreamGen.OutputToStream(ms);
+                        ms.Position = 0;
+                        return ms;
                     }
-                    // Buffer the file content in memory so the paste worker can read it.
-                    // Same-process paste only, so the source archive is still open.
-                    System.IO.MemoryStream ms = new System.IO.MemoryStream();
-                    clipEntry.mStreamGen.OutputToStream(ms);
-                    ms.Position = 0;
-                    return ms;
+                    if (clipEntry.DataBase64 != null) {
+                        return new System.IO.MemoryStream(
+                            Convert.FromBase64String(clipEntry.DataBase64));
+                    }
+                    return null;
                 };
 
             SettingsHolder settings = AppSettings.Global;
@@ -1671,6 +1680,7 @@ namespace cp2_avalonia {
             }
 
             RefreshDirAndFileList();
+            TryOpenNewSubVolumes();
         }
 
         /// <summary>

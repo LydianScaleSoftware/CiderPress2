@@ -527,3 +527,46 @@ inside `PasteOrDrop()` — if no compatible data is found, show a user-facing me
 - [ ] Drop/Paste Target shows clipboard format names and ClipInfo JSON on paste
 - [ ] Internal drag-move between directories works (if implemented)
 - [ ] Error handling for paste failures (source closed, incompatible archive)
+
+---
+
+## Ad Hoc Additions (Beyond Original Scope)
+
+The following features were implemented during this iteration but were not part of the
+original blueprint:
+
+### CP2 → Desktop Clipboard Copy
+Clipboard copy now extracts `ForeignEntries` to a temp directory and sets `text/uri-list`
+on the clipboard so that Linux file managers (KDE Dolphin, GNOME Nautilus, etc.) can paste
+the files. The WPF version never had this capability with Windows Explorer.
+
+### Desktop → CP2 Clipboard Paste
+Paste now detects external file data on the clipboard by checking `text/uri-list`,
+`x-special/gnome-copied-files`, and plain-text `file://` URIs. Parsed paths are routed
+through the existing `AddFileDrop()` path.
+
+### Cross-Instance Paste
+File data is embedded as base64 in the `ClipFileEntry.DataBase64` JSON property at copy
+time. This makes the clipboard JSON fully self-contained, enabling paste between separate
+CP2 process instances without shared memory or temp-file coordination. Required adding
+`DataBase64` to `AppCommon/ClipFileEntry.cs` (outside the `cp2_avalonia` tree). Also fixed
+a bug where the receiving instance would use its own stale cached entries instead of the
+clipboard payload (gated `mCachedClipEntries` swap on `ProcessId` match).
+
+### Mode Change Clears Clipboard
+Toggling between Drag & Copy / Import & Export radio buttons clears the clipboard if there
+is pending copied data, since temp files are already extracted with the old mode's naming
+conventions.
+
+### Full File List Syncs Directory Tree
+When viewing a hierarchical filesystem in full-list mode, selecting a file in the file list
+now updates the directory tree to highlight the containing directory. A `mSyncingSelection`
+re-entrancy guard prevents infinite recursion between the two selection handlers.
+
+### Archive Tree Auto-Refresh After Add/Paste
+When a disk image or file archive (e.g. .po, .dsk, .shk) is added or pasted into a file
+archive such as a ZIP, the Archive Contents tree now automatically opens the new entry as a
+sub-volume.  Previously (in both WPF and Avalonia) the user had to double-click the entry
+to force it open.  Implemented via `TryOpenNewSubVolumes()` which scans the archive's
+entries after add/paste and calls `WorkTree.TryCreateSub()` on any entry not already
+present in the tree.

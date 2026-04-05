@@ -399,6 +399,12 @@ namespace AppCommon {
         public string ExtractPath { get; set; } = string.Empty;
 
         /// <summary>
+        /// Base64-encoded file contents.  Populated at copy time so that cross-instance
+        /// paste can access the data without a live StreamGenerator.
+        /// </summary>
+        public string? DataBase64 { get; set; }
+
+        /// <summary>
         /// Estimated length of this stream.  May be -1 if the length can't be determined easily.
         /// </summary>
         public long OutputLength { get; set; }

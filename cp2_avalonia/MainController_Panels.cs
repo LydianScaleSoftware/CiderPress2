@@ -41,6 +41,11 @@ namespace cp2_avalonia {
         private bool mSwitchFocusToFileList = false;
 
         /// <summary>
+        /// Re-entrancy guard for file list ↔ directory tree selection sync.
+        /// </summary>
+        private bool mSyncingSelection = false;
+
+        /// <summary>
         /// Currently-selected DiskArc library object in the archive tree (i.e.
         /// WorkTreeNode.DAObject).  May be IDiskImage, IArchive, IMultiPart, IFileSystem, or
         /// Partition.
@@ -392,6 +397,9 @@ namespace cp2_avalonia {
                 mMainWin.FileList.Clear();
                 return;
             }
+            if (mSyncingSelection) {
+                return;
+            }
 
             if (CurrentWorkObject is IArchive) {
                 // There isn't really any content in the directory tree, but we'll get this
@@ -428,6 +436,41 @@ namespace cp2_avalonia {
                 ClearEntryCounts();
             }
             RefreshAllCommandStates();
+        }
+
+        /// <summary>
+        /// When the user selects a file in the full file list, sync the directory tree
+        /// to show the containing directory of the selected file.
+        /// </summary>
+        internal void SyncDirectoryTreeToFileSelection() {
+            if (mSyncingSelection || mMainWin.ShowSingleDirFileList ||
+                    CurrentWorkObject is not IFileSystem) {
+                return;
+            }
+
+            FileListItem? selItem = mMainWin.SelectedFileListItem;
+            if (selItem == null) {
+                return;
+            }
+
+            IFileEntry entry = selItem.FileEntry;
+            IFileEntry targetDir = entry.IsDirectory ? entry : entry.ContainingDir;
+            if (targetDir == IFileEntry.NO_ENTRY) {
+                return;
+            }
+
+            // Only update if it's actually a different directory.
+            DirectoryTreeItem? curDirItem = mMainWin.SelectedDirectoryTreeItem;
+            if (curDirItem != null && curDirItem.FileEntry == targetDir) {
+                return;
+            }
+
+            mSyncingSelection = true;
+            try {
+                DirectoryTreeItem.SelectItemByEntry(mMainWin, targetDir);
+            } finally {
+                mSyncingSelection = false;
+            }
         }
 
         /// <summary>
@@ -836,6 +879,53 @@ namespace cp2_avalonia {
             }
 
             mMainWin.CenterInfoText1 = infoText;
+        }
+
+        /// <summary>
+        /// Scans the currently selected archive for entries that look like disk images or
+        /// file archives but have not yet been opened as sub-volumes in the work tree.
+        /// Any newly recognized entries are opened and added to the archive tree.
+        /// </summary>
+        /// <remarks>
+        /// <para>This mirrors the auto-open behaviour of the initial WorkTree scan.  It is
+        /// intended to be called after add/paste operations so that newly added disk images
+        /// appear in the Archive Contents panel without requiring a manual double-click.</para>
+        /// </remarks>
+        internal void TryOpenNewSubVolumes() {
+            ArchiveTreeItem? arcTreeSel = mMainWin.SelectedArchiveTreeItem;
+            if (arcTreeSel == null || mWorkTree == null) {
+                return;
+            }
+            IArchive? arc = arcTreeSel.WorkTreeNode.DAObject as IArchive;
+            if (arc == null) {
+                return;     // only applies to file archives
+            }
+
+            bool addedAny = false;
+            foreach (IFileEntry entry in arc) {
+                if (entry.IsDirectory) {
+                    continue;
+                }
+                // Skip entries already open in the tree.
+                if (ArchiveTreeItem.FindItemByEntry(mMainWin.ArchiveTreeRoot, entry) != null) {
+                    continue;
+                }
+                try {
+                    WorkTree.Node? newNode =
+                        mWorkTree.TryCreateSub(arcTreeSel.WorkTreeNode, entry);
+                    if (newNode != null) {
+                        ArchiveTreeItem.ConstructTree(arcTreeSel, newNode);
+                        addedAny = true;
+                    }
+                } catch (Exception ex) {
+                    Debug.WriteLine("TryOpenNewSubVolumes: failed on " +
+                        entry.FullPathName + ": " + ex.Message);
+                }
+            }
+
+            if (addedAny) {
+                arcTreeSel.IsExpanded = true;
+            }
         }
 
         /// <summary>

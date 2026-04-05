@@ -212,6 +212,34 @@ namespace cp2_avalonia {
             set { mRecentFilePath2 = value; OnPropertyChanged(); }
         }
 
+        /// <summary>
+        /// Populates the File &gt; Recent Files submenu with the current list of recent paths.
+        /// </summary>
+        public void PopulateRecentFilesMenu(List<string> recentPaths) {
+            if (recentFilesMenu == null) {
+                return;
+            }
+
+            ICommand[] commands = {
+                RecentFile1Command, RecentFile2Command, RecentFile3Command,
+                RecentFile4Command, RecentFile5Command, RecentFile6Command
+            };
+
+            recentFilesMenu.Items.Clear();
+            if (recentPaths.Count == 0) {
+                var placeholder = new Avalonia.Controls.MenuItem { Header = "(none)" };
+                recentFilesMenu.Items.Add(placeholder);
+            } else {
+                for (int i = 0; i < recentPaths.Count && i < commands.Length; i++) {
+                    var mi = new Avalonia.Controls.MenuItem {
+                        Header = $"_{i + 1}: {recentPaths[i]}",
+                        Command = commands[i]
+                    };
+                    recentFilesMenu.Items.Add(mi);
+                }
+            }
+        }
+
         // ---- Toolbar state: Add/Extract vs Import/Export mode ----
         // These are AppSettings-backed toggling properties.  Only write the setting when
         // the property is set to true, to prevent the RadioButton "false" feedback from
@@ -822,10 +850,10 @@ namespace cp2_avalonia {
                 () => mMainCtrl?.IsFileOpen ?? false);
             RecentFile1Command = new RelayCommand(async () => await mMainCtrl.OpenRecentFile(0));
             RecentFile2Command = new RelayCommand(async () => await mMainCtrl.OpenRecentFile(1));
-            RecentFile3Command = new RelayCommand(() => NotImplemented("Recent File 3"));
-            RecentFile4Command = new RelayCommand(() => NotImplemented("Recent File 4"));
-            RecentFile5Command = new RelayCommand(() => NotImplemented("Recent File 5"));
-            RecentFile6Command = new RelayCommand(() => NotImplemented("Recent File 6"));
+            RecentFile3Command = new RelayCommand(async () => await mMainCtrl.OpenRecentFile(2));
+            RecentFile4Command = new RelayCommand(async () => await mMainCtrl.OpenRecentFile(3));
+            RecentFile5Command = new RelayCommand(async () => await mMainCtrl.OpenRecentFile(4));
+            RecentFile6Command = new RelayCommand(async () => await mMainCtrl.OpenRecentFile(5));
 
             CopyCommand = new RelayCommand(
                 async () => { try { await mMainCtrl.CopyToClipboard(); }
@@ -1090,6 +1118,7 @@ namespace cp2_avalonia {
 
         private void FileListDataGrid_SelectionChanged(object? sender, SelectionChangedEventArgs e) {
             mMainCtrl.RefreshAllCommandStates();
+            mMainCtrl.SyncDirectoryTreeToFileSelection();
         }
 
         /// <summary>
@@ -1224,9 +1253,15 @@ namespace cp2_avalonia {
                 }
             }
             try {
+                // NOTE: Avalonia 11.2.x has no XDND protocol support on X11, so
+                // DragDrop.DoDragDrop only works within the same Avalonia process.
+                // Dragging files to the desktop, to a file manager, or to another
+                // instance of CP2 is not possible.  Use clipboard copy/paste or the
+                // menu extract/export commands instead.
                 var data = new DataObject();
                 data.Set(INTERNAL_DRAG_FORMAT, mDragMoveList);
-                DragDropEffects result = await DragDrop.DoDragDrop(e, data, DragDropEffects.Move);
+                DragDropEffects result = await DragDrop.DoDragDrop(e, data,
+                    DragDropEffects.Copy | DragDropEffects.Move);
                 Debug.WriteLine("FL drag complete, effect=" + result);
             } catch (Exception ex) {
                 Debug.WriteLine("FL drag exception: " + ex.Message);
