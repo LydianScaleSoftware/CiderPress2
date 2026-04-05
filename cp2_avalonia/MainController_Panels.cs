@@ -46,6 +46,18 @@ namespace cp2_avalonia {
         private bool mSyncingSelection = false;
 
         /// <summary>
+        /// Cached directory tree selection. Updated in DirectoryTree_SelectionChanged and
+        /// SyncDirectoryTreeToFileSelection. Used by NavToParent and CanExecute guards
+        /// because Avalonia's TreeView.SelectedItem can return null when focus moves away.
+        /// </summary>
+        internal DirectoryTreeItem? CachedDirectoryTreeSelection { get; private set; }
+
+        /// <summary>
+        /// Cached archive tree selection. Updated in ArchiveTree_SelectionChanged.
+        /// </summary>
+        internal ArchiveTreeItem? CachedArchiveTreeSelection { get; private set; }
+
+        /// <summary>
         /// Currently-selected DiskArc library object in the archive tree (i.e.
         /// WorkTreeNode.DAObject).  May be IDiskImage, IArchive, IMultiPart, IFileSystem, or
         /// Partition.
@@ -203,7 +215,7 @@ namespace cp2_avalonia {
         /// </summary>
         public bool IsSelectedDirRoot {
             get {
-                DirectoryTreeItem? dirSel = mMainWin.SelectedDirectoryTreeItem;
+                DirectoryTreeItem? dirSel = CachedDirectoryTreeSelection;
                 return (dirSel != null && dirSel.Parent == null);
             }
         }
@@ -213,7 +225,7 @@ namespace cp2_avalonia {
         /// </summary>
         public bool IsSelectedArchiveRoot {
             get {
-                ArchiveTreeItem? arcSel = mMainWin.SelectedArchiveTreeItem;
+                ArchiveTreeItem? arcSel = CachedArchiveTreeSelection;
                 return (arcSel != null && arcSel.Parent == null);
             }
         }
@@ -223,7 +235,7 @@ namespace cp2_avalonia {
         /// </summary>
         public bool IsClosableTreeSelected {
             get {
-                ArchiveTreeItem? arcSel = mMainWin.SelectedArchiveTreeItem;
+                ArchiveTreeItem? arcSel = CachedArchiveTreeSelection;
                 return (arcSel != null && arcSel.CanClose);
             }
         }
@@ -298,6 +310,9 @@ namespace cp2_avalonia {
         /// </summary>
         internal void ArchiveTree_SelectionChanged(ArchiveTreeItem? newSel) {
             Debug.WriteLine("Archive tree selection now: " + (newSel == null ? "none" : newSel));
+            if (newSel != null) {
+                CachedArchiveTreeSelection = newSel;
+            }
             if (newSel == null) {
                 mMainWin.DirectoryTreeRoot.Clear();
                 CurrentWorkObject = null;
@@ -393,6 +408,9 @@ namespace cp2_avalonia {
         /// </summary>
         internal void DirectoryTree_SelectionChanged(DirectoryTreeItem? newSel) {
             Debug.WriteLine("Directory tree selection now: " + (newSel == null ? "none" : newSel));
+            if (newSel != null) {
+                CachedDirectoryTreeSelection = newSel;
+            }
             if (newSel == null) {
                 mMainWin.FileList.Clear();
                 return;
@@ -468,6 +486,8 @@ namespace cp2_avalonia {
             mSyncingSelection = true;
             try {
                 DirectoryTreeItem.SelectItemByEntry(mMainWin, targetDir);
+                CachedDirectoryTreeSelection =
+                    mMainWin.SelectedDirectoryTreeItem ?? CachedDirectoryTreeSelection;
             } finally {
                 mSyncingSelection = false;
             }

@@ -876,7 +876,9 @@ namespace cp2_avalonia {
                 async () => { try { await mMainCtrl.FindFiles(); } catch (Exception ex) {
                     Debug.WriteLine("FindFiles exception: " + ex.Message); } },
                 () => mMainCtrl != null && mMainCtrl.IsFileOpen && mMainCtrl.AreFileEntriesSelected);
-            SelectAllCommand = new RelayCommand(() => NotImplemented("Select All"), () => false);
+            SelectAllCommand = new RelayCommand(
+                () => fileListDataGrid.SelectAll(),
+                () => mMainCtrl?.IsFileOpen ?? false);
             EditAppSettingsCommand = new RelayCommand(
                 async () => { try { await mMainCtrl.EditAppSettings(); } catch (Exception ex) {
                     Debug.WriteLine("EditAppSettings exception: " + ex.Message); } });
@@ -951,7 +953,10 @@ namespace cp2_avalonia {
             ScanForBadBlocksCommand = new RelayCommand(() => NotImplemented("Scan for Bad Blocks"), () => false);
             ScanForSubVolCommand = new RelayCommand(() => NotImplemented("Scan for Sub-Volumes"), () => false);
             DefragmentCommand = new RelayCommand(() => NotImplemented("Defragment Filesystem"), () => false);
-            CloseSubTreeCommand = new RelayCommand(() => NotImplemented("Close File Source"), () => false);
+            CloseSubTreeCommand = new RelayCommand(
+                () => mMainCtrl.CloseSubTree(),
+                () => mMainCtrl != null && mMainCtrl.IsFileOpen &&
+                     mMainCtrl.IsClosableTreeSelected);
 
             ShowFullListCommand = new RelayCommand(
                 () => {
@@ -977,8 +982,15 @@ namespace cp2_avalonia {
                 () => SetShowCenterInfo(CenterPanelChange.Info),
                 () => mMainCtrl?.IsFileOpen ?? false);
 
-            NavToParentDirCommand = new RelayCommand(() => NotImplemented("Go To Parent Directory"), () => false);
-            NavToParentCommand = new RelayCommand(() => NotImplemented("Go To Parent"), () => false);
+            NavToParentDirCommand = new RelayCommand(
+                () => mMainCtrl.NavToParent(true),
+                () => mMainCtrl != null && mMainCtrl.IsFileOpen &&
+                     mMainCtrl.IsHierarchicalFileSystemSelected && !mMainCtrl.IsSelectedDirRoot);
+            NavToParentCommand = new RelayCommand(
+                () => mMainCtrl.NavToParent(false),
+                () => mMainCtrl != null && mMainCtrl.IsFileOpen &&
+                     ((mMainCtrl.IsHierarchicalFileSystemSelected && !mMainCtrl.IsSelectedDirRoot) ||
+                      !mMainCtrl.IsSelectedArchiveRoot));
 
             Debug_DiskArcLibTestCommand = new RelayCommand(
                 async () => { try { await mMainCtrl.Debug_DiskArcLibTests(); }

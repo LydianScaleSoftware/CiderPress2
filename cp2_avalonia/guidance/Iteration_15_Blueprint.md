@@ -49,6 +49,22 @@ Common stubs that may remain:
   porting `ScanBlocksProgress` worker class and wiring `ScanForBadBlocks()` in
   `MainController`. The command stub remains with `CanExecute` returning `false`.
 
+**Pre-step commands already wired (before Iteration 15):**
+- `SelectAllCommand` → `fileListDataGrid.SelectAll()` with `IsFileOpen` guard
+- `CloseSubTreeCommand` → `mMainCtrl.CloseSubTree()` with `IsClosableTreeSelected` guard
+  (implementation already existed in `MainController_Panels.cs`)
+- `NavToParentDirCommand` → `mMainCtrl.NavToParent(true)` — walks up directory tree only
+- `NavToParentCommand` → `mMainCtrl.NavToParent(false)` — walks up directory then archive tree
+
+**Remaining stubs to implement in this iteration:**
+- `ScanForSubVolCommand` → ~35 lines, calls `fs.FindEmbeddedVolumes()`, refreshes tree.
+  See WPF `MainController.ScanForSubVol()`. CanExecute: `IsFileSystemSelected`.
+- `DefragmentCommand` → ~25 lines, Pascal-only, calls `fs.Defragment()`. See WPF
+  `MainController.Defragment()`. CanExecute: `IsDefragmentableSelected && CanWrite`.
+- `Debug_ShowSystemInfoCommand` → ~30 lines, StringBuilder + ShowText dialog. See WPF
+  `MainController.Debug_ShowSystemInfo()`.
+- `Debug_ConvertANICommand` → requires AnimatedGifEncoder (Step 2).
+
 **Risk (G-01):** This audit may uncover stubs in core paths (e.g., `ExtractFiles`,
 `AddFiles`, `CopyToClipboard`) that were deferred from earlier iterations. If T2/T3 items
 from prior concerns were deferred as stubs rather than fully implemented, the scope of this
@@ -70,7 +86,7 @@ Check all files in `cp2_wpf/WPFCommon/` and ensure everything needed has been po
 | `InverseBooleanConverter.cs` | **Replace with Avalonia built-in.** The WPF version implements `System.Windows.Data.IValueConverter` with `[ValueConversion]` attribute — neither compiles in Avalonia. Avalonia provides `BoolConverters.Not` as a built-in static resource. Replace all `{StaticResource InvertBool}` bindings with `{x:Static BoolConverters.Not}`, or reimplement using `Avalonia.Data.Converters.IValueConverter` if a keyed resource is needed. |
 | `SelectTextOnFocus.cs` | **Skip.** Uses WPF Blend SDK `Interactivity.Behavior<TextBox>` (not available in Avalonia). Confirmed no call sites in the WPF project. Omit from port. |
 | `VirtualFileDataObject.cs` | **Not ported** — Windows COM (Iteration 13 decision) |
-| `WPFExtensions.cs` | **Rewrite needed.** Contains two DataGrid extension methods that use WPF-only types and must be reimplemented for Avalonia: (1) `GetClickRowColItem(DataGrid, MouseButtonEventArgs)` — identifies the row, column, and item under the mouse click. Called 4 times: `MainWindow.axaml.cs` file list double-click, right-click context menu, drag initiation, and `SelectPhysicalDrive.axaml.cs` double-click. **Avalonia replacement:** Accept `PointerPressedEventArgs`, use `e.GetPosition(dataGrid)` to get coordinates, then walk the visual tree upward from `e.Source as Visual` using `visual.FindAncestorOfType<DataGridRow>()` (Avalonia `VisualExtensions`) to find the row. Get the item from `DataGridRow.DataContext`. For column index, compare `e.GetPosition(dataGrid).X` against column offset widths. (2) `SelectRowColAndFocus(DataGrid, int row, int col)` — programmatically selects a cell and focuses the grid. Used by the sector editor (Iteration 11). **Avalonia replacement:** Set `dataGrid.SelectedIndex = row`, then call `dataGrid.ScrollIntoView(dataGrid.SelectedItem, dataGrid.Columns[col])` and `dataGrid.Focus()`. Cell-level selection requires `SelectionUnit=Cell` mode. |
+| `WPFExtensions.cs` | **Rewrite needed.** Contains two DataGrid extension methods that use WPF-only types and must be reimplemented for Avalonia: (1) `GetClickRowColItem(DataGrid, MouseButtonEventArgs)` — identifies the row, column, and item under the mouse click. Called 3 times: `MainWindow.axaml.cs` file list double-click, right-click context menu, and drag initiation. (The 4th WPF call site in `SelectPhysicalDrive.axaml.cs` is deferred — physical drive access is not implemented.) **Avalonia replacement:** Accept `PointerPressedEventArgs`, use `e.GetPosition(dataGrid)` to get coordinates, then walk the visual tree upward from `e.Source as Visual` using `visual.FindAncestorOfType<DataGridRow>()` (Avalonia `VisualExtensions`) to find the row. Get the item from `DataGridRow.DataContext`. For column index, compare `e.GetPosition(dataGrid).X` against column offset widths. (2) `SelectRowColAndFocus(DataGrid, int row, int col)` — programmatically selects a cell and focuses the grid. Used by the sector editor (Iteration 11). **Avalonia replacement:** Set `dataGrid.SelectedIndex = row`, then call `dataGrid.ScrollIntoView(dataGrid.SelectedItem, dataGrid.Columns[col])` and `dataGrid.Focus()`. Cell-level selection requires `SelectionUnit=Cell` mode. |
 | `WinMagic.cs` | **Skip entirely.** Both methods (`GetKnownFolderPath` via `SHGetKnownFolderPath` P/Invoke, `GetIcon` via `SHGetFileInfo` P/Invoke) are Windows-only and only used by `FileSelector.xaml.cs`. Since `FileSelector` is replaced by `StorageProvider`, both methods are unused. Verify no other callers exist via `grep -rn WinMagic cp2_avalonia/`. |
 | `WindowPlacement.cs` | Should already be ported (Iteration 3) |
 | `WorkProgress.xaml/.cs` | Should already be ported (early iteration) |

@@ -185,7 +185,11 @@ namespace cp2_avalonia {
         }
 
         public bool EnableDebugMenu {
+#if DEBUG
+            get { return mSettings.GetBool(AppSettings.DEBUG_MENU_ENABLED, true); }
+#else
             get { return mSettings.GetBool(AppSettings.DEBUG_MENU_ENABLED, false); }
+#endif
             set { mSettings.SetBool(AppSettings.DEBUG_MENU_ENABLED, value); OnPropertyChanged(); }
         }
 

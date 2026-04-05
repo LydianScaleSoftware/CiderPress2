@@ -202,6 +202,8 @@ namespace cp2_avalonia {
             mMainWin.ClearTreesAndLists();
             mWorkTree.Dispose();
             mWorkTree = null;
+            CachedDirectoryTreeSelection = null;
+            CachedArchiveTreeSelection = null;
 
             UpdateTitle();
             ClearEntryCounts();
@@ -214,6 +216,34 @@ namespace cp2_avalonia {
 
             GC.Collect();
             return true;
+        }
+
+        /// <summary>
+        /// Navigates to the parent node. Consults the directory tree first; if already at the
+        /// volume root and dirOnly is false, navigates up in the archive tree instead.
+        /// </summary>
+        public void NavToParent(bool dirOnly) {
+            // Step 1: try to go up in the directory tree.
+            DirectoryTreeItem? dirSel = CachedDirectoryTreeSelection;
+            if (dirSel != null && dirSel.Parent != null) {
+                DirectoryTreeItem.BringItemIntoView(mMainWin.directoryTree, dirSel.Parent);
+                mMainWin.directoryTree.SelectedItem = dirSel.Parent;
+                mMainWin.directoryTree.Focus();
+                return;
+            }
+
+            // Step 2: at directory root (or no directory tree). If dirOnly, stop here.
+            if (dirOnly) {
+                return;
+            }
+
+            // Step 3: try to go up in the archive tree.
+            ArchiveTreeItem? arcSel = CachedArchiveTreeSelection;
+            if (arcSel != null && arcSel.Parent != null) {
+                ArchiveTreeItem.BringItemIntoView(mMainWin.archiveTree, arcSel.Parent);
+                mMainWin.archiveTree.SelectedItem = arcSel.Parent;
+                mMainWin.archiveTree.Focus();
+            }
         }
 
         /// <summary>
