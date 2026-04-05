@@ -114,6 +114,7 @@ namespace cp2_avalonia {
         /// </summary>
         public void WindowClosing() {
             mDebugLogViewer?.Close();
+            CleanupClipTemp();
             SaveAppSettings();
         }
 
@@ -207,7 +208,7 @@ namespace cp2_avalonia {
             mMainWin.LaunchPanelVisible = true;
             mMainWin.MainPanelVisible = false;
 
-            // TODO: Avalonia clipboard — check if process owns clipboard and clear it.
+            ClearClipboardIfPending();
 
             SaveAppSettings();
 
@@ -1363,6 +1364,443 @@ namespace cp2_avalonia {
                 defaults[tag] = GetExportSpec(tag);
             }
             return defaults;
+        }
+
+        // -----------------------------------------------------------------------------------------
+        // Clipboard copy & paste
+
+        /// <summary>
+        /// Cached clip entries from the most recent copy operation, with live stream
+        /// generators.  Used for same-process paste since mStreamGen is not serialized.
+        /// </summary>
+        private List<ClipFileEntry>? mCachedClipEntries;
+
+        /// <summary>
+        /// Temp directory holding extracted files for external clipboard paste.
+        /// Cleaned up on next copy or when the file is closed.
+        /// </summary>
+        private string? mClipTempDir;
+
+        /// <summary>
+        /// Clears the clipboard and cached state if there is a pending copy from this process.
+        /// Called when the user changes the Drag &amp; Copy mode so stale data isn't pasted
+        /// with the wrong settings.
+        /// </summary>
+        public async void ClearClipboardIfPending() {
+            if (mCachedClipEntries == null) {
+                return;
+            }
+            CleanupClipTemp();
+            mCachedClipEntries = null;
+            var clipboard = Avalonia.Controls.TopLevel.GetTopLevel(mMainWin)?.Clipboard;
+            if (clipboard != null) {
+                try {
+                    await clipboard.ClearAsync();
+                } catch (Exception ex) {
+                    AppHook.LogW("Failed to clear clipboard: " + ex.Message);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Cleans up any temp directory created during clipboard copy.
+        /// </summary>
+        private void CleanupClipTemp() {
+            if (mClipTempDir != null && Directory.Exists(mClipTempDir)) {
+                try {
+                    Directory.Delete(mClipTempDir, true);
+                } catch (Exception ex) {
+                    AppHook.LogW("Failed to clean up clip temp dir: " + ex.Message);
+                }
+                mClipTempDir = null;
+            }
+        }
+
+        /// <summary>
+        /// Handles Edit : Copy.  Serializes the selected file entries as JSON text to the
+        /// clipboard.  Same-process paste only (cross-process is out of scope).
+        /// Also extracts files to a temp directory so they can be pasted externally.
+        /// </summary>
+        public async Task CopyToClipboard() {
+            if (!GetFileSelection(omitDir: false, omitOpenArc: false, closeOpenArc: true,
+                    oneMeansAll: false, out object? archiveOrFileSystem,
+                    out IFileEntry selectionDir, out List<IFileEntry>? entries, out int unused)) {
+                entries = new List<IFileEntry>();
+            }
+
+            IFileEntry baseDir = IFileEntry.NO_ENTRY;
+            if (CurrentWorkObject is IFileSystem && mMainWin.ShowSingleDirFileList) {
+                DirectoryTreeItem? dirItem = mMainWin.SelectedDirectoryTreeItem;
+                if (dirItem != null) {
+                    baseDir = dirItem.FileEntry;
+                }
+            }
+
+            SettingsHolder settings = AppSettings.Global;
+            ExtractFileWorker.PreserveMode preserve =
+                settings.GetEnum(AppSettings.EXT_PRESERVE_MODE,
+                    ExtractFileWorker.PreserveMode.None);
+            bool addExportExt = settings.GetBool(AppSettings.EXT_ADD_EXPORT_EXT, true);
+            bool rawMode = settings.GetBool(AppSettings.EXT_RAW_ENABLED, false);
+            bool doStrip = settings.GetBool(AppSettings.EXT_STRIP_PATHS_ENABLED, false);
+            bool doMacZip = settings.GetBool(AppSettings.MAC_ZIP_ENABLED, true);
+            ConvConfig.FileConvSpec? exportSpec = null;
+            Dictionary<string, ConvConfig.FileConvSpec>? defaultSpecs = null;
+            if (mMainWin.IsChecked_ImportExport) {
+                exportSpec = GetExportSpec();
+                defaultSpecs = GetDefaultExportSpecs();
+            }
+
+            ClipFileSet clipSet;
+            var waitCursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Wait);
+            mMainWin.Cursor = waitCursor;
+            try {
+                clipSet = new ClipFileSet(CurrentWorkObject!, entries, baseDir,
+                    preserve, addExportExt: addExportExt, useRawData: rawMode, stripPaths: doStrip,
+                    enableMacZip: doMacZip, exportSpec, defaultSpecs, AppHook);
+            } finally {
+                mMainWin.Cursor = null;
+                waitCursor.Dispose();
+            }
+
+            // Only serialize direct-transfer (non-export) entries.  Export mode produces no
+            // streamable data that a same-process paste could re-read.
+            List<ClipFileEntry> xferEntries = clipSet.XferEntries;
+            ClipInfo clipInfo = new ClipInfo(xferEntries, GlobalAppVersion.AppVersion);
+            if (exportSpec != null) {
+                clipInfo.IsExport = true;
+            }
+
+            var clipboard = Avalonia.Controls.TopLevel.GetTopLevel(mMainWin)?.Clipboard;
+            if (clipboard != null) {
+                // Cache the entries with live stream generators for same-process paste.
+                mCachedClipEntries = xferEntries;
+
+                // Extract ForeignEntries to temp directory for pasting to external file
+                // managers.  Clean up any previous temp dir first.
+                CleanupClipTemp();
+                List<ClipFileEntry> foreignEntries = clipSet.ForeignEntries;
+                StringBuilder uriListBuilder = new StringBuilder();
+
+                if (foreignEntries.Count > 0) {
+                    string tempDir = Path.Combine(Path.GetTempPath(),
+                        "cp2clip_" + Environment.ProcessId + "_" +
+                        DateTime.UtcNow.Ticks.ToString("x"));
+                    Directory.CreateDirectory(tempDir);
+                    mClipTempDir = tempDir;
+
+                    foreach (ClipFileEntry clipEntry in foreignEntries) {
+                        // Use ExtractPath which includes export extensions and preserves
+                        // the correct filename for the current mode.
+                        string extractPath = Path.Combine(tempDir, clipEntry.ExtractPath);
+                        string? dirName = Path.GetDirectoryName(extractPath);
+                        if (dirName != null && !Directory.Exists(dirName)) {
+                            Directory.CreateDirectory(dirName);
+                        }
+                        if (clipEntry.Attribs.IsDirectory) {
+                            Directory.CreateDirectory(extractPath);
+                            continue;
+                        }
+                        if (clipEntry.mStreamGen == null) {
+                            continue;
+                        }
+                        try {
+                            using (FileStream outStream = new FileStream(extractPath,
+                                    FileMode.Create, FileAccess.Write)) {
+                                clipEntry.mStreamGen.OutputToStream(outStream);
+                            }
+                            // Build text/uri-list for X11/Wayland clipboard.
+                            Uri fileUri = new Uri(extractPath);
+                            uriListBuilder.Append(fileUri.AbsoluteUri);
+                            uriListBuilder.Append("\r\n");
+                        } catch (Exception ex) {
+                            AppHook.LogW("Failed to extract clip entry '" +
+                                clipEntry.ExtractPath + "': " + ex.Message);
+                        }
+                    }
+                }
+
+                DataObject dataObj = new DataObject();
+                dataObj.Set(DataFormats.Text, clipInfo.ToClipString());
+                int extractedCount = 0;
+                if (uriListBuilder.Length > 0) {
+                    string uriList = uriListBuilder.ToString();
+                    // Set text/uri-list so X11-based file managers (KDE, GNOME, etc.)
+                    // recognize the clipboard as containing files.
+                    dataObj.Set("text/uri-list", uriList);
+                    // Count lines (each URI is terminated by \r\n).
+                    for (int i = 0; i < uriList.Length; i++) {
+                        if (uriList[i] == '\n') {
+                            extractedCount++;
+                        }
+                    }
+                }
+                await clipboard.SetDataObjectAsync(dataObj);
+
+                AppHook.LogI("Copied " + xferEntries.Count + " entries to clipboard" +
+                    (extractedCount > 0 ?
+                        " (" + extractedCount + " files extracted)" : ""));
+                mMainWin.PostNotification("Copied " + xferEntries.Count + " item(s)", true);
+            }
+        }
+
+        /// <summary>
+        /// Handles Edit : Paste and drag-drop of CP2 data onto the file list.
+        /// </summary>
+        /// <param name="dropData">Data object from drag-drop, or null for clipboard paste.</param>
+        /// <param name="dropTarget">The file entry the data was dropped onto, or NO_ENTRY.</param>
+        public async Task PasteOrDrop(Avalonia.Input.IDataObject? dropData,
+                IFileEntry dropTarget) {
+            if (!CheckPasteDropOkay()) {
+                return;
+            }
+
+            var clipboard = Avalonia.Controls.TopLevel.GetTopLevel(mMainWin)?.Clipboard;
+            if (clipboard == null) {
+                Debug.WriteLine("Paste: clipboard not available");
+                return;
+            }
+
+            // First, check for CP2's own clipboard format (same-process paste).
+            string? clipText = await clipboard.GetTextAsync();
+            ClipInfo? clipInfo = ClipInfo.FromClipString(clipText);
+
+            if (clipInfo == null) {
+                // Not CP2 data.  Check for external files from file managers.
+                string? uriList = await GetClipboardUriList(clipboard);
+                if (!string.IsNullOrEmpty(uriList)) {
+                    await PasteExternalFiles(uriList, dropTarget);
+                    return;
+                }
+
+                await ShowMessageAsync(
+                    "No CiderPress II file data found on the clipboard.\n\n" +
+                    "Use Edit \u2192 Copy to copy files within CiderPress II,\n" +
+                    "or copy files in your file manager to paste them here.",
+                    "Nothing to Paste");
+                return;
+            }
+
+            if (clipInfo.IsExport) {
+                await ShowMessageAsync(
+                    "The file copy was performed in \"export\" mode.  Please use \"extract\" " +
+                    "mode when copying files between CiderPress II windows.",
+                    "Can't Paste Exports");
+                return;
+            }
+
+            if (clipInfo.AppVersionMajor != GlobalAppVersion.AppVersion.Major ||
+                    clipInfo.AppVersionMinor != GlobalAppVersion.AppVersion.Minor ||
+                    clipInfo.AppVersionPatch != GlobalAppVersion.AppVersion.Patch) {
+                await ShowMessageAsync(
+                    "Cannot copy and paste between different versions of the application.",
+                    "Version Mismatch");
+                return;
+            }
+
+            if (clipInfo.ProcessId != Environment.ProcessId) {
+                await ShowMessageAsync(
+                    "Cross-instance paste is not supported in this version.\n\n" +
+                    "Both archives must be open in the same CiderPress II window.",
+                    "Cross-Instance Paste Not Supported");
+                return;
+            }
+
+            if (clipInfo.ClipEntries!.Count == 0) {
+                Debug.WriteLine("Pasting empty file set");
+                return;
+            }
+            AppHook.LogI("Paste from clipboard; found " + clipInfo.ClipEntries.Count +
+                " files/forks");
+
+            // For same-process paste, use the cached entries which have live stream
+            // generators.  The deserialized entries lost mStreamGen during JSON
+            // serialization (it's a non-serialized field).
+            if (mCachedClipEntries != null &&
+                    mCachedClipEntries.Count == clipInfo.ClipEntries.Count) {
+                clipInfo.ClipEntries = mCachedClipEntries;
+            }
+
+            mMainWin.Activate();
+
+            if (!GetSelectedArcDir(out object? archiveOrFileSystem, out DiskArcNode? daNode,
+                    out IFileEntry targetDir)) {
+                return;
+            }
+            if (dropTarget != IFileEntry.NO_ENTRY && dropTarget.IsDirectory) {
+                targetDir = dropTarget;
+            }
+            if (clipInfo.ProcessId == Environment.ProcessId &&
+                    archiveOrFileSystem is IArchive) {
+                await ShowMessageAsync(
+                    "Files cannot be copied and pasted from a file archive to itself.",
+                    "Conflict");
+                return;
+            }
+
+            // Stream generator: for same-process paste, buffer data from the source entry.
+            ClipPasteWorker.ClipStreamGenerator streamGen =
+                delegate (ClipFileEntry clipEntry) {
+                    if (clipEntry.mStreamGen == null) {
+                        return null;
+                    }
+                    // Buffer the file content in memory so the paste worker can read it.
+                    // Same-process paste only, so the source archive is still open.
+                    System.IO.MemoryStream ms = new System.IO.MemoryStream();
+                    clipEntry.mStreamGen.OutputToStream(ms);
+                    ms.Position = 0;
+                    return ms;
+                };
+
+            SettingsHolder settings = AppSettings.Global;
+            Actions.ClipPasteProgress prog =
+                new Actions.ClipPasteProgress(archiveOrFileSystem, daNode, targetDir,
+                        clipInfo, streamGen, AppHook) {
+                    DoCompress = settings.GetBool(AppSettings.ADD_COMPRESS_ENABLED, true),
+                    EnableMacOSZip = settings.GetBool(AppSettings.MAC_ZIP_ENABLED, true),
+                    ConvertDOSText = settings.GetBool(AppSettings.DOS_TEXT_CONV_ENABLED, false),
+                    StripPaths = settings.GetBool(AppSettings.ADD_STRIP_PATHS_ENABLED, false),
+                    RawMode = settings.GetBool(AppSettings.ADD_RAW_ENABLED, false),
+                };
+
+            Common.WorkProgress workDialog = new Common.WorkProgress(mMainWin, prog, false);
+            if (await workDialog.ShowDialog<bool?>(mMainWin) == true) {
+                mMainWin.PostNotification("Files added", true);
+            } else {
+                mMainWin.PostNotification("Cancelled", false);
+            }
+
+            RefreshDirAndFileList();
+        }
+
+        /// <summary>
+        /// Handles paste of external files from the system clipboard.  Parses a text/uri-list
+        /// string into local file paths and adds them via the standard add-files path.
+        /// </summary>
+        private async Task PasteExternalFiles(string uriList, IFileEntry dropTarget) {
+            List<string> paths = new List<string>();
+            foreach (string line in uriList.Split('\n')) {
+                string trimmed = line.Trim('\r', ' ');
+                if (string.IsNullOrEmpty(trimmed) || trimmed.StartsWith('#')) {
+                    continue;   // skip comments and blank lines per RFC 2483
+                }
+                if (Uri.TryCreate(trimmed, UriKind.Absolute, out Uri? uri) &&
+                        uri.IsFile) {
+                    paths.Add(uri.LocalPath);
+                }
+            }
+            if (paths.Count == 0) {
+                await ShowMessageAsync(
+                    "The clipboard contains file references, but none are local files.",
+                    "Nothing to Paste");
+                return;
+            }
+            AppHook.LogI("Paste external files from clipboard: " + paths.Count + " file(s)");
+            await AddFileDrop(dropTarget, paths.ToArray());
+        }
+
+        /// <summary>
+        /// Attempts to retrieve a text/uri-list from the clipboard.  Tries multiple format
+        /// names and falls back to interpreting plain text as file:// URIs or bare paths.
+        /// </summary>
+        private async Task<string?> GetClipboardUriList(
+                Avalonia.Input.Platform.IClipboard clipboard) {
+            // Log available formats for diagnostic purposes.
+            string[]? formats = null;
+            try {
+                formats = await clipboard.GetFormatsAsync();
+            } catch (Exception ex) {
+                AppHook.LogW("GetFormatsAsync failed: " + ex.Message);
+            }
+            if (formats != null) {
+                AppHook.LogD("Clipboard formats: " + string.Join(", ", formats));
+            }
+
+            // Try text/uri-list first (standard X11/freedesktop format).
+            string? uriList = await TryGetClipFormat(clipboard, "text/uri-list");
+            if (!string.IsNullOrEmpty(uriList)) {
+                return uriList;
+            }
+
+            // Try x-special/gnome-copied-files (used by GNOME-based file managers, and
+            // also by KDE Dolphin).  Format: "copy\n<uri>\n<uri>..." or "cut\n<uri>...".
+            string? gnomeData = await TryGetClipFormat(clipboard, "x-special/gnome-copied-files");
+            if (!string.IsNullOrEmpty(gnomeData)) {
+                // Strip the "copy" or "cut" prefix line.
+                int newline = gnomeData.IndexOf('\n');
+                if (newline >= 0) {
+                    return gnomeData.Substring(newline + 1);
+                }
+            }
+
+            // Fall back to plain text: check if it looks like file:// URIs or absolute
+            // file paths (one per line).
+            string? plainText = await clipboard.GetTextAsync();
+            if (!string.IsNullOrEmpty(plainText)) {
+                string firstLine = plainText.Split('\n')[0].Trim('\r', ' ');
+                if (firstLine.StartsWith("file://") ||
+                        (Path.IsPathRooted(firstLine) && File.Exists(firstLine))) {
+                    // Looks like file references.  If bare paths, convert to file:// URIs.
+                    if (!firstLine.StartsWith("file://")) {
+                        StringBuilder sb = new StringBuilder();
+                        foreach (string line in plainText.Split('\n')) {
+                            string path = line.Trim('\r', ' ');
+                            if (!string.IsNullOrEmpty(path) && Path.IsPathRooted(path)) {
+                                sb.Append(new Uri(path).AbsoluteUri);
+                                sb.Append("\r\n");
+                            }
+                        }
+                        return sb.Length > 0 ? sb.ToString() : null;
+                    }
+                    return plainText;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Tries to get clipboard data for a specific format, returning it as a string.
+        /// Returns null on failure.
+        /// </summary>
+        private static async Task<string?> TryGetClipFormat(
+                Avalonia.Input.Platform.IClipboard clipboard, string format) {
+            try {
+                object? data = await clipboard.GetDataAsync(format);
+                if (data is string s) {
+                    return s;
+                }
+                if (data is byte[] bytes && bytes.Length > 0) {
+                    return Encoding.UTF8.GetString(bytes);
+                }
+            } catch (Exception ex) {
+                Debug.WriteLine("GetDataAsync(\"" + format + "\") failed: " + ex.Message);
+            }
+            return null;
+        }
+
+        // -----------------------------------------------------------------------------------------
+        // Debug : Drop/Paste Target
+
+        private Tools.DropTarget? mDebugDropTarget;
+        public bool IsDropTargetOpen => mDebugDropTarget != null;
+
+        /// <summary>
+        /// Opens or closes the modeless Drop/Paste Target debug window.
+        /// </summary>
+        public void Debug_ShowDropTarget() {
+            if (mDebugDropTarget == null) {
+                Tools.DropTarget dlg = new Tools.DropTarget();
+                dlg.Closing += (sender, e) => {
+                    Debug.WriteLine("Drop target test closed");
+                    mDebugDropTarget = null;
+                    mMainWin.IsDropTargetVisible = false;
+                };
+                dlg.Show();
+                mDebugDropTarget = dlg;
+            } else {
+                mDebugDropTarget.Close();
+            }
         }
 
         // -----------------------------------------------------------------------------------------

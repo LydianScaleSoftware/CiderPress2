@@ -104,4 +104,126 @@ text in both the "not yet run" and "all passed" states:
 - After a run with failures: ComboBox enabled; selecting an entry shows the exception
   details in the TextBox.
 
+---
+
+## Iteration 13: File List Drag-Drop — Empty-Space Drop Targets the Volume Directory
+
+**Iteration:** 13 (Clipboard & Advanced Drag-and-Drop)
+
+### WPF Behavior
+
+When dragging files within the file list DataGrid, dropping on empty space below the last
+row is silently ignored. The drop target resolves to `NO_ENTRY`, which fails the
+`IsDirectory` check. To move files to the volume root directory, the user must either
+drop onto a visible directory entry for the root or drag to the directory tree panel.
+
+### Avalonia Behavior
+
+Dropping on empty space below the file list rows (or on a non-directory file entry) now
+targets the **volume directory** of the currently selected filesystem in the Archive
+Contents tree. This applies to both internal drag-move operations and external file drops
+from the OS file manager.
+
+Implementation: a parent `Grid` (`fileListPanel`) wraps the DataGrid with
+`DragDrop.AllowDrop="True"` and `Background="Transparent"`. The `Transparent` background
+is required because Avalonia does not hit-test controls with no background — drag events
+would pass through without firing. The panel's `DragOver`/`Drop` handlers catch events
+that the DataGrid did not handle (i.e. pointer was over empty space), and route them to
+`IFileSystem.GetVolDirEntry()`.
+
+### Rationale
+
+The WPF behavior made it impossible to drag files back to the volume root from a
+subdirectory view without using the directory tree panel. Since the empty space below the
+file list has no other interactive purpose, treating it as a drop zone for the volume
+directory is a natural and discoverable improvement.
+
+### Files Changed
+
+| File | Change |
+|---|---|
+| `cp2_avalonia/MainWindow.axaml` | Added `Name="fileListPanel"`, `DragDrop.AllowDrop="True"`, and `Background="Transparent"` to the parent Grid wrapping the DataGrid. |
+| `cp2_avalonia/MainWindow.axaml.cs` | Added `FileListPanel_DragOver`, `FileListPanel_Drop`, and `GetCurrentVolumeDirEntry()` helper. Updated `FileListDataGrid_Drop` internal-move fallback to also use `GetCurrentVolumeDirEntry()` when the drop target is not a directory. |
+
+---
+
+## Clipboard Copy/Paste — Temp File Extraction and External App Support
+
+**Iteration:** 13 (Clipboard & Advanced Drag-and-Drop)
+
+### WPF Behavior
+
+The WPF version uses `VirtualFileDataObject` (VFDO), a Windows COM mechanism based on
+`FILEGROUPDESCRIPTOR`/`FILEDESCRIPTOR` structures. File contents are virtualized on the
+clipboard and streamed on demand only when the receiving application requests them (lazy
+materialization). No temp files are created.
+
+For same-process paste (CP2→CP2), the WPF version serializes `ClipInfo` JSON plus stream
+accessors via `ClipHelper` into the VFDO. The receiving CP2 instance reads
+`ClipInfo.XFER_METADATA` and `ClipInfo.XFER_STREAMS` from the data object.
+
+Paste from external applications (e.g. Windows Explorer) into CP2 is **not supported** —
+if the clipboard does not contain a `ClipInfo` structure, the paste is silently ignored.
+
+Changing the Drag & Copy mode radio button (Add/Extract ↔ Import/Export) has **no effect**
+on data already placed on the clipboard, since VFDO evaluates the stream callbacks lazily
+at drop time. However the callbacks capture settings at copy time, so this is arguably a
+latent inconsistency the WPF version never addressed.
+
+### Avalonia Behavior
+
+`VirtualFileDataObject` is not available outside Windows. On Linux (X11/XWayland), the
+clipboard cannot lazily provide file streams — data must be fully materialized before being
+placed on the clipboard.
+
+**CP2→Desktop copy:** When the user copies files, the selected entries are **eagerly
+extracted** to a temp directory under the system temp path. The clipboard receives:
+
+1. `DataFormats.Text` — serialized JSON (for same-process paste, same as WPF).
+2. `"text/uri-list"` — RFC 2483 URI list (`file:///path\r\n` per file) using the extracted
+   temp file paths. This is the standard freedesktop MIME type that X11-based file managers
+   (KDE Dolphin, GNOME Nautilus, Thunar, etc.) recognize for file clipboard operations.
+
+The format string `"text/uri-list"` is set directly on Avalonia's `DataObject` because the
+`X11Clipboard` backend maps `DataObject.Set(formatString, value)` format strings directly
+to X11 atom names. Avalonia's built-in `DataFormats.Files` constant does not produce atoms
+that desktop file managers recognize.
+
+The temp directory is cleaned up when: (a) a new copy operation replaces the old one,
+(b) the work file is closed, or (c) the application exits.
+
+**Desktop→CP2 paste:** The Avalonia version **adds support** for pasting files from
+external applications, which the WPF version did not have. When the clipboard does not
+contain CP2 JSON, the paste handler tries the following formats in order:
+
+1. `text/uri-list` — standard freedesktop format.
+2. `x-special/gnome-copied-files` — used by KDE Dolphin and GNOME (`copy\n<uri>\n...`).
+3. Plain text fallback — scans for lines beginning with `file://`.
+
+Parsed `file://` URIs are converted to local paths and routed through the existing
+`AddFileDrop()` path, which handles both single files and directories.
+
+**Mode change clears clipboard:** Because temp files are extracted eagerly at copy time
+using the current mode's settings (NAPS suffixes for extract, converted extensions for
+export), changing the Drag & Copy mode radio button **clears the clipboard** if there is
+pending copied data (`mCachedClipEntries != null`). This prevents stale temp files from
+being pasted with the wrong format assumptions. The WPF version did not need this because
+VFDO callbacks were (in theory) evaluated at paste time.
+
+### Rationale
+
+The eager extraction approach is the only viable strategy on X11, where clipboard data must
+be fully materialized. Supporting `text/uri-list` enables clipboard interop with Linux
+desktop file managers — a capability the WPF version never had with Windows Explorer.
+Clearing the clipboard on mode change is a necessary consequence of eager extraction: the
+temp files are already named and formatted according to the old mode, so they cannot be
+retroactively re-extracted.
+
+### Files Changed
+
+| File | Change |
+|---|---|
+| `cp2_avalonia/MainController.cs` | Added `mCachedClipEntries` and `mClipTempDir` fields. `CopyToClipboard()` now extracts `ForeignEntries` to a temp dir, builds `text/uri-list` from `file://` URIs, and sets both text and URI data on the clipboard. Added `ClearClipboardIfPending()`, `CleanupClipTemp()`, `PasteExternalFiles()`, `GetClipboardUriList()`, and `TryGetClipFormat()` helpers. `PasteOrDrop()` falls back to `text/uri-list` when CP2 JSON is not found. `CloseWorkFile()` calls `ClearClipboardIfPending()`. `WindowClosing()` calls `CleanupClipTemp()`. |
+| `cp2_avalonia/MainWindow.axaml.cs` | `IsChecked_AddExtract` and `IsChecked_ImportExport` setters now call `mMainCtrl.ClearClipboardIfPending()` when toggled on. |
+
 This makes the purpose of the controls unambiguous without requiring a test failure.

@@ -31,6 +31,7 @@ using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
+using Avalonia.VisualTree;
 
 using Avalonia.Threading;
 
@@ -138,6 +139,13 @@ namespace cp2_avalonia {
             set { mIsDropTargetVisible = value; OnPropertyChanged(); }
         }
 
+        // ---- Drag-drop state for file list (internal drag-move) ----
+        private const string INTERNAL_DRAG_FORMAT = "cp2_avalonia/FileListDrag";
+        private const double DRAG_THRESHOLD = 4.0;
+        private bool mIsDraggingFileList;
+        private List<IFileEntry> mDragMoveList = new List<IFileEntry>();
+        private Point mDragStartPosn = new Point(-1, -1);
+
         // ---- Status bar ----
         private string mCenterStatusText = string.Empty;
         public string CenterStatusText {
@@ -211,7 +219,10 @@ namespace cp2_avalonia {
         public bool IsChecked_AddExtract {
             get => AppSettings.Global.GetBool(AppSettings.DDCP_ADD_EXTRACT, true);
             set {
-                if (value) AppSettings.Global.SetBool(AppSettings.DDCP_ADD_EXTRACT, true);
+                if (value) {
+                    AppSettings.Global.SetBool(AppSettings.DDCP_ADD_EXTRACT, true);
+                    mMainCtrl.ClearClipboardIfPending();
+                }
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(IsChecked_ImportExport));
             }
@@ -219,7 +230,10 @@ namespace cp2_avalonia {
         public bool IsChecked_ImportExport {
             get => !AppSettings.Global.GetBool(AppSettings.DDCP_ADD_EXTRACT, true);
             set {
-                if (value) AppSettings.Global.SetBool(AppSettings.DDCP_ADD_EXTRACT, false);
+                if (value) {
+                    AppSettings.Global.SetBool(AppSettings.DDCP_ADD_EXTRACT, false);
+                    mMainCtrl.ClearClipboardIfPending();
+                }
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(IsChecked_AddExtract));
             }
@@ -813,8 +827,23 @@ namespace cp2_avalonia {
             RecentFile5Command = new RelayCommand(() => NotImplemented("Recent File 5"));
             RecentFile6Command = new RelayCommand(() => NotImplemented("Recent File 6"));
 
-            CopyCommand = new RelayCommand(() => NotImplemented("Copy"), () => false);
-            PasteCommand = new RelayCommand(() => NotImplemented("Paste"), () => false);
+            CopyCommand = new RelayCommand(
+                async () => { try { await mMainCtrl.CopyToClipboard(); }
+                              catch (Exception ex) { Debug.WriteLine("Copy failed: " + ex); } },
+                () => mMainCtrl != null && mMainCtrl.IsFileOpen &&
+                      mMainCtrl.AreFileEntriesSelected && ShowCenterFileList);
+            PasteCommand = new RelayCommand(
+                async () => { try {
+                    // If a directory is selected in the file list, use it as the paste target.
+                    IFileEntry pasteTarget = IFileEntry.NO_ENTRY;
+                    FileListItem? selItem = SelectedFileListItem;
+                    if (selItem != null && selItem.FileEntry.IsDirectory) {
+                        pasteTarget = selItem.FileEntry;
+                    }
+                    await mMainCtrl.PasteOrDrop(null, pasteTarget);
+                } catch (Exception ex) { Debug.WriteLine("Paste failed: " + ex); } },
+                () => mMainCtrl != null && mMainCtrl.IsFileOpen && mMainCtrl.CanWrite
+                      && mMainCtrl.IsMultiFileItemSelected);
             FindCommand = new RelayCommand(
                 async () => { try { await mMainCtrl.FindFiles(); } catch (Exception ex) {
                     Debug.WriteLine("FindFiles exception: " + ex.Message); } },
@@ -937,7 +966,10 @@ namespace cp2_avalonia {
                 mMainCtrl.Debug_ShowDebugLog();
                 IsDebugLogVisible = mMainCtrl.IsDebugLogOpen;
             });
-            Debug_ShowDropTargetCommand = new RelayCommand(() => NotImplemented("Show Drop/Paste Target"));
+            Debug_ShowDropTargetCommand = new RelayCommand(() => {
+                mMainCtrl.Debug_ShowDropTarget();
+                IsDropTargetVisible = mMainCtrl.IsDropTargetOpen;
+            });
             Debug_ConvertANICommand = new RelayCommand(() => NotImplemented("Convert ANI to GIF"), () => false);
 
             ResetSortCommand = new RelayCommand(
@@ -966,6 +998,19 @@ namespace cp2_avalonia {
                 // Register drag-drop on launch panel after the AXAML tree is built.
                 launchPanel.AddHandler(DragDrop.DropEvent, LaunchPanel_Drop);
                 launchPanel.AddHandler(DragDrop.DragOverEvent, LaunchPanel_DragOver);
+                // File list drag-drop (drop from OS file manager + internal move).
+                fileListDataGrid.AddHandler(DragDrop.DropEvent, FileListDataGrid_Drop);
+                fileListDataGrid.AddHandler(DragDrop.DragOverEvent, FileListDataGrid_DragOver);
+                fileListDataGrid.AddHandler(PointerPressedEvent, FileListDataGrid_PointerPressed,
+                    RoutingStrategies.Tunnel);
+                fileListDataGrid.AddHandler(PointerMovedEvent, FileListDataGrid_PointerMoved,
+                    RoutingStrategies.Tunnel);
+                // Directory tree drag-drop (internal move + drop from OS file manager).
+                directoryTree.AddHandler(DragDrop.DropEvent, DirectoryTree_Drop);
+                directoryTree.AddHandler(DragDrop.DragOverEvent, DirectoryTree_DragOver);
+                // File list panel (parent Grid) catches drops on empty space below rows.
+                fileListPanel.AddHandler(DragDrop.DropEvent, FileListPanel_Drop);
+                fileListPanel.AddHandler(DragDrop.DragOverEvent, FileListPanel_DragOver);
             };
             Closing += (s, e) => mMainCtrl.WindowClosing();
         }
@@ -1082,6 +1127,215 @@ namespace cp2_avalonia {
             ArchiveTreeRoot.Clear();
             DirectoryTreeRoot.Clear();
             FileList.Clear();
+        }
+
+        // ---- Drag-drop on file list DataGrid ----
+
+        private void FileListDataGrid_DragOver(object? sender, DragEventArgs e) {
+            if (mIsDraggingFileList) {
+                e.DragEffects = DragDropEffects.Move;
+            } else {
+                // Don't check e.Data.Contains(DataFormats.Files) here — on Linux the
+                // data formats may not be fully populated during DragOver.  The Drop
+                // handler validates the actual data.  (WPF has no DragOver on the file
+                // list at all — AllowDrop="True" accepts everything by default.)
+                bool canAdd = mMainCtrl != null && mMainCtrl.IsFileOpen && mMainCtrl.CanWrite
+                    && mMainCtrl.IsMultiFileItemSelected && ShowCenterFileList;
+                e.DragEffects = canAdd ? DragDropEffects.Copy : DragDropEffects.None;
+            }
+            e.Handled = true;
+        }
+
+        private void FileListDataGrid_Drop(object? sender, DragEventArgs e) {
+            IFileEntry dropTarget = IFileEntry.NO_ENTRY;
+            // Use hit-testing to find the DataGridRow under the pointer.  Walking
+            // e.Source parents is unreliable for DataGrid drag events because the
+            // Source is often the DataGrid itself, not the hovered cell.
+            var point = e.GetPosition(fileListDataGrid);
+            var hitVisual = fileListDataGrid.InputHitTest(point) as Visual;
+            if (hitVisual != null) {
+                // Walk up to find the DataGridRow, then get its DataContext.
+                var row = hitVisual.FindAncestorOfType<DataGridRow>();
+                if (row?.DataContext is FileListItem fli) {
+                    dropTarget = fli.FileEntry;
+                }
+            }
+
+            if (mIsDraggingFileList) {
+                // Internal drag: only move if dropped onto a directory entry.
+                // Pass a copy of the list — the original is cleared in the finally block
+                // of StartFileListDragAsync, which races with the async MoveFiles call.
+                IFileEntry moveTarget = (dropTarget != IFileEntry.NO_ENTRY && dropTarget.IsDirectory)
+                    ? dropTarget : GetCurrentVolumeDirEntry();
+                if (moveTarget != IFileEntry.NO_ENTRY) {
+                    _ = mMainCtrl.MoveFiles(new List<IFileEntry>(mDragMoveList), moveTarget);
+                } else {
+                    Debug.WriteLine("FL ignoring internal drop: no valid target");
+                }
+            } else if (e.Data.Contains(DataFormats.Files)) {
+                var files = e.Data.GetFiles()?.ToList();
+                if (files != null) {
+                    string?[] rawPaths = files.Select(f => f.TryGetLocalPath()).ToArray();
+                    string[] paths = System.Array.FindAll(rawPaths, p => p != null)!;
+                    if (paths.Length > 0) {
+                        _ = mMainCtrl.AddFileDrop(dropTarget, paths);
+                    }
+                }
+            } else {
+                Debug.WriteLine("FL no valid drop");
+            }
+        }
+
+        // ---- Internal drag initiation (pointer events on file list) ----
+
+        private void FileListDataGrid_PointerPressed(object? sender, PointerPressedEventArgs e) {
+            var point = e.GetCurrentPoint(fileListDataGrid);
+            if (point.Properties.IsLeftButtonPressed) {
+                mDragStartPosn = e.GetPosition(fileListDataGrid);
+            } else {
+                mDragStartPosn = new Point(-1, -1);
+            }
+        }
+
+        private void FileListDataGrid_PointerMoved(object? sender, PointerEventArgs e) {
+            var point = e.GetCurrentPoint(fileListDataGrid);
+            if (!point.Properties.IsLeftButtonPressed) {
+                mDragStartPosn = new Point(-1, -1);
+                return;
+            }
+            if (mIsDraggingFileList || mDragStartPosn.X < 0) {
+                return;
+            }
+            var posn = e.GetPosition(fileListDataGrid);
+            if (Math.Abs(posn.X - mDragStartPosn.X) > DRAG_THRESHOLD ||
+                    Math.Abs(posn.Y - mDragStartPosn.Y) > DRAG_THRESHOLD) {
+                mDragStartPosn = new Point(-1, -1);
+                _ = StartFileListDragAsync(e);
+            }
+        }
+
+        private async System.Threading.Tasks.Task StartFileListDragAsync(PointerEventArgs e) {
+            Debug.Assert(!mIsDraggingFileList);
+            mIsDraggingFileList = true;
+            mDragMoveList.Clear();
+            for (int i = 0; i < fileListDataGrid.SelectedItems.Count; i++) {
+                if (fileListDataGrid.SelectedItems[i] is FileListItem selItem) {
+                    mDragMoveList.Add(selItem.FileEntry);
+                }
+            }
+            try {
+                var data = new DataObject();
+                data.Set(INTERNAL_DRAG_FORMAT, mDragMoveList);
+                DragDropEffects result = await DragDrop.DoDragDrop(e, data, DragDropEffects.Move);
+                Debug.WriteLine("FL drag complete, effect=" + result);
+            } catch (Exception ex) {
+                Debug.WriteLine("FL drag exception: " + ex.Message);
+            } finally {
+                mIsDraggingFileList = false;
+                mDragMoveList.Clear();
+            }
+        }
+
+        /// <summary>
+        /// Returns the volume directory entry for the currently selected filesystem, or
+        /// NO_ENTRY if no filesystem is selected.  Used as fallback drop target when
+        /// dropping onto empty space in the file list.
+        /// </summary>
+        private IFileEntry GetCurrentVolumeDirEntry() {
+            ArchiveTreeItem? arcTreeSel = SelectedArchiveTreeItem;
+            if (arcTreeSel?.WorkTreeNode.DAObject is IFileSystem fs) {
+                return fs.GetVolDirEntry();
+            }
+            return IFileEntry.NO_ENTRY;
+        }
+
+        // ---- Drag-drop on file list panel (empty space below rows) ----
+
+        private void FileListPanel_DragOver(object? sender, DragEventArgs e) {
+            if (e.Handled) {
+                return;     // Already handled by the DataGrid.
+            }
+            // Same logic as FileListDataGrid_DragOver — accept drops on empty space.
+            if (mIsDraggingFileList) {
+                e.DragEffects = DragDropEffects.Move;
+            } else {
+                bool canAdd = mMainCtrl != null && mMainCtrl.IsFileOpen && mMainCtrl.CanWrite
+                    && mMainCtrl.IsMultiFileItemSelected && ShowCenterFileList;
+                e.DragEffects = canAdd ? DragDropEffects.Copy : DragDropEffects.None;
+            }
+            e.Handled = true;
+        }
+
+        private void FileListPanel_Drop(object? sender, DragEventArgs e) {
+            if (e.Handled) {
+                return;     // Already handled by the DataGrid.
+            }
+            // Drop landed on empty space — use the volume directory as target.
+            IFileEntry volDir = GetCurrentVolumeDirEntry();
+            if (mIsDraggingFileList) {
+                if (volDir != IFileEntry.NO_ENTRY) {
+                    _ = mMainCtrl.MoveFiles(new List<IFileEntry>(mDragMoveList), volDir);
+                }
+            } else if (e.Data.Contains(DataFormats.Files)) {
+                var files = e.Data.GetFiles()?.ToList();
+                if (files != null) {
+                    string?[] rawPaths = files.Select(f => f.TryGetLocalPath()).ToArray();
+                    string[] paths = System.Array.FindAll(rawPaths, p => p != null)!;
+                    if (paths.Length > 0) {
+                        _ = mMainCtrl.AddFileDrop(volDir, paths);
+                    }
+                }
+            }
+        }
+
+        // ---- Drag-drop on directory tree ----
+
+        private void DirectoryTree_DragOver(object? sender, DragEventArgs e) {
+            if (!mMainCtrl.CanWrite) {
+                e.DragEffects = DragDropEffects.None;
+            } else if (mIsDraggingFileList) {
+                e.DragEffects = DragDropEffects.Move;
+            } else {
+                // Accept any external drag when writable — see FileListDataGrid_DragOver.
+                e.DragEffects = DragDropEffects.Copy;
+            }
+            e.Handled = true;
+        }
+
+        private void DirectoryTree_Drop(object? sender, DragEventArgs e) {
+            // Walk up from the event source to find a DirectoryTreeItem DataContext.
+            DirectoryTreeItem? dti = null;
+            if (e.Source is StyledElement se) {
+                var cur = se as StyledElement;
+                while (cur != null) {
+                    if (cur.DataContext is DirectoryTreeItem item) {
+                        dti = item;
+                        break;
+                    }
+                    cur = cur.Parent as StyledElement;
+                }
+            }
+            if (dti == null) {
+                Debug.WriteLine("DT drop outside tree item, ignoring");
+                return;
+            }
+            IFileEntry dropTarget = dti.FileEntry;
+            Debug.WriteLine("DT drop on item=" + dropTarget);
+            if (mIsDraggingFileList) {
+                // Copy the list — see FileListDataGrid_Drop comment about race condition.
+                _ = mMainCtrl.MoveFiles(new List<IFileEntry>(mDragMoveList), dropTarget);
+            } else if (e.Data.Contains(DataFormats.Files)) {
+                var files = e.Data.GetFiles()?.ToList();
+                if (files != null) {
+                    string?[] rawPaths = files.Select(f => f.TryGetLocalPath()).ToArray();
+                    string[] paths = System.Array.FindAll(rawPaths, p => p != null)!;
+                    if (paths.Length > 0) {
+                        _ = mMainCtrl.AddFileDrop(dropTarget, paths);
+                    }
+                }
+            } else {
+                Debug.WriteLine("DT no valid drop");
+            }
         }
 
         private async void NotImplemented(string featureName) {

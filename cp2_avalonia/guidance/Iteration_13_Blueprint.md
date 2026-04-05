@@ -64,6 +64,8 @@ These are deeply Windows-specific. The Avalonia port must design a cross-platfor
 
 **Clipboard (Copy/Paste):**
 1. Use Avalonia's `IClipboard` interface, accessed via `TopLevel.GetTopLevel(window)?.Clipboard`
+   **Verified:** This API is not deprecated on Avalonia 11.2.8 (our current version).
+   It is already in use in `FileViewer.axaml.cs` and `EditSector.axaml.cs` with zero warnings.
 2. Store clipboard data as **JSON text** with a recognizable prefix/wrapper:
    ```csharp
    const string CLIP_PREFIX = "CiderPressII:clip:";
@@ -98,6 +100,33 @@ These are deeply Windows-specific. The Avalonia port must design a cross-platfor
 3. **Internal drag** (within the app, e.g., move files between directories):
    - Use Avalonia `DragDrop.DoDragDrop()` with a custom data format
    - Track source and destination within the app
+
+### Platform Notes
+
+**Implementation priority:** The safest cross-platform subset to implement first is:
+1. **JSON text clipboard** (copy/paste via `SetTextAsync`/`GetTextAsync`) — uses only
+   plain-text clipboard, which works identically on Linux, Windows, and macOS.
+2. **External file drop** (dropping files from OS file manager into CiderPress2) — uses
+   `DataFormats.Files` / `IStorageItem.TryGetLocalPath()`, which is well-supported on all
+   desktop platforms.
+
+These two paths have the broadest platform support and should be implemented and verified
+before attempting internal drag-move or any platform-specific enhancements.
+
+**macOS status:** macOS is currently **untested** — no macOS build environment or test
+instance is available. The JSON text clipboard and external file drop paths are expected to
+work on macOS via Avalonia's abstractions, but this is unverified. Known macOS
+considerations that may surface later:
+- `TryGetLocalPath()` may return `null` for sandboxed apps (App Store distribution)
+- Pasteboard behavior differences (e.g., clipboard clearing on app exit)
+- Drag-and-drop security prompts in recent macOS versions
+
+These should be treated as deferred issues to address when a macOS test environment becomes
+available. Do not add `#if` platform guards preemptively — keep the code uniform and fix
+platform-specific issues as they are discovered.
+
+**Linux (current dev platform):** Tested on X11/KDE. Wayland clipboard and drag-drop may
+have quirks depending on compositor — see note G-02 in Step 7.
 
 ---
 
@@ -472,6 +501,10 @@ inside `PasteOrDrop()` — if no compatible data is found, show a user-facing me
   extracting to temp files during copy if this feature is important.
 - **Drag from external file managers into CiderPress2** works well — file paths are
   universally available.
+- **macOS untested.** All clipboard and drag-drop functionality is implemented using
+  Avalonia's cross-platform abstractions and is expected to work, but has not been verified
+  on macOS. Platform-specific issues (sandboxing, pasteboard behavior) are deferred until
+  a macOS test environment is available.
 
 ---
 

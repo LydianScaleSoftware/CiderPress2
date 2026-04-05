@@ -36,6 +36,8 @@ limitations under the License.
     </Window.Resources>
 
     <Window.KeyBindings>
+        <KeyBinding Gesture="Ctrl+C" Command="{Binding CopyCommand}"/>
+        <KeyBinding Gesture="Ctrl+V" Command="{Binding PasteCommand}"/>
         <KeyBinding Gesture="Enter" Command="{Binding ViewFilesCommand}"/>
         <KeyBinding Gesture="Delete" Command="{Binding DeleteFilesCommand}"/>
         <KeyBinding Gesture="Alt+Up" Command="{Binding NavToParentCommand}"/>
@@ -392,6 +394,7 @@ limitations under the License.
                         <Border Grid.Row="1" BorderBrush="LightGray" BorderThickness="1"
                                 CornerRadius="2">
                             <TreeView Name="directoryTree"
+                                      DragDrop.AllowDrop="True"
                                       ItemsSource="{Binding DirectoryTreeRoot}"
                                       SelectionChanged="DirectoryTree_SelectionChanged">
                                 <TreeView.ItemTemplate>
@@ -410,18 +413,22 @@ limitations under the License.
                 </Grid>
 
                 <!-- Center panel: file list DataGrid and info panel (toggle via IsVisible) -->
-                <Grid Grid.Column="2" Margin="0,4">
+                <Grid Grid.Column="2" Margin="0,4"
+                      Name="fileListPanel" DragDrop.AllowDrop="True"
+                      Background="Transparent">
                     <!-- Center panel option 1: file list DataGrid -->
                     <DataGrid Name="fileListDataGrid"
                               IsVisible="{Binding ShowCenterFileList}"
                               ItemsSource="{Binding FileList}"
                               AutoGenerateColumns="False"
+                              ClipboardCopyMode="None"
                               IsReadOnly="True"
                               CanUserReorderColumns="False"
                               CanUserResizeColumns="True"
                               CanUserSortColumns="True"
                               SelectionMode="Extended"
                               GridLinesVisibility="Vertical"
+                              DragDrop.AllowDrop="True"
                               DoubleTapped="FileListDataGrid_DoubleTapped"
                               SelectionChanged="FileListDataGrid_SelectionChanged"
                               Sorting="FileListDataGrid_Sorting">
