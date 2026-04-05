@@ -64,7 +64,8 @@ limitations under the License.
                           HotKey="Ctrl+N"/>
                 <MenuItem Header="_New File Archive..." Command="{Binding NewFileArchiveCommand}"/>
                 <MenuItem Header="_Open" Command="{Binding OpenCommand}" HotKey="Ctrl+O"/>
-                <MenuItem Header="Open Physical Drive..."
+                <MenuItem Name="openPhysicalDriveMenuItem"
+                          Header="Open Physical Drive..."
                           Command="{Binding OpenPhysicalDriveCommand}"/>
                 <MenuItem Header="_Close" Command="{Binding CloseCommand}" HotKey="Ctrl+W"/>
                 <Separator/>

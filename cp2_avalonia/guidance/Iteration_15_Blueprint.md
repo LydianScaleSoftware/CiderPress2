@@ -41,6 +41,13 @@ Common stubs that may remain:
 - Some file viewer export formats
 - Virtual file drag-out (intentionally omitted — document limitation)
 - Any DEBUG-only features that are low priority
+- **Open Physical Drive** — deferred from Iteration 14 to a later project. The menu item
+  is hidden on non-Windows platforms. On Windows it shows "Not Implemented". Full
+  implementation requires porting `SelectPhysicalDrive` dialog, cross-platform drive
+  enumeration (`PhysicalDriveInfo`), privilege escalation, and `DoOpenPhysicalDrive`.
+- **Scan for Bad Blocks** — deferred from Iteration 14 to a later project. Requires
+  porting `ScanBlocksProgress` worker class and wiring `ScanForBadBlocks()` in
+  `MainController`. The command stub remains with `CanExecute` returning `false`.
 
 **Risk (G-01):** This audit may uncover stubs in core paths (e.g., `ExtractFiles`,
 `AddFiles`, `CopyToClipboard`) that were deferred from earlier iterations. If T2/T3 items
@@ -361,8 +368,8 @@ Core operations:
 - [ ] Save disk image in new format
 - [ ] Replace partition contents
 - [ ] Edit sectors/blocks
-- [ ] Scan blocks for errors
-- [ ] Open physical drives
+- [ ] Scan blocks for errors — **deferred** (Iteration 14 deferral; Not Implemented stub)
+- [ ] Open physical drives — **deferred** (Iteration 14 deferral; hidden on non-Windows, Not Implemented on Windows)
 - [ ] Copy/Paste file entries
 - [ ] Drag-drop from file manager to open
 - [ ] Drag-drop from file manager to add
@@ -404,6 +411,8 @@ This iteration primarily modifies existing files rather than creating new ones:
 
 - [ ] `dotnet build` succeeds in Debug and Release for all platforms
 - [ ] Zero "Not Implemented" stubs remain (or documented as intentional omissions)
+      **Known intentional omissions:** Open Physical Drive (Windows-only stub, hidden on
+      Linux/macOS), Scan for Bad Blocks (disabled stub) — both deferred from Iteration 14
 - [ ] All keyboard shortcuts functional
 - [ ] Feature parity checklist above fully checked
 - [ ] Tested on Linux

@@ -1018,6 +1018,11 @@ namespace cp2_avalonia {
             InitializeComponent();
             DataContext = this;
 
+            // Physical drive access is Windows-only; hide the menu item on other platforms.
+            if (!OperatingSystem.IsWindows() && openPhysicalDriveMenuItem != null) {
+                openPhysicalDriveMenuItem.IsVisible = false;
+            }
+
             mMainCtrl = new MainController(this);
             WindowPlacement.TrackNormalBounds(this);
             Loaded += (s, e) => {
