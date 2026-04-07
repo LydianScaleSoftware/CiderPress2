@@ -241,6 +241,45 @@ namespace cp2_avalonia {
         }
 
         /// <summary>
+        /// Handles Actions → Scan for Sub-Volumes.
+        /// </summary>
+        public void ScanForSubVol() {
+            IFileSystem? fs = CurrentWorkObject as IFileSystem;
+            if (fs == null) {
+                Debug.Assert(false);
+                return;
+            }
+            ArchiveTreeItem? arcTreeSel = CachedArchiveTreeSelection;
+            if (arcTreeSel == null) {
+                Debug.Assert(false);
+                return;
+            }
+            Debug.Assert(arcTreeSel.WorkTreeNode.DAObject == fs);
+
+            IMultiPart? embeds = fs.FindEmbeddedVolumes();
+            if (embeds == null) {
+                Debug.WriteLine("No sub-volumes found");
+                return;
+            }
+
+            // If already open, just select it.
+            ArchiveTreeItem? existing =
+                ArchiveTreeItem.FindItemByDAObject(mMainWin.ArchiveTreeRoot, embeds);
+            if (existing != null) {
+                ArchiveTreeItem.SelectItem(mMainWin, existing);
+                return;
+            }
+
+            // Add to the tree and select the new multi-part node.
+            WorkTree.Node? newNode =
+                mWorkTree!.TryCreateMultiPart(arcTreeSel.WorkTreeNode, embeds);
+            if (newNode != null) {
+                ArchiveTreeItem newItem = ArchiveTreeItem.ConstructTree(arcTreeSel, newNode);
+                ArchiveTreeItem.SelectItem(mMainWin, newItem);
+            }
+        }
+
+        /// <summary>
         /// Closes the currently selected sub-tree node.
         /// </summary>
         public void CloseSubTree() {

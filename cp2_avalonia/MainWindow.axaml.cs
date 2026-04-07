@@ -951,8 +951,15 @@ namespace cp2_avalonia {
                 () => mMainCtrl != null && mMainCtrl.IsFileOpen &&
                      mMainCtrl.CanWrite && mMainCtrl.IsPartitionSelected);
             ScanForBadBlocksCommand = new RelayCommand(() => NotImplemented("Scan for Bad Blocks"), () => false);
-            ScanForSubVolCommand = new RelayCommand(() => NotImplemented("Scan for Sub-Volumes"), () => false);
-            DefragmentCommand = new RelayCommand(() => NotImplemented("Defragment Filesystem"), () => false);
+            ScanForSubVolCommand = new RelayCommand(
+                () => mMainCtrl.ScanForSubVol(),
+                () => mMainCtrl != null && mMainCtrl.IsFileOpen &&
+                     mMainCtrl.IsFileSystemSelected);
+            DefragmentCommand = new RelayCommand(
+                async () => { try { await mMainCtrl.Defragment(); }
+                              catch (Exception ex) { Debug.WriteLine("Defragment exception: " + ex.Message); } },
+                () => mMainCtrl != null && mMainCtrl.IsFileOpen &&
+                     mMainCtrl.IsDefragmentableSelected && mMainCtrl.CanWrite);
             CloseSubTreeCommand = new RelayCommand(
                 () => mMainCtrl.CloseSubTree(),
                 () => mMainCtrl != null && mMainCtrl.IsFileOpen &&
@@ -1001,7 +1008,7 @@ namespace cp2_avalonia {
             Debug_BulkCompressTestCommand = new RelayCommand(
                 async () => { try { await mMainCtrl.Debug_BulkCompressTest(); }
                               catch (Exception ex) { Debug.WriteLine("BulkCompressTest failed: " + ex); } });
-            Debug_ShowSystemInfoCommand = new RelayCommand(() => NotImplemented("System Info"));
+            Debug_ShowSystemInfoCommand = new RelayCommand(() => mMainCtrl.Debug_ShowSystemInfo());
             Debug_ShowDebugLogCommand = new RelayCommand(() => {
                 mMainCtrl.Debug_ShowDebugLog();
                 IsDebugLogVisible = mMainCtrl.IsDebugLogOpen;
@@ -1010,7 +1017,10 @@ namespace cp2_avalonia {
                 mMainCtrl.Debug_ShowDropTarget();
                 IsDropTargetVisible = mMainCtrl.IsDropTargetOpen;
             });
-            Debug_ConvertANICommand = new RelayCommand(() => NotImplemented("Convert ANI to GIF"), () => false);
+            Debug_ConvertANICommand = new RelayCommand(
+                async () => { try { await mMainCtrl.Debug_ConvertANI(); }
+                              catch (Exception ex) { Debug.WriteLine("ConvertANI failed: " + ex); } },
+                () => mMainCtrl.IsANISelected);
 
             ResetSortCommand = new RelayCommand(
                 () => {

@@ -1074,6 +1074,177 @@ namespace cp2_avalonia {
             await dialog.ShowDialog(mMainWin);
         }
 
+        /// <summary>
+        /// Handles Debug → Show System Info.
+        /// </summary>
+        public void Debug_ShowSystemInfo() {
+            StringBuilder sb = new StringBuilder();
+            sb.AppendLine("CiderPress II GUI v" + GlobalAppVersion.AppVersion
+#if DEBUG
+                + " DEBUG"
+#endif
+                );
+            sb.AppendLine("+ DiskArc Library v" + Defs.LibVersion +
+                (string.IsNullOrEmpty(Defs.BUILD_TYPE) ? "" : " (" + Defs.BUILD_TYPE + ")"));
+            sb.AppendLine("+ Runtime: " + System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription +
+                " / " + System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier);
+            sb.AppendLine("  E_V=" + Environment.Version);
+            sb.AppendLine("  E_OV=" + Environment.OSVersion);
+            sb.AppendLine("  E_OV_P=" + Environment.OSVersion.Platform);
+            sb.AppendLine("  E_64=" + Environment.Is64BitOperatingSystem + " / " +
+                Environment.Is64BitProcess);
+            sb.AppendLine("  E_MACH=\"" + Environment.MachineName + "\" cpus=" +
+                Environment.ProcessorCount);
+            sb.AppendLine("  E_CD=\"" + Environment.CurrentDirectory + "\"");
+            sb.AppendLine("  RI_FD=" + System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription);
+            sb.AppendLine("  RI_OSA=" + System.Runtime.InteropServices.RuntimeInformation.OSArchitecture);
+            sb.AppendLine("  RI_OSD=" + System.Runtime.InteropServices.RuntimeInformation.OSDescription);
+            sb.AppendLine("  RI_PA=" + System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture);
+            sb.AppendLine("  RI_RI=" + System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier);
+            sb.AppendLine(" " +
+                " IsFreeBSD=" + System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.FreeBSD) +
+                " IsOSX=" + System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.OSX) +
+                " IsLinux=" + System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Linux) +
+                " IsWindows=" + System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows));
+
+            Tools.ShowText dialog = new Tools.ShowText(mMainWin, sb.ToString());
+            dialog.Title = "System Info";
+            dialog.ShowDialog(mMainWin);
+        }
+
+        /// <summary>
+        /// Handles Debug → Convert ANI to GIF.
+        /// </summary>
+        public async Task Debug_ConvertANI() {
+            FileListItem item = (FileListItem)mMainWin.fileListDataGrid.SelectedItems[0]!;
+            IFileEntry entry = item.FileEntry;
+            FileAttribs attrs = new FileAttribs(entry);
+            object? archiveOrFileSystem = CurrentWorkObject;
+            if (archiveOrFileSystem == null) {
+                return;
+            }
+            ExportFoundry.GetApplicableConverters(archiveOrFileSystem, entry, attrs,
+                false, true, out Stream? dataStream, out Stream? rsrcStream, AppHook);
+            rsrcStream?.Close();
+            if (dataStream == null) {
+                return;
+            }
+            AnimatedGifEncoder? enc;
+            using (dataStream) {
+                enc = DoConvertANI(dataStream);
+            }
+            if (enc == null) {
+                await ShowMessageAsync("Unable to parse ANI file.", "Failed");
+                return;
+            }
+
+            var topLevel = TopLevel.GetTopLevel(mMainWin);
+            var file = await topLevel!.StorageProvider.SaveFilePickerAsync(
+                new FilePickerSaveOptions {
+                    Title = "Save Animated GIF...",
+                    SuggestedFileName = Path.GetFileName(item.FileName) + ".gif",
+                    FileTypeChoices = new[] {
+                        new FilePickerFileType("Animated GIF") { Patterns = new[] { "*.gif" } },
+                        new FilePickerFileType("All Files") { Patterns = new[] { "*" } }
+                    }
+                });
+            if (file == null) {
+                return;
+            }
+            string pathName = file.Path.LocalPath;
+            using (FileStream outStream = new FileStream(pathName, FileMode.Create)) {
+                enc.Save(outStream, out int maxWidth, out int maxHeight);
+            }
+            Debug.WriteLine("Done (frames=" + enc.Count + " " + pathName + ")");
+        }
+
+        // Quick & dirty ANI file conversion.  Returns null on failure.
+        private static AnimatedGifEncoder? DoConvertANI(Stream dataStream) {
+            const int PIC_LEN = 32768;
+            if (dataStream.Length < PIC_LEN + 12 || dataStream.Length > 512 * 1024 * 1024) {
+                Debug.WriteLine("unsupported file size: " + dataStream.Length);
+                return null;
+            }
+            dataStream.Position = 0;
+            byte[] buf = new byte[dataStream.Length];
+            dataStream.ReadExactly(buf, 0, buf.Length);
+            uint dataLen = RawData.GetU32LE(buf, PIC_LEN);
+            ushort vblDelay = RawData.GetU16LE(buf, PIC_LEN + 4);
+            uint animLen = RawData.GetU32LE(buf, PIC_LEN + 8);
+            if (buf.Length < PIC_LEN + 8 + (int)animLen) {
+                Debug.WriteLine("file was cut off");
+                return null;
+            }
+            int delayMsec = (int)(vblDelay * (1000 / 60.0));
+            if (delayMsec == 0) {
+                delayMsec = 1;
+            }
+            AnimatedGifEncoder enc = new AnimatedGifEncoder();
+
+            // ANI files have an initial frame, and a series of looping animation frames.  The
+            // initial frame isn't really part of the animated sequence, so we don't want to
+            // output it.
+            int animOff = PIC_LEN + 12;
+            int animEnd = PIC_LEN + 8 + (int)animLen;
+            if (animEnd <= animOff) {
+                // Work around missing anim len by using full data len.
+                animEnd = PIC_LEN + 8 + (int)dataLen;
+            }
+            while (animOff < animEnd) {
+                while (animOff < animEnd) {
+                    Debug.Assert(animOff >= 0 && animOff < buf.Length);
+                    ushort dataOff = RawData.ReadU16LE(buf, ref animOff);
+                    ushort value = RawData.ReadU16LE(buf, ref animOff);
+                    if (dataOff == 0) {
+                        break;
+                    }
+                    if (dataOff > 0x7ffe) {
+                        Debug.WriteLine("found invalid data offset $" + dataOff.ToString("x4"));
+                    } else {
+                        RawData.SetU16LE(buf, dataOff, value);
+                    }
+                }
+                Bitmap8 rawImage = FileConv.Gfx.SuperHiRes.ConvertBuffer(buf);
+                enc.AddFrame(rawImage, delayMsec);
+                if (enc.Count > 10000) {
+                    Debug.WriteLine("runaway!");
+                    break;
+                }
+            }
+
+            return enc;
+        }
+
+        // -----------------------------------------------------------------------------------------
+        // Actions → Defragment
+
+        /// <summary>
+        /// Handles Actions → Defragment Filesystem. Only applicable to Pascal volumes.
+        /// </summary>
+        public async Task Defragment() {
+            Pascal? fs = CurrentWorkObject as Pascal;
+            if (fs == null) {
+                Debug.Assert(false);
+                return;
+            }
+            bool ok = false;
+            try {
+                fs.PrepareRawAccess();
+                ok = fs.Defragment();
+            } catch (Exception ex) {
+                await ShowMessageAsync("Error: " + ex.Message, "Failed");
+                return;
+            } finally {
+                fs.PrepareFileAccess(true);
+                RefreshDirAndFileList();
+            }
+            if (ok) {
+                mMainWin.PostNotification("Defragmentation successful", true);
+            } else {
+                await ShowMessageAsync("Filesystems with errors cannot be defragmented.", "Failed");
+            }
+        }
+
         // -----------------------------------------------------------------------------------------
         // Actions → Extract / Export Files
 
