@@ -3,17 +3,24 @@
 ## Bugs
  - Highlighting styled text makes it lose formatting (new bug with Avalonia)
  - *Rename Dir* doesn't change FQPN's in details viewer (Legacy bug from WPF version)
+    - When a rename occurs, the details viewer should just refresh itself. That would be the easy path.
  - Change initial app size; preserve previous settings
  - Funky cell highlighting in file details viewer 
    - Should highlight entire Row, not Cell.  
    - Need to lose outline box which is being chopped off and stick with background highlighting
- - ~~The *Metadata* and *Disk Partitions/Utilities* sections of the Disk Image panel are missing~~
- - ~~The *Show/Hide Settings* button for the Settings panel on the main window is missing~~
-   - ~~Need to make sure settings panel can be hidden, like the WPF version~~
  - Cannot click header to sort by name or change sort order in file details viewer; other headers work
  - *Conversion Mode* combo box does not populate in *Export Configuration* panel
  - Probably need a smaller font in File Details panel
- - Metadata panel columns are not resizable
+ - Read-only metadata should be shown in grey.  There is no difference currently in the axaml version.
+ - The block and sector editors should only hightlight one cell, not an entire row
+ 
+ - ~~The *Metadata* and *Disk Partitions/Utilities* sections of the Disk Image panel are missing~~
+ - ~~The *Show/Hide Settings* button for the Settings panel on the main window is missing~~
+   - ~~Need to make sure settings panel can be hidden, like the WPF version~~
+ - ~~When trying to resize columns in the File Details viewer, it perceives the drag as the start of a drag-drop event.~~
+    - ~~Drag/drop should only occur when selecting and dragging a file or directory row.~~
+ - ~~Double clicking on resize arrows in File Details viewer header should auto-size column to fit the data to the left of it.~~
+ - ~~Metadata panel columns are not resizable~~
  
 ## Test further
  - All obvious features
@@ -51,6 +58,8 @@
  - Open physical volumes (General research, platform‑specific APIs, permissions, device enumeration)
 
 ## Other
+ - Consider using ProDataGrid (https://github.com/wieslawsoltes/ProDataGrid)
+ - Make sure third party notices, licensing, etc. are ok between Apache & Avalonia's MIT license
  - Build and test with Windows
  - Build and test with macOS
  - Test Animated GIF Encoder in Debug menu

@@ -26,6 +26,7 @@ using System.Windows.Input;
 
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
@@ -145,6 +146,7 @@ namespace cp2_avalonia {
         private bool mIsDraggingFileList;
         private List<IFileEntry> mDragMoveList = new List<IFileEntry>();
         private Point mDragStartPosn = new Point(-1, -1);
+        private bool mSuppressSort;   // set when pointer pressed on a column resize grip
 
         // ---- Status bar ----
         private string mCenterStatusText = string.Empty;
@@ -1073,10 +1075,24 @@ namespace cp2_avalonia {
                 // File list drag-drop (drop from OS file manager + internal move).
                 fileListDataGrid.AddHandler(DragDrop.DropEvent, FileListDataGrid_Drop);
                 fileListDataGrid.AddHandler(DragDrop.DragOverEvent, FileListDataGrid_DragOver);
+                // Use handledEventsToo so that PointerPressed fires even when a
+                // column-header resize Thumb has captured the pointer and marked
+                // the event as handled.  This is required for double-click auto-size
+                // to work on resize grips.
                 fileListDataGrid.AddHandler(PointerPressedEvent, FileListDataGrid_PointerPressed,
-                    RoutingStrategies.Tunnel);
+                    RoutingStrategies.Tunnel | RoutingStrategies.Bubble, handledEventsToo: true);
                 fileListDataGrid.AddHandler(PointerMovedEvent, FileListDataGrid_PointerMoved,
                     RoutingStrategies.Tunnel);
+                // Info-panel DataGrids: same handledEventsToo registration for resize
+                // grip double-click auto-size and sort suppression.
+                partitionLayoutDataGrid.AddHandler(PointerPressedEvent,
+                    InfoDataGrid_PointerPressed,
+                    RoutingStrategies.Tunnel | RoutingStrategies.Bubble,
+                    handledEventsToo: true);
+                metadataDataGrid.AddHandler(PointerPressedEvent,
+                    InfoDataGrid_PointerPressed,
+                    RoutingStrategies.Tunnel | RoutingStrategies.Bubble,
+                    handledEventsToo: true);
                 // Directory tree drag-drop (internal move + drop from OS file manager).
                 directoryTree.AddHandler(DragDrop.DropEvent, DirectoryTree_Drop);
                 directoryTree.AddHandler(DragDrop.DragOverEvent, DirectoryTree_DragOver);
@@ -1157,11 +1173,33 @@ namespace cp2_avalonia {
         }
 
         private void FileListDataGrid_DoubleTapped(object? sender, TappedEventArgs e) {
+            var source = e.Source as Visual;
+            var colHeader = source?.FindAncestorOfType<DataGridColumnHeader>();
+            if (colHeader != null) {
+                // Header double-click — auto-size the column to the left of the
+                // divider to fit its content (WPF behavior).
+                AutoSizeColumnFromHeader(fileListDataGrid, source);
+                mSuppressSort = false;
+                return;
+            }
             mMainCtrl.HandleFileListDoubleClick();
         }
 
         private void PartitionLayout_DoubleTapped(object? sender, TappedEventArgs e) {
             DataGrid? grid = sender as DataGrid;
+
+            // Header double-click — auto-size the column to the left of the
+            // divider to fit its content (WPF behavior).
+            var source = e.Source as Visual;
+            var colHeader = source?.FindAncestorOfType<DataGridColumnHeader>();
+            if (colHeader != null) {
+                if (grid != null) {
+                    AutoSizeColumnFromHeader(grid, source);
+                }
+                mSuppressSort = false;
+                return;
+            }
+
             if (grid?.SelectedItem is PartitionListItem pli) {
                 ArchiveTreeItem? arcTreeSel = archiveTree.SelectedItem as ArchiveTreeItem;
                 if (arcTreeSel == null) {
@@ -1173,14 +1211,179 @@ namespace cp2_avalonia {
         }
 
         private async void MetadataList_DoubleTapped(object? sender, TappedEventArgs e) {
-            DataGrid? grid = sender as DataGrid;
-            if (grid?.SelectedItem is MetadataItem item) {
+            var source = e.Source as Visual;
+
+            // Header double-click — auto-size the column to the left of the
+            // divider to fit its content (WPF behavior).
+            var colHeader = source?.FindAncestorOfType<DataGridColumnHeader>();
+            if (colHeader != null) {
+                DataGrid? grid = sender as DataGrid;
+                if (grid != null) {
+                    AutoSizeColumnFromHeader(grid, source);
+                }
+                mSuppressSort = false;
+                return;
+            }
+
+            // Only open the edit dialog when the double-click is on a data row.
+            var row = source?.FindAncestorOfType<DataGridRow>();
+            if (row == null) {
+                return;
+            }
+            DataGrid? dg = sender as DataGrid;
+            if (dg?.SelectedItem is MetadataItem item) {
                 await mMainCtrl.HandleMetadataDoubleClick(item, 0, 0);
             }
         }
 
         private async void Metadata_AddEntryButtonClick(object? sender, RoutedEventArgs e) {
             await mMainCtrl.HandleMetadataAddEntry();
+        }
+
+        /// <summary>
+        /// Finds the correct column to auto-size when a column header area is double-clicked.
+        /// Each header has a left gripper and a right gripper.  The left gripper of column B
+        /// visually sits at the same position as the right gripper of column A, so both should
+        /// resize column A (the column to the left of the divider), matching WPF behavior.
+        /// </summary>
+        private static void AutoSizeColumnFromHeader(DataGrid grid, Visual? hitVisual) {
+            var colHeader = hitVisual?.FindAncestorOfType<DataGridColumnHeader>();
+            if (colHeader == null) return;
+
+            // Find the column index matching this header.
+            string? headerText = colHeader.Content?.ToString();
+            int colIndex = -1;
+            for (int i = 0; i < grid.Columns.Count; i++) {
+                if (grid.Columns[i].Header?.ToString() == headerText) {
+                    colIndex = i;
+                    break;
+                }
+            }
+            if (colIndex < 0) return;
+
+            // Determine whether the Thumb is the left or right resize gripper.
+            // In Avalonia's DataGridColumnHeader template the left gripper has
+            // HorizontalAlignment.Left; the right gripper has HorizontalAlignment.Right.
+            // Left gripper of column X  → resize column X-1 (left of divider).
+            // Right gripper of column X → resize column X  (left of divider).
+            Thumb? thumb = hitVisual as Thumb ?? hitVisual?.FindAncestorOfType<Thumb>();
+            if (thumb != null) {
+                Debug.WriteLine($"AutoSize: col={colIndex} '{headerText}', " +
+                    $"thumb.Name='{thumb.Name}', HAlign={thumb.HorizontalAlignment}, " +
+                    $"Bounds={thumb.Bounds}");
+                bool isLeftGripper =
+                    thumb.HorizontalAlignment == HorizontalAlignment.Left;
+                if (isLeftGripper && colIndex > 0) {
+                    for (int i = colIndex - 1; i >= 0; i--) {
+                        if (grid.Columns[i].IsVisible) {
+                            AutoSizeColumnToContent(grid, grid.Columns[i]);
+                            return;
+                        }
+                    }
+                    return; // no visible column to the left
+                }
+            }
+
+            AutoSizeColumnToContent(grid, grid.Columns[colIndex]);
+        }
+
+        /// <summary>
+        /// Auto-sizes a DataGrid column to fit its header and cell content, replicating
+        /// the WPF DataGrid double-click-on-resize-grip behavior.
+        /// </summary>
+        private static void AutoSizeColumnToContent(DataGrid grid, DataGridColumn col) {
+            IEnumerable? items = grid.ItemsSource as IEnumerable;
+            if (items == null) return;
+
+            // Determine the property name to read from each row item.
+            string? propName = null;
+            if (col is DataGridBoundColumn boundCol &&
+                    boundCol.Binding is Avalonia.Data.Binding binding) {
+                propName = binding.Path;
+            } else if (col is DataGridTemplateColumn) {
+                propName = col.Header?.ToString() switch {
+                    "Filename" => nameof(FileListItem.FileName),
+                    "Pathname" => nameof(FileListItem.PathName),
+                    _ => null
+                };
+            }
+
+            // Use a temporary TextBlock to measure with the grid's font settings.
+            var measureBlock = new TextBlock {
+                FontFamily = grid.FontFamily,
+                FontSize = grid.FontSize,
+                FontStyle = grid.FontStyle,
+                FontWeight = grid.FontWeight
+            };
+
+            // Measure header text.
+            measureBlock.Text = col.Header?.ToString() ?? string.Empty;
+            measureBlock.Measure(Size.Infinity);
+            double maxWidth = measureBlock.DesiredSize.Width;
+
+            // Measure cell content.
+            if (propName != null) {
+                System.Reflection.PropertyInfo? prop = null;
+                foreach (object? item in items) {
+                    if (item == null) continue;
+                    prop ??= item.GetType().GetProperty(propName);
+                    if (prop == null) break;
+                    string? text = prop.GetValue(item)?.ToString();
+                    if (!string.IsNullOrEmpty(text)) {
+                        measureBlock.Text = text;
+                        measureBlock.Measure(Size.Infinity);
+                        if (measureBlock.DesiredSize.Width > maxWidth) {
+                            maxWidth = measureBlock.DesiredSize.Width;
+                        }
+                    }
+                }
+            }
+
+            // Add padding for cell margins, borders, and sort indicator.
+            col.Width = new DataGridLength(maxWidth + 14, DataGridLengthUnitType.Pixel);
+        }
+
+        /// <summary>
+        /// Detects resize-grip (Thumb) clicks on info-panel DataGrid headers so that
+        /// column resizing doesn't also trigger a sort.
+        /// </summary>
+        private void InfoDataGrid_PointerPressed(object? sender, PointerPressedEventArgs e) {
+            // Registered with handledEventsToo — skip the Bubble re-invocation.
+            if (e.Handled) return;
+
+            var hitVisual = e.Source as Visual;
+            var colHeader = hitVisual?.FindAncestorOfType<DataGridColumnHeader>();
+            if (colHeader != null) {
+                bool isOnGrip = hitVisual is Thumb ||
+                    hitVisual?.FindAncestorOfType<Thumb>() != null;
+                mSuppressSort = isOnGrip;
+                // Double-click on a resize grip auto-sizes the column to fit content.
+                if (isOnGrip && e.ClickCount == 2) {
+                    Debug.WriteLine($"Info PointerPressed: thumb double-click on " +
+                        $"'{colHeader.Content}', ClickCount={e.ClickCount}");
+                    DataGrid? grid = sender as DataGrid;
+                    if (grid != null) {
+                        AutoSizeColumnFromHeader(grid, hitVisual);
+                    }
+                }
+            } else {
+                mSuppressSort = false;
+            }
+        }
+
+        /// <summary>
+        /// Generic Sorting handler for info-panel DataGrids (metadata, partition layout, notes).
+        /// Suppresses sort when clicking a resize grip; otherwise clears the selected row,
+        /// matching WPF behavior.
+        /// </summary>
+        private void InfoDataGrid_Sorting(object? sender, DataGridColumnEventArgs e) {
+            if (mSuppressSort) {
+                e.Handled = true;
+                return;
+            }
+            if (sender is DataGrid dg) {
+                dg.SelectedIndex = -1;
+            }
         }
 
         private void FileListDataGrid_SelectionChanged(object? sender, SelectionChangedEventArgs e) {
@@ -1193,8 +1396,15 @@ namespace cp2_avalonia {
         /// sort keys; the collection is sorted in-place because Avalonia lacks ListCollectionView.
         /// </summary>
         private void FileListDataGrid_Sorting(object? sender, DataGridColumnEventArgs e) {
-            DataGridColumn col = e.Column;
             e.Handled = true;   // prevent DataGrid's built-in sort from firing
+
+            // When the click is on a resize grip, suppress sorting so that
+            // column resizing doesn't also re-sort the file list.
+            if (mSuppressSort) {
+                return;
+            }
+
+            DataGridColumn col = e.Column;
 
             // Determine new sort direction; default to ascending on first click per column.
             bool wasAscending = col.Tag is System.ComponentModel.ListSortDirection tagDir
@@ -1217,6 +1427,9 @@ namespace cp2_avalonia {
                 FileList.Add(item);
             }
             IsResetSortEnabled = true;
+
+            // Match WPF behavior: clicking a column header deselects all rows.
+            fileListDataGrid.SelectedIndex = -1;
         }
 
         internal void ClearTreesAndLists() {
@@ -1285,8 +1498,39 @@ namespace cp2_avalonia {
         // ---- Internal drag initiation (pointer events on file list) ----
 
         private void FileListDataGrid_PointerPressed(object? sender, PointerPressedEventArgs e) {
+            // Handler is registered with Tunnel|Bubble + handledEventsToo, so it may
+            // fire twice per click.  Only process drag-start and auto-resize on the
+            // first invocation (Tunnel phase, where Handled is still false).
+            Debug.WriteLine($"FL PointerPressed: route={e.Route}, handled={e.Handled}, " +
+                $"source={e.Source?.GetType().Name}, click={e.ClickCount}");
+            if (e.Handled) return;
+
             var point = e.GetCurrentPoint(fileListDataGrid);
             if (point.Properties.IsLeftButtonPressed) {
+                // Only start a potential drag from a data row, not from a column header
+                // or its resize grip.  Otherwise column-resize drags are misinterpreted
+                // as file drag-drop operations.
+                var hitVisual = e.Source as Visual;
+                var colHeader = hitVisual?.FindAncestorOfType<DataGridColumnHeader>();
+                if (colHeader != null) {
+                    // If the click is on a resize grip (Thumb), suppress the next sort
+                    // event so that resizing doesn't also re-sort the list.
+                    bool isOnGrip = hitVisual is Thumb ||
+                        hitVisual?.FindAncestorOfType<Thumb>() != null;
+                    mSuppressSort = isOnGrip;
+                    // Double-click on a resize grip auto-sizes the column to fit content
+                    // (replicates WPF behavior).  We handle it here rather than in
+                    // DoubleTapped because the Thumb's drag tracking consumes the pointer
+                    // events before DoubleTapped can fire.
+                    if (isOnGrip && e.ClickCount == 2) {
+                        Debug.WriteLine($"FL PointerPressed: thumb double-click on " +
+                            $"'{colHeader.Content}', ClickCount={e.ClickCount}");
+                        AutoSizeColumnFromHeader(fileListDataGrid, hitVisual);
+                    }
+                    mDragStartPosn = new Point(-1, -1);
+                    return;
+                }
+                mSuppressSort = false;
                 mDragStartPosn = e.GetPosition(fileListDataGrid);
             } else {
                 mDragStartPosn = new Point(-1, -1);

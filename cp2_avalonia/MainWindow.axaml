@@ -23,7 +23,7 @@ limitations under the License.
         mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="800"
         x:Class="cp2_avalonia.MainWindow"
         Title="CiderPress II"
-        Width="1200" Height="800"
+        Width="1400" Height="900"
         MinWidth="640" MinHeight="680"
         Icon="avares://CiderPress2/Res/cp2_app.ico">
 
@@ -435,7 +435,7 @@ limitations under the License.
                               Sorting="FileListDataGrid_Sorting">
                         <DataGrid.Columns>
                             <!-- Col 0: Status icon (dubious/damaged/comment) -->
-                            <DataGridTemplateColumn Header="?" Width="Auto" CanUserResize="True" IsVisible="True">
+                            <DataGridTemplateColumn Header="?" Width="Auto" CanUserResize="True" CanUserSort="True" IsVisible="True" >
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <Image Source="{Binding StatusIcon}" Width="16"
@@ -448,7 +448,7 @@ limitations under the License.
                             <!-- Note: DataGridColumn.IsVisible binding via parent DataContext
                                  does not work in Avalonia (columns are not in the visual tree).
                                  Visibility is set in code-behind via SetColumnVisible(). -->
-                            <DataGridTemplateColumn Header="Filename" Width="Auto" CanUserResize="True">
+                            <DataGridTemplateColumn Header="Filename" Width="Auto" CanUserResize="True" CanUserSort="True">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <TextBlock Text="{Binding FileName}"
@@ -457,7 +457,7 @@ limitations under the License.
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
                             <!-- Col 2: Pathname (shown in full-list/archive mode) -->
-                            <DataGridTemplateColumn Header="Pathname" Width="Auto" CanUserResize="True">
+                            <DataGridTemplateColumn Header="Pathname" Width="Auto" CanUserResize="True" CanUserSort="True">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <TextBlock Text="{Binding PathName}"
@@ -585,7 +585,8 @@ limitations under the License.
                                           AutoGenerateColumns="False"
                                           HeadersVisibility="Column"
                                           CanUserReorderColumns="False"
-                                          DoubleTapped="PartitionLayout_DoubleTapped">
+                                          DoubleTapped="PartitionLayout_DoubleTapped"
+                                          Sorting="InfoDataGrid_Sorting">
                                     <DataGrid.Columns>
                                         <DataGridTextColumn Header="#" Width="30"
                                                             Binding="{Binding Index}"/>
@@ -613,11 +614,15 @@ limitations under the License.
                                           AutoGenerateColumns="False"
                                           HeadersVisibility="Column"
                                           CanUserReorderColumns="False"
-                                          DoubleTapped="MetadataList_DoubleTapped">
+                                          CanUserResizeColumns="True"
+                                          DoubleTapped="MetadataList_DoubleTapped"
+                                          Sorting="InfoDataGrid_Sorting">
                                     <DataGrid.Columns>
                                         <DataGridTextColumn Header="Key" Width="150"
+                                                            CanUserResize="True"
                                                             Binding="{Binding Key}"/>
                                         <DataGridTextColumn Header="Value" Width="*"
+                                                            CanUserResize="True"
                                                             Binding="{Binding Value}"/>
                                     </DataGrid.Columns>
                                 </DataGrid>
@@ -636,7 +641,9 @@ limitations under the License.
                                           GridLinesVisibility="Vertical"
                                           AutoGenerateColumns="False"
                                           HeadersVisibility="Column"
-                                          CanUserReorderColumns="False">
+                                          CanUserReorderColumns="False"
+                                          PointerPressed="InfoDataGrid_PointerPressed"
+                                          Sorting="InfoDataGrid_Sorting">
                                     <DataGrid.Columns>
                                         <DataGridTextColumn Header="Prio" Width="32"
                                                             Binding="{Binding TypeChar}"/>
