@@ -7,7 +7,7 @@
  - Funky cell highlighting in file details viewer 
    - Should highlight entire Row, not Cell.  
    - Need to lose outline box which is being chopped off and stick with background highlighting
- - The *Metadata* and *Disk Partitions/Utilities* sections of the Disk Image panel are missing
+ - ~~The *Metadata* and *Disk Partitions/Utilities* sections of the Disk Image panel are missing~~
  - The *Show/Hide Settings* button for the Settings panel on the main window is missing
    - Need to make sure settings panel can be hidden, like the WPF version
  - Cannot click header to sort by name or change sort order in file details viewer; other headers work

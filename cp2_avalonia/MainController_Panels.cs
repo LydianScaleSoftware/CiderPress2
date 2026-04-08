@@ -68,9 +68,6 @@ namespace cp2_avalonia {
         public bool CanEditBlocks {
             get { return CanAccessChunk(EditSector.SectorEditMode.Blocks); }
         }
-        public bool CanEditBlocksCPM {
-            get { return CanAccessChunk(EditSector.SectorEditMode.CPMBlocks); }
-        }
         public bool CanEditSectors {
             get { return CanAccessChunk(EditSector.SectorEditMode.Sectors); }
         }
@@ -1082,6 +1079,40 @@ namespace cp2_avalonia {
             } catch (Exception ex) {
                 await ShowMessageAsync("FileViewer threw an exception:\n" + ex.Message +
                     "\n\n" + ex.StackTrace, "ViewFiles Error");
+            }
+        }
+
+        // -----------------------------------------------------------------------------------------
+        // Partition Layout
+
+        /// <summary>
+        /// Handles a double-click on a partition layout entry.  If the partition is already
+        /// open in the archive tree, select it; otherwise try to open it.
+        /// </summary>
+        public void HandlePartitionLayoutDoubleClick(MainWindow.PartitionListItem item,
+                ArchiveTreeItem arcTreeSel) {
+            ArchiveTreeItem? ati = ArchiveTreeItem.FindItemByDAObject(mMainWin.ArchiveTreeRoot,
+                item.PartRef);
+            if (ati != null) {
+                ArchiveTreeItem.SelectBestFrom(mMainWin.archiveTree, ati);
+                return;
+            }
+
+            try {
+                mMainWin.Cursor = new Cursor(StandardCursorType.Wait);
+
+                WorkTree.Node? newNode =
+                    mWorkTree!.TryCreatePartition(arcTreeSel.WorkTreeNode, item.Index);
+                if (newNode != null) {
+                    // Successfully opened.  Update the TreeView.
+                    ArchiveTreeItem newItem =
+                        ArchiveTreeItem.ConstructTree(arcTreeSel, newNode);
+                    // Select something in what we just added.  If it was a disk image, we want
+                    // to select the first filesystem, not the disk image itself.
+                    ArchiveTreeItem.SelectBestFrom(mMainWin.archiveTree, newItem);
+                }
+            } finally {
+                mMainWin.Cursor = null;
             }
         }
 

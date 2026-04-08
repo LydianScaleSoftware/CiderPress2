@@ -1143,6 +1143,29 @@ namespace cp2_avalonia {
             mMainCtrl.HandleFileListDoubleClick();
         }
 
+        private void PartitionLayout_DoubleTapped(object? sender, TappedEventArgs e) {
+            DataGrid? grid = sender as DataGrid;
+            if (grid?.SelectedItem is PartitionListItem pli) {
+                ArchiveTreeItem? arcTreeSel = archiveTree.SelectedItem as ArchiveTreeItem;
+                if (arcTreeSel == null) {
+                    Debug.Assert(false, "archive tree is missing selection");
+                    return;
+                }
+                mMainCtrl.HandlePartitionLayoutDoubleClick(pli, arcTreeSel);
+            }
+        }
+
+        private async void MetadataList_DoubleTapped(object? sender, TappedEventArgs e) {
+            DataGrid? grid = sender as DataGrid;
+            if (grid?.SelectedItem is MetadataItem item) {
+                await mMainCtrl.HandleMetadataDoubleClick(item, 0, 0);
+            }
+        }
+
+        private async void Metadata_AddEntryButtonClick(object? sender, RoutedEventArgs e) {
+            await mMainCtrl.HandleMetadataAddEntry();
+        }
+
         private void FileListDataGrid_SelectionChanged(object? sender, SelectionChangedEventArgs e) {
             mMainCtrl.RefreshAllCommandStates();
             mMainCtrl.SyncDirectoryTreeToFileSelection();
