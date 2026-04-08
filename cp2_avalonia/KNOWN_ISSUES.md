@@ -8,11 +8,12 @@
    - Should highlight entire Row, not Cell.  
    - Need to lose outline box which is being chopped off and stick with background highlighting
  - ~~The *Metadata* and *Disk Partitions/Utilities* sections of the Disk Image panel are missing~~
- - The *Show/Hide Settings* button for the Settings panel on the main window is missing
-   - Need to make sure settings panel can be hidden, like the WPF version
+ - ~~The *Show/Hide Settings* button for the Settings panel on the main window is missing~~
+   - ~~Need to make sure settings panel can be hidden, like the WPF version~~
  - Cannot click header to sort by name or change sort order in file details viewer; other headers work
  - *Conversion Mode* combo box does not populate in *Export Configuration* panel
  - Probably need a smaller font in File Details panel
+ - Metadata panel columns are not resizable
  
 ## Test further
  - All obvious features
@@ -25,6 +26,7 @@
     - Zoom in viewer with Ctrl-Mouse, Ctrl+-/Ctrl+=
  - Create desktop file for Linux
  - Make sure build/deploy script works for Avalonia code
+ - System should retain Show/Hide Settings status and potentially add a default preference to the System Settings dialog.
 
  ## New Features
  - Make Debug menu's Debug Log output copyable

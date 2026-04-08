@@ -172,6 +172,23 @@ namespace cp2_avalonia {
             set { mMainPanelVisible = value; OnPropertyChanged(); }
         }
 
+        // ---- Options panel show/hide ----
+        private bool mShowOptionsPanel = true;
+        public bool ShowOptionsPanel {
+            get => mShowOptionsPanel;
+            set {
+                mShowOptionsPanel = value;
+                OnPropertyChanged();
+                ShowHideRotation = value ? 0 : 90;
+                OnPropertyChanged(nameof(ShowHideRotation));
+            }
+        }
+        public double ShowHideRotation { get; private set; }
+
+        private void ShowHideOptionsButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) {
+            ShowOptionsPanel = !ShowOptionsPanel;
+        }
+
         // ---- Triptych panel column widths ----
         // Col 0 is set to a fixed pixel value so only the center column stretches on resize.
         // Reading Width.Value (not ActualWidth) is reliable even before the panel is rendered.

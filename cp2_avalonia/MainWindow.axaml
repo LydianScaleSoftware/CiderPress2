@@ -330,7 +330,7 @@ limitations under the License.
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*" MinWidth="150"/>
                     <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto" MinWidth="100"/>
+                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
                 <GridSplitter Grid.Column="1" Width="4"/>
@@ -654,8 +654,19 @@ limitations under the License.
 
                 <!-- Right panel: options panel -->
                 <Border Grid.Column="4" BorderBrush="LightGray" BorderThickness="1"
-                        CornerRadius="2" Margin="0,4" MinWidth="200">
-                    <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+                        CornerRadius="2" Margin="0,4">
+                    <DockPanel>
+                        <LayoutTransformControl DockPanel.Dock="Bottom"
+                                                HorizontalAlignment="Center" Margin="2,2">
+                            <LayoutTransformControl.LayoutTransform>
+                                <RotateTransform Angle="{Binding ShowHideRotation}"/>
+                            </LayoutTransformControl.LayoutTransform>
+                            <Button Content="Show/Hide Settings" Width="160"
+                                    Click="ShowHideOptionsButton_Click"/>
+                        </LayoutTransformControl>
+                        <ScrollViewer DockPanel.Dock="Top"
+                                      HorizontalScrollBarVisibility="Disabled"
+                                      IsVisible="{Binding ShowOptionsPanel}">
                         <StackPanel Margin="2">
                             <!-- Add/Import Options header -->
                             <Border Background="LightSteelBlue" Margin="0,0,0,2">
@@ -755,6 +766,7 @@ limitations under the License.
                             </StackPanel>
                         </StackPanel>
                     </ScrollViewer>
+                    </DockPanel>
                 </Border>
             </Grid>
         </Grid>
