@@ -350,3 +350,48 @@ newly added sub-volumes.  The Avalonia version now handles this automatically.
 | `cp2_avalonia/MainController_Panels.cs` | Added `TryOpenNewSubVolumes()` method |
 | `cp2_avalonia/MainController.cs` | Added `TryOpenNewSubVolumes()` call after add-files and paste completion |
 | `cp2_avalonia/MainWindow.axaml.cs` | `FileListDataGrid_SelectionChanged` now calls `SyncDirectoryTreeToFileSelection()`. |
+
+---
+
+## File List Sort Order Preserved Across Repopulation
+
+### WPF Behavior
+
+When the user renames a directory (via Edit Attributes), the file list does not update
+the FQPN (Fully Qualified Path Name) column for child entries — they continue to show the
+old directory name until the list is manually refreshed.  Additionally, any user-applied
+column sort is lost whenever the file list is repopulated (e.g., after an edit, add, or
+delete operation).
+
+### Avalonia Behavior
+
+Two improvements were made:
+
+1. **Directory rename refreshes all paths.**  When a directory entry is renamed,
+   `FinishEditAttributes` now rebuilds every `FileListItem` in the file list in-place.
+   Each item is reconstructed from its `IFileEntry` (which the filesystem has already
+   updated with the new `FullPathName`), so all child entries immediately show the
+   correct path.  Because items are replaced at the same indices, the display order is
+   preserved.
+
+2. **Sort order is remembered and reapplied.**  `MainWindow` now stores the last-sorted
+   `DataGridColumn` reference and sort direction (`mSortColumn`, `mSortAscending`).
+   These are set in `FileListDataGrid_Sorting` whenever the user clicks a column header,
+   and cleared in the `ResetSortCommand`.  A new `ReapplyFileListSort()` method re-sorts
+   the `FileList` using the stored state; it is called at the end of `PopulateFileList`
+   so that any repopulation (after rename, add, delete, paste, etc.) automatically
+   restores the user's chosen sort order.
+
+### Rationale
+
+The stale-FQPN bug existed in the WPF version as well and was a known issue.  Preserving
+sort order across repopulation is a quality-of-life improvement — users should not have to
+re-click the column header every time the list refreshes.
+
+### Files Changed
+
+| File | Change |
+|---|---|
+| `cp2_avalonia/MainController.cs` | `FinishEditAttributes` rebuilds all `FileListItem` objects in-place when the edited entry is a directory. |
+| `cp2_avalonia/MainWindow.axaml.cs` | Added `mSortColumn` / `mSortAscending` fields, updated `FileListDataGrid_Sorting` to store sort state, updated `ResetSortCommand` to clear it, added `ReapplyFileListSort()` method. |
+| `cp2_avalonia/MainController_Panels.cs` | `PopulateFileList` calls `mMainWin.ReapplyFileListSort()` after repopulation. |

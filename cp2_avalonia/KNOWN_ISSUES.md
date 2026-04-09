@@ -2,8 +2,7 @@
 
 ## Bugs
  - Highlighting styled text makes it lose formatting (new bug with Avalonia)
- - *Rename Dir* doesn't change FQPN's in details viewer (Legacy bug from WPF version)
-    - When a rename occurs, the details viewer should just refresh itself. That would be the easy path.
+
  - Change initial app size; preserve previous settings
  - Funky cell highlighting in file details viewer 
    - Should highlight entire Row, not Cell.  
@@ -14,6 +13,8 @@
  - Read-only metadata should be shown in grey.  There is no difference currently in the axaml version.
  - The block and sector editors should only hightlight one cell, not an entire row
  
+ - ~~*Rename Dir* doesn't change FQPN's in details viewer (Legacy bug from WPF version)~~
+    - ~~When a rename occurs, the details viewer should just refresh itself. That would be the easy path.~~
  - ~~The *Metadata* and *Disk Partitions/Utilities* sections of the Disk Image panel are missing~~
  - ~~The *Show/Hide Settings* button for the Settings panel on the main window is missing~~
    - ~~Need to make sure settings panel can be hidden, like the WPF version~~
@@ -58,7 +59,10 @@
  - Open physical volumes (General research, platform‑specific APIs, permissions, device enumeration)
 
 ## Other
- - Consider using ProDataGrid (https://github.com/wieslawsoltes/ProDataGrid)
+ - Consider using Avalonia 12.x.  It probably has some more features and bug fixes, but it is fairly new and relatively untested.
+     - Ver 12.0.0 is the latest in NuGet.
+ - Consider using ProDataGrid (https://github.com/wieslawsoltes/ProDataGrid) as a replacement for the DataGrid in the File Details viewer. It has a lot of features and is also MIT licensed, but it is a much larger dependency and may be overkill for our needs.
+    -  Ver 11.3.11 is the latest in NuGet. 
  - Make sure third party notices, licensing, etc. are ok between Apache & Avalonia's MIT license
  - Build and test with Windows
  - Build and test with macOS

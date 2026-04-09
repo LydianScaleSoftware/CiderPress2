@@ -919,6 +919,26 @@ namespace cp2_avalonia {
                     }
                 }
             }
+
+            // When a directory is renamed, the filesystem updates FullPathName on all
+            // child entries, but the cached PathName strings in existing FileListItem
+            // objects are stale.  Rebuild every item in-place so the displayed paths
+            // update while preserving the current sort order.
+            if (entry.IsDirectory) {
+                ObservableCollection<FileListItem> fileList = mMainWin.FileList;
+                FileListItem? newSelection = null;
+                for (int i = 0; i < fileList.Count; i++) {
+                    FileListItem old = fileList[i];
+                    FileListItem rebuilt = new FileListItem(old.FileEntry, mFormatter);
+                    fileList[i] = rebuilt;
+                    if (old.FileEntry == entry) {
+                        newSelection = rebuilt;
+                    }
+                }
+                if (newSelection != null) {
+                    mMainWin.SelectedFileListItem = newSelection;
+                }
+            }
         }
 
         // -----------------------------------------------------------------------------------------

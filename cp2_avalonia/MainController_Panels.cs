@@ -710,6 +710,9 @@ namespace cp2_avalonia {
             }
 
             SetEntryCounts(CurrentWorkObject as IFileSystem, dirCount, fileCount);
+
+            // Reapply any user-chosen column sort that was active before repopulation.
+            mMainWin.ReapplyFileListSort();
         }
 
         private void PopulateEntriesFromArchive(IArchive arc, ref int dirCount,

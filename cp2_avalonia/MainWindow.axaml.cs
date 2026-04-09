@@ -560,6 +560,10 @@ namespace cp2_avalonia {
             set { mIsResetSortEnabled = value; OnPropertyChanged(); }
         }
 
+        // Remembered sort state so we can reapply after file list repopulation.
+        private DataGridColumn? mSortColumn;
+        private bool mSortAscending;
+
         // ---- Single-dir vs full-list mode ----
         private bool mShowSingleDirFileList;
         public bool ShowSingleDirFileList {
@@ -1048,6 +1052,7 @@ namespace cp2_avalonia {
                         // clear the tracked tag so the next click defaults to ascending.
                         col.Tag = null;
                     }
+                    mSortColumn = null;
                     mMainCtrl.PopulateFileList(IFileEntry.NO_ENTRY, false);
                     IsResetSortEnabled = false;
                 },
@@ -1420,6 +1425,11 @@ namespace cp2_avalonia {
             col.Tag = direction;
 
             bool isAscending = (direction == System.ComponentModel.ListSortDirection.Ascending);
+
+            // Remember the sort state so it can be reapplied after repopulation.
+            mSortColumn = col;
+            mSortAscending = isAscending;
+
             var comparer = new FileListItem.ItemComparer(col, isAscending);
             List<FileListItem> sorted = FileList.OrderBy(x => x, comparer).ToList();
             FileList.Clear();
@@ -1436,6 +1446,22 @@ namespace cp2_avalonia {
             ArchiveTreeRoot.Clear();
             DirectoryTreeRoot.Clear();
             FileList.Clear();
+        }
+
+        /// <summary>
+        /// Re-sorts the file list using the previously applied column sort, if any.
+        /// Called after repopulation so that user-chosen sort order is preserved.
+        /// </summary>
+        internal void ReapplyFileListSort() {
+            if (mSortColumn == null) {
+                return;
+            }
+            var comparer = new FileListItem.ItemComparer(mSortColumn, mSortAscending);
+            List<FileListItem> sorted = FileList.OrderBy(x => x, comparer).ToList();
+            FileList.Clear();
+            foreach (FileListItem item in sorted) {
+                FileList.Add(item);
+            }
         }
 
         // ---- Drag-drop on file list DataGrid ----
