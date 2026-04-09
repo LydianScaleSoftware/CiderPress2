@@ -454,16 +454,40 @@ namespace cp2_avalonia {
             }
             ExportConverters.Sort((a, b) => string.Compare(a.Label, b.Label));
 
-            // Set initial selection — may be overwritten when settings are loaded.
+            // Set initial selection, then override from saved settings if available.
             if (ImportConverters.Count > 0)
             {
                 mSelectedImportConverter = ImportConverters[0];
             }
-
             if (ExportConverters.Count > 0)
             {
                 mSelectedExportConverter = ExportConverters[0];
             }
+
+            string importTag = AppSettings.Global.GetString(AppSettings.CONV_IMPORT_TAG,
+                string.Empty);
+            if (!string.IsNullOrEmpty(importTag)) {
+                var item = ImportConverters.Find(c => c.Tag == importTag);
+                if (item != null) {
+                    mSelectedImportConverter = item;
+                }
+            }
+            string exportTag = AppSettings.Global.GetString(AppSettings.CONV_EXPORT_TAG,
+                string.Empty);
+            if (!string.IsNullOrEmpty(exportTag)) {
+                var item = ExportConverters.Find(c => c.Tag == exportTag);
+                if (item != null) {
+                    mSelectedExportConverter = item;
+                }
+            }
+
+            // Notify the UI that the lists and selections are ready.  The lists are
+            // plain List<T> (not ObservableCollection), so the ComboBox controls won't
+            // see items added after the initial binding evaluation.
+            OnPropertyChanged(nameof(ImportConverters));
+            OnPropertyChanged(nameof(ExportConverters));
+            OnPropertyChanged(nameof(SelectedImportConverter));
+            OnPropertyChanged(nameof(SelectedExportConverter));
         }
 
         /// <summary>
@@ -490,6 +514,11 @@ namespace cp2_avalonia {
             OnPropertyChanged(nameof(IsExportComboChecked));
             OnPropertyChanged(nameof(IsChecked_AddExtract));
             OnPropertyChanged(nameof(IsChecked_ImportExport));
+
+            // Notify the UI of populated converter lists.  These are plain Lists,
+            // so the ComboBox won't see items added after the initial binding.
+            OnPropertyChanged(nameof(ImportConverters));
+            OnPropertyChanged(nameof(ExportConverters));
 
             // Restore selected import/export converter from settings.
             string importTag = AppSettings.Global.GetString(AppSettings.CONV_IMPORT_TAG, string.Empty);
