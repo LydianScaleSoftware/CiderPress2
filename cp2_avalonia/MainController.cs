@@ -115,6 +115,9 @@ namespace cp2_avalonia {
         public void WindowClosing() {
             mDebugLogViewer?.Close();
             CleanupClipTemp();
+            // Force dirty so window placement is always persisted, even if no other
+            // settings changed during this session.
+            AppSettings.Global.IsDirty = true;
             SaveAppSettings();
         }
 
@@ -451,6 +454,12 @@ namespace cp2_avalonia {
 #else
             mMainWin.ShowDebugMenu = settings.GetBool(AppSettings.DEBUG_MENU_ENABLED, false);
 #endif
+
+            // Restore window position, size, and state from the previous session.
+            string? placement = settings.GetString(AppSettings.MAIN_WINDOW_PLACEMENT, "");
+            if (!string.IsNullOrEmpty(placement)) {
+                WindowPlacement.Restore(mMainWin, placement);
+            }
 
             // Restore left panel width; setting a fixed pixel value means only the center
             // column stretches when the window is resized (right panel is Width=Auto).

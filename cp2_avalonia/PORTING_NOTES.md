@@ -395,3 +395,59 @@ re-click the column header every time the list refreshes.
 | `cp2_avalonia/MainController.cs` | `FinishEditAttributes` rebuilds all `FileListItem` objects in-place when the edited entry is a directory. |
 | `cp2_avalonia/MainWindow.axaml.cs` | Added `mSortColumn` / `mSortAscending` fields, updated `FileListDataGrid_Sorting` to store sort state, updated `ResetSortCommand` to clear it, added `ReapplyFileListSort()` method. |
 | `cp2_avalonia/MainController_Panels.cs` | `PopulateFileList` calls `mMainWin.ReapplyFileListSort()` after repopulation. |
+
+---
+
+## Window Placement Restore on Startup
+
+### WPF Behavior
+
+The WPF version saves and restores window position, size, and state using Win32
+`GetWindowPlacement` / `SetWindowPlacement` interop.  The placement is serialized as a
+Base64 string and stored in the `MAIN_WINDOW_PLACEMENT` setting.  Both save and restore
+are implemented, so the window geometry is fully persisted across sessions.
+
+### Avalonia Behavior
+
+The Avalonia version uses a cross-platform JSON-based `WindowPlacement` utility class
+(`cp2_avalonia/Common/WindowPlacement.cs`) that saves X, Y, Width, Height, and
+WindowState.  The `Save` side was already wired into `SaveAppSettings()`, but the
+`Restore` call was missing from `ApplyAppSettings()` — so the placement was saved but
+never applied on startup.  Additionally, `WindowClosing()` did not force
+`IsDirty = true` on the settings, which meant that if the window was only moved or
+resized (without changing any other setting), the placement would not be persisted at all.
+
+Both issues have been corrected:
+- `ApplyAppSettings()` now calls `WindowPlacement.Restore(mMainWin, placement)`.
+- `WindowClosing()` now sets `AppSettings.Global.IsDirty = true` before calling
+  `SaveAppSettings()`, matching the WPF pattern.
+
+### Files Changed
+
+| File | Change |
+|---|---|
+| `cp2_avalonia/MainController.cs` | Added `WindowPlacement.Restore()` call in `ApplyAppSettings()`. Added `AppSettings.Global.IsDirty = true` in `WindowClosing()`. |
+
+---
+
+## Debug Log — Copy to Clipboard
+
+### WPF Behavior
+
+The WPF debug log viewer (`Tools/LogViewer`) provides only a **Save to File** button.
+There is no built-in way to copy log output to the system clipboard.
+
+### Avalonia Behavior
+
+A **Copy to Clipboard** button has been added alongside the existing Save to File button.
+Clicking it formats all log entries (timestamp, priority, message) using the same format
+as the file save and places the text on the system clipboard via
+`TopLevel.Clipboard.SetTextAsync()`.  This is new functionality that does not exist in the
+WPF version.
+
+### Files Changed
+
+| File | Change |
+|---|---|
+| `cp2_avalonia/Tools/LogViewer.axaml` | Replaced single Save button with a `StackPanel` containing "Copy to Clipboard" and "Save to File" buttons. |
+| `cp2_avalonia/Tools/LogViewer.axaml.cs` | Added `CopyLog_Click` handler. Added `using Avalonia.Input` for clipboard access. |

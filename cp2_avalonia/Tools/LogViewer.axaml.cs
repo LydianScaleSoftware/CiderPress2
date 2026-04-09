@@ -20,6 +20,7 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Text;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 
@@ -139,6 +140,21 @@ namespace cp2_avalonia.Tools {
                 sb.Append(' ');
                 sb.AppendLine(entry.Message);
                 writer.Write(sb.ToString());
+            }
+        }
+
+        private async void CopyLog_Click(object? sender, RoutedEventArgs e) {
+            StringBuilder sb = new StringBuilder(LogEntries.Count * 80);
+            foreach (LogEntry entry in LogEntries) {
+                sb.Append(entry.When.ToString(@"hh\:mm\:ss\.fff"));
+                sb.Append(' ');
+                sb.Append(entry.Priority);
+                sb.Append(' ');
+                sb.AppendLine(entry.Message);
+            }
+            var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+            if (clipboard != null) {
+                await clipboard.SetTextAsync(sb.ToString());
             }
         }
     }

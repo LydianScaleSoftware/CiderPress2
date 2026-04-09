@@ -27,9 +27,13 @@ limitations under the License.
         Closed="Window_Closed">
 
     <DockPanel Margin="2" LastChildFill="True">
-        <Button DockPanel.Dock="Bottom" Content="Save to File" Width="80" Margin="0,4,0,0"
-                HorizontalAlignment="Center"
-                Click="SaveLog_Click"/>
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal"
+                    HorizontalAlignment="Center" Margin="0,4,0,0" Spacing="8">
+            <Button Content="Copy to Clipboard" Width="130"
+                    Click="CopyLog_Click"/>
+            <Button Content="Save to File" Width="100"
+                    Click="SaveLog_Click"/>
+        </StackPanel>
 
         <ListBox Name="logListBox"
                  ItemsSource="{Binding LogEntries}"
