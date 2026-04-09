@@ -31,24 +31,29 @@ limitations under the License. -->
         </Style>
         <Style Selector="DataGridCell">
             <Setter Property="Padding"
-                    Value="1,1" />
+                    Value="1,0" />
             <Setter Property="FontSize"
-                    Value="14" />
+                    Value="12" />
             <Setter Property="VerticalContentAlignment"
                     Value="Center" />
+          <Setter Property="MinHeight"
+                  Value="20" />
+          <Setter Property="Height"
+                  Value="20" />
+
         </Style>
         <Style Selector="DataGridColumnHeader">
             <Setter Property="Padding"
                     Value="1,1" />
             <Setter Property="FontSize"
-                    Value="14" />
+                    Value="12" />
         </Style>
         <Style Selector="DataGridRow">
             <Setter Property="MinHeight"
                     Value="20" />
             <Setter Property="Height"
                     Value="20" />
-        </Style>
+         </Style>
         <Style Selector="TreeViewItem">
             <!-- Reduce the vertical padding -->
             <Setter Property="Padding"

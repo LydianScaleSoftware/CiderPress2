@@ -3,9 +3,9 @@
 ## Bugs
  - Highlighting styled text makes it lose formatting (new bug with Avalonia)
  - Change initial app size; preserve previous settings
- - Read-only metadata should be shown in grey.  There is no difference currently in the axaml version.
- - The block and sector editors should only hightlight one cell, not an entire row
 
+ - ~~The block and sector editors should only hightlight one cell, not an entire row~
+ - ~~Read-only metadata should be shown in grey.  There is no difference currently in the axaml version.~~
  - ~~*Conversion Mode* combo box does not populate in *Export Configuration* panel~~
  - ~~When you move a directory into another directory by dragging, it does not update the FQPN of the first directory's contents~~
  - ~~Probably need a smaller font in File Details panel~~
