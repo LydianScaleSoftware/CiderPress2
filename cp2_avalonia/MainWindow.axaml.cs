@@ -336,26 +336,46 @@ namespace cp2_avalonia {
         public bool IsChecked_ExtPreserveNone {
             get => AppSettings.Global.GetEnum(AppSettings.EXT_PRESERVE_MODE,
                 ExtractFileWorker.PreserveMode.None) == ExtractFileWorker.PreserveMode.None;
-            set { if (value) AppSettings.Global.SetEnum(AppSettings.EXT_PRESERVE_MODE,
-                ExtractFileWorker.PreserveMode.None); OnPropertyChanged(); }
+            set { if (value)
+                {
+                    AppSettings.Global.SetEnum(AppSettings.EXT_PRESERVE_MODE,
+                ExtractFileWorker.PreserveMode.None);
+                }
+
+                OnPropertyChanged(); }
         }
         public bool IsChecked_ExtPreserveAS {
             get => AppSettings.Global.GetEnum(AppSettings.EXT_PRESERVE_MODE,
                 ExtractFileWorker.PreserveMode.None) == ExtractFileWorker.PreserveMode.AS;
-            set { if (value) AppSettings.Global.SetEnum(AppSettings.EXT_PRESERVE_MODE,
-                ExtractFileWorker.PreserveMode.AS); OnPropertyChanged(); }
+            set { if (value)
+                {
+                    AppSettings.Global.SetEnum(AppSettings.EXT_PRESERVE_MODE,
+                ExtractFileWorker.PreserveMode.AS);
+                }
+
+                OnPropertyChanged(); }
         }
         public bool IsChecked_ExtPreserveADF {
             get => AppSettings.Global.GetEnum(AppSettings.EXT_PRESERVE_MODE,
                 ExtractFileWorker.PreserveMode.None) == ExtractFileWorker.PreserveMode.ADF;
-            set { if (value) AppSettings.Global.SetEnum(AppSettings.EXT_PRESERVE_MODE,
-                ExtractFileWorker.PreserveMode.ADF); OnPropertyChanged(); }
+            set { if (value)
+                {
+                    AppSettings.Global.SetEnum(AppSettings.EXT_PRESERVE_MODE,
+                ExtractFileWorker.PreserveMode.ADF);
+                }
+
+                OnPropertyChanged(); }
         }
         public bool IsChecked_ExtPreserveNAPS {
             get => AppSettings.Global.GetEnum(AppSettings.EXT_PRESERVE_MODE,
                 ExtractFileWorker.PreserveMode.None) == ExtractFileWorker.PreserveMode.NAPS;
-            set { if (value) AppSettings.Global.SetEnum(AppSettings.EXT_PRESERVE_MODE,
-                ExtractFileWorker.PreserveMode.NAPS); OnPropertyChanged(); }
+            set { if (value)
+                {
+                    AppSettings.Global.SetEnum(AppSettings.EXT_PRESERVE_MODE,
+                ExtractFileWorker.PreserveMode.NAPS);
+                }
+
+                OnPropertyChanged(); }
         }
 
         // ---- Export/Import converter configuration ----
@@ -394,7 +414,11 @@ namespace cp2_avalonia {
         public bool IsExportBestChecked {
             get => AppSettings.Global.GetBool(AppSettings.CONV_EXPORT_BEST, true);
             set {
-                if (value) AppSettings.Global.SetBool(AppSettings.CONV_EXPORT_BEST, true);
+                if (value)
+                {
+                    AppSettings.Global.SetBool(AppSettings.CONV_EXPORT_BEST, true);
+                }
+
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(IsExportComboChecked));
             }
@@ -402,7 +426,11 @@ namespace cp2_avalonia {
         public bool IsExportComboChecked {
             get => !AppSettings.Global.GetBool(AppSettings.CONV_EXPORT_BEST, true);
             set {
-                if (value) AppSettings.Global.SetBool(AppSettings.CONV_EXPORT_BEST, false);
+                if (value)
+                {
+                    AppSettings.Global.SetBool(AppSettings.CONV_EXPORT_BEST, false);
+                }
+
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(IsExportBestChecked));
             }
@@ -427,8 +455,15 @@ namespace cp2_avalonia {
             ExportConverters.Sort((a, b) => string.Compare(a.Label, b.Label));
 
             // Set initial selection — may be overwritten when settings are loaded.
-            if (ImportConverters.Count > 0) mSelectedImportConverter = ImportConverters[0];
-            if (ExportConverters.Count > 0) mSelectedExportConverter = ExportConverters[0];
+            if (ImportConverters.Count > 0)
+            {
+                mSelectedImportConverter = ImportConverters[0];
+            }
+
+            if (ExportConverters.Count > 0)
+            {
+                mSelectedExportConverter = ExportConverters[0];
+            }
         }
 
         /// <summary>
@@ -460,12 +495,18 @@ namespace cp2_avalonia {
             string importTag = AppSettings.Global.GetString(AppSettings.CONV_IMPORT_TAG, string.Empty);
             if (!string.IsNullOrEmpty(importTag)) {
                 var item = ImportConverters.Find(c => c.Tag == importTag);
-                if (item != null) mSelectedImportConverter = item;
+                if (item != null)
+                {
+                    mSelectedImportConverter = item;
+                }
             }
             string exportTag = AppSettings.Global.GetString(AppSettings.CONV_EXPORT_TAG, string.Empty);
             if (!string.IsNullOrEmpty(exportTag)) {
                 var item = ExportConverters.Find(c => c.Tag == exportTag);
-                if (item != null) mSelectedExportConverter = item;
+                if (item != null)
+                {
+                    mSelectedExportConverter = item;
+                }
             }
             OnPropertyChanged(nameof(SelectedImportConverter));
             OnPropertyChanged(nameof(SelectedExportConverter));
@@ -498,7 +539,11 @@ namespace cp2_avalonia {
         public ObservableCollection<FileListItem> FileList { get; } = new();
         public FileListItem? SelectedFileListItem {
             get => fileListDataGrid?.SelectedItem as FileListItem;
-            set { if (fileListDataGrid != null) fileListDataGrid.SelectedItem = value; }
+            set { if (fileListDataGrid != null)
+                {
+                    fileListDataGrid.SelectedItem = value;
+                }
+            }
         }
 
         // ---- Tree selection helpers (read-only) ----
@@ -752,6 +797,7 @@ namespace cp2_avalonia {
             public string? Description { get; private set; }
             public string? ValueSyntax { get; private set; }
             public bool CanEdit { get; private set; }
+            public IBrush TextForeground => CanEdit ? Brushes.Black : Brushes.Gray;
 
             public MetadataItem(string key, string value, string description,
                     string valueSyntax, bool canEdit) {
@@ -1253,7 +1299,10 @@ namespace cp2_avalonia {
         /// </summary>
         private static void AutoSizeColumnFromHeader(DataGrid grid, Visual? hitVisual) {
             var colHeader = hitVisual?.FindAncestorOfType<DataGridColumnHeader>();
-            if (colHeader == null) return;
+            if (colHeader == null)
+            {
+                return;
+            }
 
             // Find the column index matching this header.
             string? headerText = colHeader.Content?.ToString();
@@ -1264,7 +1313,10 @@ namespace cp2_avalonia {
                     break;
                 }
             }
-            if (colIndex < 0) return;
+            if (colIndex < 0)
+            {
+                return;
+            }
 
             // Determine whether the Thumb is the left or right resize gripper.
             // In Avalonia's DataGridColumnHeader template the left gripper has
@@ -1298,7 +1350,10 @@ namespace cp2_avalonia {
         /// </summary>
         private static void AutoSizeColumnToContent(DataGrid grid, DataGridColumn col) {
             IEnumerable? items = grid.ItemsSource as IEnumerable;
-            if (items == null) return;
+            if (items == null)
+            {
+                return;
+            }
 
             // Determine the property name to read from each row item.
             string? propName = null;
@@ -1330,9 +1385,17 @@ namespace cp2_avalonia {
             if (propName != null) {
                 System.Reflection.PropertyInfo? prop = null;
                 foreach (object? item in items) {
-                    if (item == null) continue;
+                    if (item == null)
+                    {
+                        continue;
+                    }
+
                     prop ??= item.GetType().GetProperty(propName);
-                    if (prop == null) break;
+                    if (prop == null)
+                    {
+                        break;
+                    }
+
                     string? text = prop.GetValue(item)?.ToString();
                     if (!string.IsNullOrEmpty(text)) {
                         measureBlock.Text = text;
@@ -1354,7 +1417,10 @@ namespace cp2_avalonia {
         /// </summary>
         private void InfoDataGrid_PointerPressed(object? sender, PointerPressedEventArgs e) {
             // Registered with handledEventsToo — skip the Bubble re-invocation.
-            if (e.Handled) return;
+            if (e.Handled)
+            {
+                return;
+            }
 
             var hitVisual = e.Source as Visual;
             var colHeader = hitVisual?.FindAncestorOfType<DataGridColumnHeader>();
@@ -1529,7 +1595,10 @@ namespace cp2_avalonia {
             // first invocation (Tunnel phase, where Handled is still false).
             Debug.WriteLine($"FL PointerPressed: route={e.Route}, handled={e.Handled}, " +
                 $"source={e.Source?.GetType().Name}, click={e.ClickCount}");
-            if (e.Handled) return;
+            if (e.Handled)
+            {
+                return;
+            }
 
             var point = e.GetCurrentPoint(fileListDataGrid);
             if (point.Properties.IsLeftButtonPressed) {

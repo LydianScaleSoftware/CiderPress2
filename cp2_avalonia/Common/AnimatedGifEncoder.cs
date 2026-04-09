@@ -96,8 +96,15 @@ namespace cp2_avalonia.Common {
 
             // Determine largest dimensions.
             foreach (FrameEntry fe in mFrames) {
-                if (fe.Bitmap.Width > maxWidth) maxWidth = fe.Bitmap.Width;
-                if (fe.Bitmap.Height > maxHeight) maxHeight = fe.Bitmap.Height;
+                if (fe.Bitmap.Width > maxWidth)
+                {
+                    maxWidth = fe.Bitmap.Width;
+                }
+
+                if (fe.Bitmap.Height > maxHeight)
+                {
+                    maxHeight = fe.Bitmap.Height;
+                }
             }
 
             // GIF89a header + logical screen descriptor.
@@ -138,7 +145,10 @@ namespace cp2_avalonia.Common {
 
                 // LZW minimum code size.
                 int lzwMinCodeSize = colorTableSizeField + 1;
-                if (lzwMinCodeSize < 2) lzwMinCodeSize = 2;
+                if (lzwMinCodeSize < 2)
+                {
+                    lzwMinCodeSize = 2;
+                }
 
                 // Graphic Control Extension.
                 stream.Write(GraphicControlStart, 0, GraphicControlStart.Length);
@@ -171,11 +181,18 @@ namespace cp2_avalonia.Common {
         /// N is in the range [0, 7].
         /// </summary>
         private static int ComputeColorTableSizeField(int numColors) {
-            if (numColors <= 0) numColors = 1;
+            if (numColors <= 0)
+            {
+                numColors = 1;
+            }
+
             int n = 0;
             while ((1 << (n + 1)) < numColors) {
                 n++;
-                if (n == 7) break;
+                if (n == 7)
+                {
+                    break;
+                }
             }
             return n;
         }

@@ -281,7 +281,11 @@ namespace cp2_avalonia {
         /// </summary>
         public void CloseSubTree() {
             ArchiveTreeItem? arcTreeSel = mMainWin.SelectedArchiveTreeItem;
-            if (arcTreeSel == null) return;
+            if (arcTreeSel == null)
+            {
+                return;
+            }
+
             CloseSubTree(arcTreeSel);
         }
 

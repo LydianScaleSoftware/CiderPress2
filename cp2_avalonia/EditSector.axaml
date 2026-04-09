@@ -61,6 +61,19 @@ limitations under the License.
                   CurrentCellChanged="SectorDataGrid_CurrentCellChanged"
                   KeyDown="SectorDataGrid_KeyDown"
                   FontFamily="{StaticResource GeneralMonoFont}">
+            <DataGrid.Styles>
+                <!-- Suppress row-level selection highlight; cell CurrencyVisual
+                     provides single-cell focus indicator -->
+                <Style Selector="DataGridRow:selected /template/ Rectangle#BackgroundRectangle">
+                    <Setter Property="Fill" Value="Transparent"/>
+                </Style>
+                <Style Selector="DataGridRow:selected:pointerover /template/ Rectangle#BackgroundRectangle">
+                    <Setter Property="Fill" Value="Transparent"/>
+                </Style>
+                <Style Selector="DataGridRow:selected:focus /template/ Rectangle#BackgroundRectangle">
+                    <Setter Property="Fill" Value="Transparent"/>
+                </Style>
+            </DataGrid.Styles>
             <DataGrid.Columns>
                 <!-- Column 0: offset (frozen, acts as row header) -->
                 <DataGridTextColumn Header="" Binding="{Binding RowLabel}"

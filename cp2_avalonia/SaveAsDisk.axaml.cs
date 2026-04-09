@@ -105,16 +105,46 @@ namespace cp2_avalonia {
                 return;
             }
 
-            if (IsEnabled_FT_ProDOSBlock)           mFileType = FileTypeValue.ProDOSBlock;
-            else if (IsEnabled_FT_SimpleBlock)      mFileType = FileTypeValue.SimpleBlock;
-            else if (IsEnabled_FT_DOSSector)        mFileType = FileTypeValue.DOSSector;
-            else if (IsEnabled_FT_Woz)              mFileType = FileTypeValue.Woz;
-            else if (IsEnabled_FT_Moof)             mFileType = FileTypeValue.Moof;
-            else if (IsEnabled_FT_TwoIMG)           mFileType = FileTypeValue.TwoIMG;
-            else if (IsEnabled_FT_NuFX)             mFileType = FileTypeValue.NuFX;
-            else if (IsEnabled_FT_DiskCopy42)       mFileType = FileTypeValue.DiskCopy42;
-            else if (IsEnabled_FT_Nib)              mFileType = FileTypeValue.Nib;
-            else if (IsEnabled_FT_Trackstar)        mFileType = FileTypeValue.Trackstar;
+            if (IsEnabled_FT_ProDOSBlock)
+            {
+                mFileType = FileTypeValue.ProDOSBlock;
+            }
+            else if (IsEnabled_FT_SimpleBlock)
+            {
+                mFileType = FileTypeValue.SimpleBlock;
+            }
+            else if (IsEnabled_FT_DOSSector)
+            {
+                mFileType = FileTypeValue.DOSSector;
+            }
+            else if (IsEnabled_FT_Woz)
+            {
+                mFileType = FileTypeValue.Woz;
+            }
+            else if (IsEnabled_FT_Moof)
+            {
+                mFileType = FileTypeValue.Moof;
+            }
+            else if (IsEnabled_FT_TwoIMG)
+            {
+                mFileType = FileTypeValue.TwoIMG;
+            }
+            else if (IsEnabled_FT_NuFX)
+            {
+                mFileType = FileTypeValue.NuFX;
+            }
+            else if (IsEnabled_FT_DiskCopy42)
+            {
+                mFileType = FileTypeValue.DiskCopy42;
+            }
+            else if (IsEnabled_FT_Nib)
+            {
+                mFileType = FileTypeValue.Nib;
+            }
+            else if (IsEnabled_FT_Trackstar)
+            {
+                mFileType = FileTypeValue.Trackstar;
+            }
             else { Debug.Assert(false); mFileType = FileTypeValue.ProDOSBlock; }
         }
 

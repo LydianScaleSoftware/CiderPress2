@@ -808,10 +808,22 @@ namespace cp2_avalonia {
         /// </summary>
         private void SectorDataGrid_CurrentCellChanged(object? sender, EventArgs e) {
             var col = sectorDataGrid.CurrentColumn;
-            if (col == null) return;
+            if (col == null)
+            {
+                return;
+            }
+
             int displayIndex = col.DisplayIndex;
-            if (displayIndex == 0) return;  // RowLabel column — ignore
-            if (sectorDataGrid.SelectedItem is not SectorRow row) return;
+            if (displayIndex == 0)
+            {
+                return;  // RowLabel column — ignore
+            }
+
+            if (sectorDataGrid.SelectedItem is not SectorRow row)
+            {
+                return;
+            }
+
             mCurRow = row.RowIndex;
             mCurCol = displayIndex - 1;     // 0..15 = hex columns, 16 = text
             mCurDigit = 0;
@@ -905,11 +917,19 @@ namespace cp2_avalonia {
         private void SetPosition(int col, int row) {
             // col is the logical hex column (0..15); add 1 for the RowLabel column offset.
             int gridCol = col + 1;
-            if (row < 0 || row >= SectorData.Count) return;
+            if (row < 0 || row >= SectorData.Count)
+            {
+                return;
+            }
+
             object item = SectorData[row];
             DataGridColumn? dgCol = sectorDataGrid.Columns.Count > gridCol
                 ? sectorDataGrid.Columns[gridCol] : null;
-            if (dgCol == null) return;
+            if (dgCol == null)
+            {
+                return;
+            }
+
             sectorDataGrid.SelectedItem = item;
             sectorDataGrid.CurrentColumn = dgCol;
             sectorDataGrid.ScrollIntoView(item, dgCol);

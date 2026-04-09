@@ -523,12 +523,30 @@ namespace cp2_avalonia {
                     default: Debug.Assert(false); break;
                 }
                 if (needNewFs) {
-                    if (IsEnabled_FS_DOS)        mFilesystem = FileSystemType.DOS33;
-                    else if (IsEnabled_FS_ProDOS) mFilesystem = FileSystemType.ProDOS;
-                    else if (IsEnabled_FS_HFS)   mFilesystem = FileSystemType.HFS;
-                    else if (IsEnabled_FS_Pascal) mFilesystem = FileSystemType.Pascal;
-                    else if (IsEnabled_FS_CPM)   mFilesystem = FileSystemType.CPM;
-                    else                         mFilesystem = FileSystemType.Unknown;
+                    if (IsEnabled_FS_DOS)
+                    {
+                        mFilesystem = FileSystemType.DOS33;
+                    }
+                    else if (IsEnabled_FS_ProDOS)
+                    {
+                        mFilesystem = FileSystemType.ProDOS;
+                    }
+                    else if (IsEnabled_FS_HFS)
+                    {
+                        mFilesystem = FileSystemType.HFS;
+                    }
+                    else if (IsEnabled_FS_Pascal)
+                    {
+                        mFilesystem = FileSystemType.Pascal;
+                    }
+                    else if (IsEnabled_FS_CPM)
+                    {
+                        mFilesystem = FileSystemType.CPM;
+                    }
+                    else
+                    {
+                        mFilesystem = FileSystemType.Unknown;
+                    }
                 }
 
                 // Re-select file type if current one is now disabled.
@@ -547,16 +565,46 @@ namespace cp2_avalonia {
                     default: Debug.Assert(false); break;
                 }
                 if (needNewType) {
-                    if (IsEnabled_FT_ProDOSBlock)       mFileType = FileTypeValue.ProDOSBlock;
-                    else if (IsEnabled_FT_SimpleBlock)  mFileType = FileTypeValue.SimpleBlock;
-                    else if (IsEnabled_FT_DOSSector)    mFileType = FileTypeValue.DOSSector;
-                    else if (IsEnabled_FT_Woz)          mFileType = FileTypeValue.Woz;
-                    else if (IsEnabled_FT_Moof)         mFileType = FileTypeValue.Moof;
-                    else if (IsEnabled_FT_TwoIMG)       mFileType = FileTypeValue.TwoIMG;
-                    else if (IsEnabled_FT_NuFX)         mFileType = FileTypeValue.NuFX;
-                    else if (IsEnabled_FT_DiskCopy42)   mFileType = FileTypeValue.DiskCopy42;
-                    else if (IsEnabled_FT_Nib)          mFileType = FileTypeValue.Nib;
-                    else if (IsEnabled_FT_Trackstar)    mFileType = FileTypeValue.Trackstar;
+                    if (IsEnabled_FT_ProDOSBlock)
+                    {
+                        mFileType = FileTypeValue.ProDOSBlock;
+                    }
+                    else if (IsEnabled_FT_SimpleBlock)
+                    {
+                        mFileType = FileTypeValue.SimpleBlock;
+                    }
+                    else if (IsEnabled_FT_DOSSector)
+                    {
+                        mFileType = FileTypeValue.DOSSector;
+                    }
+                    else if (IsEnabled_FT_Woz)
+                    {
+                        mFileType = FileTypeValue.Woz;
+                    }
+                    else if (IsEnabled_FT_Moof)
+                    {
+                        mFileType = FileTypeValue.Moof;
+                    }
+                    else if (IsEnabled_FT_TwoIMG)
+                    {
+                        mFileType = FileTypeValue.TwoIMG;
+                    }
+                    else if (IsEnabled_FT_NuFX)
+                    {
+                        mFileType = FileTypeValue.NuFX;
+                    }
+                    else if (IsEnabled_FT_DiskCopy42)
+                    {
+                        mFileType = FileTypeValue.DiskCopy42;
+                    }
+                    else if (IsEnabled_FT_Nib)
+                    {
+                        mFileType = FileTypeValue.Nib;
+                    }
+                    else if (IsEnabled_FT_Trackstar)
+                    {
+                        mFileType = FileTypeValue.Trackstar;
+                    }
                     // else: custom size with no compatible type — leave selection alone
                 }
             }
@@ -846,7 +894,11 @@ namespace cp2_avalonia {
         }
         public bool IsEnabled_FT_DOSSector {
             get {
-                if (!GetNumTracksSectors(out uint tracks, out uint sectors)) return false;
+                if (!GetNumTracksSectors(out uint tracks, out uint sectors))
+                {
+                    return false;
+                }
+
                 return UnadornedSector.CanCreateSectorImage(tracks, sectors,
                     SectorOrder.DOS_Sector, out string _);
             }
@@ -858,7 +910,11 @@ namespace cp2_avalonia {
         }
         public bool IsEnabled_FT_ProDOSBlock {
             get {
-                if (!GetNumBlocks(out uint blocks)) return false;
+                if (!GetNumBlocks(out uint blocks))
+                {
+                    return false;
+                }
+
                 return UnadornedSector.CanCreateBlockImage(blocks, out string _);
             }
         }
@@ -875,7 +931,11 @@ namespace cp2_avalonia {
         }
         public bool IsEnabled_FT_TwoIMG {
             get {
-                if (!GetNumBlocks(out uint blocks)) return false;
+                if (!GetNumBlocks(out uint blocks))
+                {
+                    return false;
+                }
+
                 return TwoIMG.CanCreateProDOSBlockImage(blocks, out string _);
             }
         }
@@ -886,7 +946,11 @@ namespace cp2_avalonia {
         }
         public bool IsEnabled_FT_NuFX {
             get {
-                if (!GetNumBlocks(out uint blocks)) return false;
+                if (!GetNumBlocks(out uint blocks))
+                {
+                    return false;
+                }
+
                 return blocks == 280 || blocks == 1600;
             }
         }
@@ -897,8 +961,16 @@ namespace cp2_avalonia {
         }
         public bool IsEnabled_FT_DiskCopy42 {
             get {
-                if (!GetNumBlocks(out uint _)) return false;
-                if (!GetMediaKind(out MediaKind kind)) return false;
+                if (!GetNumBlocks(out uint _))
+                {
+                    return false;
+                }
+
+                if (!GetMediaKind(out MediaKind kind))
+                {
+                    return false;
+                }
+
                 return DiskCopy.CanCreateDisk(kind, out string _);
             }
         }
@@ -910,10 +982,18 @@ namespace cp2_avalonia {
         public bool IsEnabled_FT_Woz {
             get {
                 if (IsFlop525) {
-                    if (!GetNumTracksSectors(out uint tracks, out uint _)) return false;
+                    if (!GetNumTracksSectors(out uint tracks, out uint _))
+                    {
+                        return false;
+                    }
+
                     return Woz.CanCreateDisk525(tracks, out string _);
                 } else {
-                    if (!GetMediaKind(out MediaKind kind)) return false;
+                    if (!GetMediaKind(out MediaKind kind))
+                    {
+                        return false;
+                    }
+
                     return Woz.CanCreateDisk35(kind, WOZ_IL_35, out string _);
                 }
             }
@@ -925,8 +1005,16 @@ namespace cp2_avalonia {
         }
         public bool IsEnabled_FT_Moof {
             get {
-                if (IsFlop525) return false;
-                if (!GetMediaKind(out MediaKind kind)) return false;
+                if (IsFlop525)
+                {
+                    return false;
+                }
+
+                if (!GetMediaKind(out MediaKind kind))
+                {
+                    return false;
+                }
+
                 return Moof.CanCreateDisk35(kind, MOOF_IL_35, out string _);
             }
         }
@@ -937,7 +1025,11 @@ namespace cp2_avalonia {
         }
         public bool IsEnabled_FT_Nib {
             get {
-                if (!GetNumTracksSectors(out uint tracks, out uint _)) return false;
+                if (!GetNumTracksSectors(out uint tracks, out uint _))
+                {
+                    return false;
+                }
+
                 return tracks == 35;
             }
         }
@@ -948,7 +1040,11 @@ namespace cp2_avalonia {
         }
         public bool IsEnabled_FT_Trackstar {
             get {
-                if (!GetNumTracksSectors(out uint tracks, out uint sectors)) return false;
+                if (!GetNumTracksSectors(out uint tracks, out uint sectors))
+                {
+                    return false;
+                }
+
                 return Trackstar.CanCreateDisk(tracks, sectors, out string _);
             }
         }

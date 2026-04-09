@@ -433,6 +433,43 @@ limitations under the License.
                               DoubleTapped="FileListDataGrid_DoubleTapped"
                               SelectionChanged="FileListDataGrid_SelectionChanged"
                               Sorting="FileListDataGrid_Sorting">
+                        <DataGrid.Styles>
+                            <!-- Hide cell-level focus rectangle; row background highlight is sufficient -->
+                            <Style Selector="DataGridCell:current /template/ Rectangle#CurrencyVisual">
+                                <Setter Property="IsVisible" Value="False"/>
+                            </Style>
+                            <Style Selector="DataGridCell:current /template/ Rectangle#CurrencyVisual2">
+                                <Setter Property="IsVisible" Value="False"/>
+                            </Style>
+                          <Style Selector="DataGridCell:current /template/ Rectangle#CurrentBackground">
+                            <Setter Property="IsVisible" Value="False"/>
+                          </Style>
+
+                          <Style Selector="DataGridCell:current /template/ Rectangle#CurrentBorder">
+                            <Setter Property="IsVisible" Value="False"/>
+                          </Style>
+
+                          <Style Selector="DataGridCell /template/ Grid#FocusVisual">
+                            <Setter Property="IsVisible" Value="False"/>
+                          </Style>
+                          <Style Selector="DataGridCell:focus">
+                            <Setter Property="BorderThickness" Value="0"/>
+                          </Style>
+                          <Style Selector="DataGridCell">
+                            <Setter Property="BorderThickness" Value="0"/>
+                            <Setter Property="BorderBrush" Value="Transparent"/>
+                          </Style>
+
+
+
+                          <!-- Smaller font for file details -->
+                            <Style Selector="DataGridCell">
+                                <Setter Property="FontSize" Value="12"/>
+                            </Style>
+                            <Style Selector="DataGridColumnHeader">
+                                <Setter Property="FontSize" Value="12"/>
+                            </Style>
+                        </DataGrid.Styles>
                         <DataGrid.Columns>
                             <!-- Col 0: Status icon (dubious/damaged/comment) -->
                             <DataGridTemplateColumn Header="?" Width="Auto" CanUserResize="True" CanUserSort="True" IsVisible="True" >
@@ -618,12 +655,26 @@ limitations under the License.
                                           DoubleTapped="MetadataList_DoubleTapped"
                                           Sorting="InfoDataGrid_Sorting">
                                     <DataGrid.Columns>
-                                        <DataGridTextColumn Header="Key" Width="150"
-                                                            CanUserResize="True"
-                                                            Binding="{Binding Key}"/>
-                                        <DataGridTextColumn Header="Value" Width="*"
-                                                            CanUserResize="True"
-                                                            Binding="{Binding Value}"/>
+                                        <DataGridTemplateColumn Header="Key" Width="150"
+                                                                CanUserResize="True">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock Text="{Binding Key}"
+                                                               Foreground="{Binding TextForeground}"
+                                                               ToolTip.Tip="{Binding Description}"/>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+                                        <DataGridTemplateColumn Header="Value" Width="*"
+                                                                CanUserResize="True">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock Text="{Binding Value}"
+                                                               Foreground="{Binding TextForeground}"
+                                                               ToolTip.Tip="{Binding ValueSyntax}"/>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
                                     </DataGrid.Columns>
                                 </DataGrid>
                                 <Button Margin="0,8,0,0" Width="120" Content="Add New Entry"

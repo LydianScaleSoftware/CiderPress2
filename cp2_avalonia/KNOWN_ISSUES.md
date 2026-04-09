@@ -2,17 +2,14 @@
 
 ## Bugs
  - Highlighting styled text makes it lose formatting (new bug with Avalonia)
-
  - Change initial app size; preserve previous settings
- - Funky cell highlighting in file details viewer 
-   - Should highlight entire Row, not Cell.  
-   - Need to lose outline box which is being chopped off and stick with background highlighting
- - Cannot click header to sort by name or change sort order in file details viewer; other headers work
  - *Conversion Mode* combo box does not populate in *Export Configuration* panel
- - Probably need a smaller font in File Details panel
  - Read-only metadata should be shown in grey.  There is no difference currently in the axaml version.
  - The block and sector editors should only hightlight one cell, not an entire row
  
+ - ~~When you move a directory into another directory by dragging, it does not update the FQPN of the first directory's contents~~
+ - ~~Probably need a smaller font in File Details panel~~
+ - ~~Cannot click header to sort by name or change sort order in file details viewer; other headers work~~
  - ~~*Rename Dir* doesn't change FQPN's in details viewer (Legacy bug from WPF version)~~
     - ~~When a rename occurs, the details viewer should just refresh itself. That would be the easy path.~~
  - ~~The *Metadata* and *Disk Partitions/Utilities* sections of the Disk Image panel are missing~~
@@ -23,6 +20,12 @@
  - ~~Double clicking on resize arrows in File Details viewer header should auto-size column to fit the data to the left of it.~~
  - ~~Metadata panel columns are not resizable~~
  
+ ## Persistent and annoying bugs that are resisting fixes
+  - Funky cell highlighting in file details viewer 
+   - Should highlight entire Row, not Cell.  
+   - Need to lose outline box which is being chopped off and stick with background highlighting
+
+
 ## Test further
  - All obvious features
  - Settings (set/clear, persistence)

@@ -100,11 +100,18 @@ namespace cp2_avalonia {
             // In dev builds the base dir ends with e.g. cp2_avalonia/bin/Debug/net8.0/.
             // Walk up four levels to reach the solution root.
             string marker = Path.Combine(baseDir, LEGAL_STUFF_FILE_NAME);
-            if (File.Exists(marker)) return baseDir;
+            if (File.Exists(marker))
+            {
+                return baseDir;
+            }
+
             for (int i = 0; i < 4; i++) {
                 baseDir = Path.GetDirectoryName(baseDir) ?? baseDir;
                 marker = Path.Combine(baseDir, LEGAL_STUFF_FILE_NAME);
-                if (File.Exists(marker)) return baseDir;
+                if (File.Exists(marker))
+                {
+                    return baseDir;
+                }
             }
             return AppContext.BaseDirectory; // fallback
         }

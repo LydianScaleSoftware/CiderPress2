@@ -734,18 +734,44 @@ namespace cp2_avalonia {
             // Clear selection since file list items' pathnames have changed.
             mMainWin.fileListDataGrid.SelectedItems.Clear();
 
-            // Regenerate FileListItem for each moved entry (pathname fields may have changed).
+            // Check whether any moved entry is a directory.  If so, we need to rebuild
+            // ALL FileListItems because child entries cache their PathName at construction
+            // and moving a directory changes the FullPathName of every descendant.
+            bool movedDirectory = false;
             foreach (IFileEntry entry in moveList) {
-                FileListItem? item = FileListItem.FindItemByEntry(mMainWin.FileList, entry,
-                        out int itemIndex);
-                if (item == null) {
-                    Debug.Assert(false, "unable to find entry: " + entry);
-                    continue;
+                if (entry.IsDirectory) {
+                    movedDirectory = true;
+                    break;
                 }
-                FileListItem newItem = new FileListItem(entry, mFormatter);
-                mMainWin.FileList.RemoveAt(itemIndex);
-                mMainWin.FileList.Insert(itemIndex, newItem);
-                mMainWin.fileListDataGrid.SelectedItems.Add(newItem);
+            }
+
+            if (movedDirectory) {
+                // Rebuild every item in the file list so that descendant paths are
+                // refreshed.  Track moved entries so we can re-select them.
+                ObservableCollection<FileListItem> fileList = mMainWin.FileList;
+                HashSet<IFileEntry> movedSet = new HashSet<IFileEntry>(moveList);
+                for (int i = 0; i < fileList.Count; i++) {
+                    FileListItem old = fileList[i];
+                    FileListItem rebuilt = new FileListItem(old.FileEntry, mFormatter);
+                    fileList[i] = rebuilt;
+                    if (movedSet.Contains(old.FileEntry)) {
+                        mMainWin.fileListDataGrid.SelectedItems.Add(rebuilt);
+                    }
+                }
+            } else {
+                // Only files were moved; regenerate just the affected items.
+                foreach (IFileEntry entry in moveList) {
+                    FileListItem? item = FileListItem.FindItemByEntry(mMainWin.FileList, entry,
+                            out int itemIndex);
+                    if (item == null) {
+                        Debug.Assert(false, "unable to find entry: " + entry);
+                        continue;
+                    }
+                    FileListItem newItem = new FileListItem(entry, mFormatter);
+                    mMainWin.FileList.RemoveAt(itemIndex);
+                    mMainWin.FileList.Insert(itemIndex, newItem);
+                    mMainWin.fileListDataGrid.SelectedItems.Add(newItem);
+                }
             }
 
             RefreshDirAndFileList();
@@ -2068,7 +2094,10 @@ namespace cp2_avalonia {
             } else {
                 var temp = new List<FileListItem>();
                 foreach (object obj in listSel) {
-                    if (obj is FileListItem fli) temp.Add(fli);
+                    if (obj is FileListItem fli)
+                    {
+                        temp.Add(fli);
+                    }
                 }
                 itemsToProcess = temp;
             }
@@ -2112,7 +2141,11 @@ namespace cp2_avalonia {
                 if (hasOpenChildren) {
                     for (int i = 0; i < selected.Count; i++) {
                         IFileEntry entry = selected[i];
-                        if (entry.IsDirectory) continue;
+                        if (entry.IsDirectory)
+                        {
+                            continue;
+                        }
+
                         ArchiveTreeItem? treeItem =
                             ArchiveTreeItem.FindItemByEntry(mMainWin.ArchiveTreeRoot, entry);
                         if (treeItem != null) {
@@ -2156,7 +2189,14 @@ namespace cp2_avalonia {
             var dirs = new List<IFileEntry>();
             var files = new List<IFileEntry>();
             foreach (IFileEntry e in entries) {
-                if (e.IsDirectory) dirs.Add(e); else files.Add(e);
+                if (e.IsDirectory)
+                {
+                    dirs.Add(e);
+                }
+                else
+                {
+                    files.Add(e);
+                }
             }
             dirs.Sort((a, b) =>
                 string.Compare(a.FullPathName, b.FullPathName, StringComparison.Ordinal));

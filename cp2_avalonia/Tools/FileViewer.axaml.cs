@@ -435,7 +435,11 @@ namespace cp2_avalonia.Tools {
 
         private void SelectConversion(Type convType) {
             foreach (object? obj in convComboBox.Items) {
-                if (obj is not ConverterComboItem item) continue;
+                if (obj is not ConverterComboItem item)
+                {
+                    continue;
+                }
+
                 if (item.Converter.GetType() == convType) {
                     convComboBox.SelectedItem = item;
                     return;

@@ -159,7 +159,11 @@ namespace cp2_avalonia.Tools {
                     byte g = (byte)(argb >> 8);
                     byte b = (byte)argb;
                     // FancyText stores colors as RGB (alpha is often 0 for fully opaque).
-                    if (a == 0) a = 255;
+                    if (a == 0)
+                    {
+                        a = 255;
+                    }
+
                     mForeground = new SolidColorBrush(new Color(a, r, g, b));
                     break;
                 }
