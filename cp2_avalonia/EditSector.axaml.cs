@@ -284,6 +284,8 @@ namespace cp2_avalonia {
                     UpdateTxtConv();
                 }
                 OnPropertyChanged();
+                OnPropertyChanged(nameof(IsChecked_ConvMOR));
+                OnPropertyChanged(nameof(IsChecked_ConvLatin));
             }
         }
         public bool IsChecked_ConvMOR {
@@ -294,6 +296,8 @@ namespace cp2_avalonia {
                     UpdateTxtConv();
                 }
                 OnPropertyChanged();
+                OnPropertyChanged(nameof(IsChecked_ConvHighASCII));
+                OnPropertyChanged(nameof(IsChecked_ConvLatin));
             }
         }
         public bool IsChecked_ConvLatin {
@@ -304,6 +308,8 @@ namespace cp2_avalonia {
                     UpdateTxtConv();
                 }
                 OnPropertyChanged();
+                OnPropertyChanged(nameof(IsChecked_ConvHighASCII));
+                OnPropertyChanged(nameof(IsChecked_ConvMOR));
             }
         }
 
