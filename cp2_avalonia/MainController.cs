@@ -256,7 +256,7 @@ namespace cp2_avalonia {
             Debug.Assert(mWorkTree != null);
 
             ObservableCollection<ArchiveTreeItem> tvRoot = mMainWin.ArchiveTreeRoot;
-            Debug.Assert(tvRoot.Count == 0);
+            tvRoot.Clear();  // Clear any previous tree
 
             AppHook.LogI("Constructing archive trees...");
             DateTime startWhen = DateTime.Now;

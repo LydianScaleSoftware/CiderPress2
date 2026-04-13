@@ -287,6 +287,20 @@ namespace cp2_avalonia {
         }
 
         // ---- Toolbar state: Add/Extract vs Import/Export mode ----
+        // ComboBox binding property: 0 = Add/Extract, 1 = Import/Export
+        public int SelectedDDCPModeIndex {
+            get => AppSettings.Global.GetBool(AppSettings.DDCP_ADD_EXTRACT, true) ? 0 : 1;
+            set {
+                bool isAddExtract = value == 0;
+                if (isAddExtract != AppSettings.Global.GetBool(AppSettings.DDCP_ADD_EXTRACT, true)) {
+                    AppSettings.Global.SetBool(AppSettings.DDCP_ADD_EXTRACT, isAddExtract);
+                    mMainCtrl.ClearClipboardIfPending();
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        // ---- Legacy properties for backward compatibility ----
         // These are AppSettings-backed toggling properties.  Only write the setting when
         // the property is set to true, to prevent the RadioButton "false" feedback from
         // overwriting the stored value.
@@ -1157,6 +1171,7 @@ namespace cp2_avalonia {
                     mSortColumn = null;
                     mMainCtrl.PopulateFileList(IFileEntry.NO_ENTRY, false);
                     IsResetSortEnabled = false;
+                    ((RelayCommand?)ResetSortCommand)?.RaiseCanExecuteChanged();
                 },
                 () => IsResetSortEnabled);
             ToggleInfoCommand = new RelayCommand(
@@ -1564,6 +1579,7 @@ namespace cp2_avalonia {
                 FileList.Add(item);
             }
             IsResetSortEnabled = true;
+            ((RelayCommand)ResetSortCommand).RaiseCanExecuteChanged();
 
             // Match WPF behavior: clicking a column header deselects all rows.
             fileListDataGrid.SelectedIndex = -1;

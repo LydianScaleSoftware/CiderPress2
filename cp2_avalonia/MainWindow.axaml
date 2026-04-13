@@ -353,7 +353,7 @@ limitations under the License.
         <!-- Toolbar: replaces WPF ToolBarTray/ToolBar -->
         <Border DockPanel.Dock="Top" BorderBrush="LightGray" BorderThickness="0,0,0,1"
                 Padding="4,2">
-            <StackPanel Orientation="Horizontal" Height="28">
+            <StackPanel Orientation="Horizontal" Height="32">
                 <!-- View mode buttons.
                      No explicit IsEnabled needed — RelayCommand.CanExecute controls
                      the enabled/disabled state automatically for all toolbar buttons. -->
@@ -387,15 +387,15 @@ limitations under the License.
 
                 <Border Width="1" Background="LightGray" Margin="4,2"/>
 
-                <!-- Drag &amp; copy mode radio buttons -->
-                <TextBlock Text="Drag &amp; Copy mode:" Margin="4,5,0,0"
+                <!-- Drag &amp; copy mode combo box -->
+                <TextBlock Text="Drag &amp; Copy mode:" Margin="4,6,0,0"
                            ToolTip.Tip="Configure behavior when dragging and copying files in or out"/>
-                <RadioButton Content="Add/Extract" GroupName="aeix" Margin="4,0,0,0"
-                             IsChecked="{Binding IsChecked_AddExtract}"
-                             ToolTip.Tip="When dragging or pasting files, perform add/extract operations."/>
-                <RadioButton Content="Import/Export" GroupName="aeix" Margin="4,0,4,0"
-                             IsChecked="{Binding IsChecked_ImportExport}"
-                             ToolTip.Tip="When dragging or pasting files, perform import/export operations."/>
+                <ComboBox Margin="4,1,0,0" Width="150"
+                          SelectedIndex="{Binding SelectedDDCPModeIndex}"
+                          ToolTip.Tip="Configure behavior when dragging and copying files in or out.">
+                    <ComboBoxItem>Add/Extract</ComboBoxItem>
+                    <ComboBoxItem>Import/Export</ComboBoxItem>
+                </ComboBox>
                 <!-- Note: WPF sets BorderBrush on these RadioButtons to
                      {DynamicResource {x:Static SystemColors.MenuHighlightBrushKey}}.
                      Avalonia has no SystemColors — the default Fluent theme styling
