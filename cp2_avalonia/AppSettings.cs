@@ -97,6 +97,9 @@ namespace cp2_avalonia {
         // Physical disks.
         public const string PHYS_OPEN_READ_ONLY = "phys-open-read-only";
 
+        // Theme.
+        public const string THEME_MODE = "theme-mode";
+
         // Sector editing.
         public const string SCTED_TEXT_CONV_MODE = "scted-text-conv-mode";
 

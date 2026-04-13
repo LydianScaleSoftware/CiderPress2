@@ -351,7 +351,7 @@ limitations under the License.
         </Menu>
 
         <!-- Toolbar: replaces WPF ToolBarTray/ToolBar -->
-        <Border DockPanel.Dock="Top" BorderBrush="LightGray" BorderThickness="0,0,0,1"
+        <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="0,0,0,1"
                 Padding="4,2">
             <StackPanel Orientation="Horizontal" Height="32">
                 <!-- View mode buttons.
@@ -374,7 +374,7 @@ limitations under the License.
                            Width="16" Height="16"/>
                 </Button>
 
-                <Border Width="1" Background="LightGray" Margin="4,2"/>
+                <Border Width="1" Background="{DynamicResource SystemControlForegroundBaseLowBrush}" Margin="4,2"/>
 
                 <Button Command="{Binding ResetSortCommand}"
                         ToolTip.Tip="Reset the sort order in the file list">
@@ -385,7 +385,7 @@ limitations under the License.
                     <Image Source="{StaticResource icon_Upload}" Width="16" Height="16"/>
                 </Button>
 
-                <Border Width="1" Background="LightGray" Margin="4,2"/>
+                <Border Width="1" Background="{DynamicResource SystemControlForegroundBaseLowBrush}" Margin="4,2"/>
 
                 <!-- Drag &amp; copy mode combo box -->
                 <TextBlock Text="Drag &amp; Copy mode:" Margin="4,6,0,0"
@@ -401,7 +401,7 @@ limitations under the License.
                      Avalonia has no SystemColors — the default Fluent theme styling
                      is sufficient, so this binding is intentionally dropped. -->
 
-                <Border Width="1" Background="LightGray" Margin="4,2"/>
+                <Border Width="1" Background="{DynamicResource SystemControlForegroundBaseLowBrush}" Margin="4,2"/>
 
                 <Button Command="{Binding HelpCommand}"
                         ToolTip.Tip="Help - open manual in browser (F1)">
@@ -411,7 +411,7 @@ limitations under the License.
         </Border>
 
         <!-- Status bar -->
-        <Border DockPanel.Dock="Bottom" BorderBrush="LightGray" BorderThickness="0,1,0,0"
+        <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="0,1,0,0"
                 Padding="4,2">
             <Grid>
                 <Grid.ColumnDefinitions>
@@ -521,7 +521,7 @@ limitations under the License.
                         </Grid.RowDefinitions>
                         <TextBlock Grid.Row="0" Text="Archive Contents" Margin="0,0,0,4"
                                    HorizontalAlignment="Center"/>
-                        <Border Grid.Row="1" BorderBrush="LightGray" BorderThickness="1"
+                        <Border Grid.Row="1" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1"
                                 CornerRadius="2">
                             <TreeView Name="archiveTree"
                                       ItemsSource="{Binding ArchiveTreeRoot}"
@@ -538,7 +538,7 @@ limitations under the License.
                                                    Converter={x:Static ObjectConverters.IsNotNull}}"
                                                Width="16" Height="16" Margin="0,0,2,0"/>
                                         <TextBlock Text="{Binding TypeStr}"
-                                                   Foreground="Green"/>
+                                                   Foreground="{DynamicResource ArchiveTypeTextBrush}"/>
                                         <TextBlock Text="{Binding Name}" Padding="6,0,2,0"/>
                                     </StackPanel>
                                 </TreeDataTemplate>
@@ -562,7 +562,7 @@ limitations under the License.
                         </Grid.RowDefinitions>
                         <TextBlock Grid.Row="0" Text="Directory" Margin="0,0,0,4"
                                    HorizontalAlignment="Center"/>
-                        <Border Grid.Row="1" BorderBrush="LightGray" BorderThickness="1"
+                        <Border Grid.Row="1" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1"
                                 CornerRadius="2">
                             <TreeView Name="directoryTree"
                                       DragDrop.AllowDrop="True"
@@ -718,9 +718,9 @@ limitations under the License.
                             <TextBlock Text="{Binding CenterInfoText2}" TextWrapping="Wrap"
                                        IsVisible="{Binding CenterInfoText2,
                                            Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-                                       Foreground="OrangeRed" Margin="0,0,0,8"/>
+                                       Foreground="{DynamicResource InfoWarningTextBrush}" Margin="0,0,0,8"/>
                             <!-- Info key/value list -->
-                            <Border BorderBrush="Gray" BorderThickness="1" CornerRadius="2"
+                            <Border BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}" BorderThickness="1" CornerRadius="2"
                                     Padding="4" HorizontalAlignment="Left">
                                 <ItemsControl ItemsSource="{Binding CenterInfoList}">
                                     <ItemsControl.ItemTemplate>
@@ -742,7 +742,7 @@ limitations under the License.
 
                             <!-- Disk / Partition Utilities -->
                             <Border IsVisible="{Binding ShowDiskUtilityButtons}"
-                                    BorderBrush="Gray" BorderThickness="1" CornerRadius="2"
+                                    BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}" BorderThickness="1" CornerRadius="2"
                                     Margin="0,8,0,0" Padding="4" HorizontalAlignment="Left">
                                 <StackPanel>
                                     <TextBlock Text="Disk / Partition Utilities"
@@ -881,7 +881,7 @@ limitations under the License.
                 <GridSplitter Grid.Column="3" Width="4"/>
 
                 <!-- Right panel: options panel -->
-                <Border Grid.Column="4" BorderBrush="LightGray" BorderThickness="1"
+                <Border Grid.Column="4" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1"
                         CornerRadius="2" Margin="0,4">
                     <DockPanel>
                         <LayoutTransformControl DockPanel.Dock="Bottom"
@@ -897,7 +897,7 @@ limitations under the License.
                                       IsVisible="{Binding ShowOptionsPanel}">
                         <StackPanel Margin="2">
                             <!-- Add/Import Options header -->
-                            <Border Background="LightSteelBlue" Margin="0,0,0,2">
+                            <Border Background="{DynamicResource SectionHeaderBrush}" Margin="0,0,0,2">
                                 <TextBlock Text="Add/Import Options" HorizontalAlignment="Center"
                                            Padding="2"/>
                             </Border>
@@ -910,7 +910,7 @@ limitations under the License.
                                           IsChecked="{Binding IsChecked_AddStripPaths}"/>
                                 <CheckBox Content="Raw (for DOS 3.x)"
                                           IsChecked="{Binding IsChecked_AddRaw}"/>
-                                <Border BorderBrush="Gray" BorderThickness="1" CornerRadius="2"
+                                <Border BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}" BorderThickness="1" CornerRadius="2"
                                         Margin="0,4,0,0" Padding="4,2">
                                     <StackPanel>
                                         <TextBlock Text="Preservation Handling" FontWeight="SemiBold"
@@ -923,7 +923,7 @@ limitations under the License.
                                                   IsChecked="{Binding IsChecked_AddPreserveNAPS}"/>
                                     </StackPanel>
                                 </Border>
-                                <Border BorderBrush="Gray" BorderThickness="1" CornerRadius="2"
+                                <Border BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}" BorderThickness="1" CornerRadius="2"
                                         Margin="0,4,0,0" Padding="4,2">
                                     <StackPanel>
                                         <TextBlock Text="Import Configuration" FontWeight="SemiBold"
@@ -941,7 +941,7 @@ limitations under the License.
                             </StackPanel>
 
                             <!-- Extract/Export Options header -->
-                            <Border Background="LightSteelBlue" Margin="0,16,0,2">
+                            <Border Background="{DynamicResource SectionHeaderBrush}" Margin="0,16,0,2">
                                 <TextBlock Text="Extract/Export Options" HorizontalAlignment="Center"
                                            Padding="2"/>
                             </Border>
@@ -952,7 +952,7 @@ limitations under the License.
                                           IsChecked="{Binding IsChecked_ExtAddExportExt}"/>
                                 <CheckBox Content="Raw (for DOS 3.x)"
                                           IsChecked="{Binding IsChecked_ExtRaw}"/>
-                                <Border BorderBrush="Gray" BorderThickness="1" CornerRadius="2"
+                                <Border BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}" BorderThickness="1" CornerRadius="2"
                                         Margin="0,4,0,0" Padding="4,2">
                                     <StackPanel>
                                         <TextBlock Text="Preservation Mode" FontWeight="SemiBold"
@@ -967,7 +967,7 @@ limitations under the License.
                                                      IsChecked="{Binding IsChecked_ExtPreserveNAPS}"/>
                                     </StackPanel>
                                 </Border>
-                                <Border BorderBrush="Gray" BorderThickness="1" CornerRadius="2"
+                                <Border BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}" BorderThickness="1" CornerRadius="2"
                                         Margin="0,4,0,8" Padding="4,2">
                                     <StackPanel>
                                         <TextBlock Text="Export Configuration" FontWeight="SemiBold"

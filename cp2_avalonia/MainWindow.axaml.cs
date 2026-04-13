@@ -1589,6 +1589,26 @@ namespace cp2_avalonia {
             ArchiveTreeRoot.Clear();
             DirectoryTreeRoot.Clear();
             FileList.Clear();
+            IsFullListEnabled = false;
+            IsDirListEnabled = false;
+        }
+
+        /// <summary>
+        /// Raises CanExecuteChanged on all RelayCommand instances so that toolbar buttons
+        /// and menu items re-evaluate their enabled state.
+        /// </summary>
+        internal void InvalidateCommands() {
+            // Use reflection to find all ICommand properties and raise CanExecuteChanged
+            // on those backed by RelayCommand.
+            foreach (var prop in GetType().GetProperties(
+                    System.Reflection.BindingFlags.Public |
+                    System.Reflection.BindingFlags.Instance)) {
+                if (typeof(ICommand).IsAssignableFrom(prop.PropertyType)) {
+                    if (prop.GetValue(this) is RelayCommand cmd) {
+                        cmd.RaiseCanExecuteChanged();
+                    }
+                }
+            }
         }
 
         /// <summary>

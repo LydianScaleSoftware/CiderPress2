@@ -43,10 +43,10 @@ limitations under the License.
         <!-- Vertical dividers -->
         <Rectangle Grid.Row="1" Grid.Column="1" Margin="4,0,4,0"
                    HorizontalAlignment="Stretch" Width="1"
-                   Stroke="LightGray" Fill="Transparent"/>
+                   Stroke="{DynamicResource SystemControlForegroundBaseLowBrush}" Fill="Transparent"/>
         <Rectangle Grid.Row="1" Grid.Column="3" Margin="4,0,4,0"
                    HorizontalAlignment="Stretch" Width="1"
-                   Stroke="LightGray" Fill="Transparent"/>
+                   Stroke="{DynamicResource SystemControlForegroundBaseLowBrush}" Fill="Transparent"/>
 
         <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="5" Margin="0,0,0,8"
                    Text="Select disk parameters" HorizontalAlignment="Center"/>
@@ -69,7 +69,7 @@ limitations under the License.
             <!-- 5.25" Floppy -->
             <StackPanel Grid.Row="1" Margin="0,0,0,8">
                 <TextBlock Text="5.25&quot; Floppy" FontWeight="Bold" Margin="0,0,0,2"/>
-                <Border BorderBrush="Gray" BorderThickness="1" CornerRadius="4" Padding="8">
+                <Border BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}" BorderThickness="1" CornerRadius="4" Padding="8">
                     <StackPanel>
                         <RadioButton GroupName="DiskSize"
                                      Content="113.75 KB - 35 tracks x 13 sectors"
@@ -93,7 +93,7 @@ limitations under the License.
             <!-- 3.5" Floppy -->
             <StackPanel Grid.Row="2" Margin="0,0,0,8">
                 <TextBlock Text="3.5&quot; Floppy" FontWeight="Bold" Margin="0,0,0,2"/>
-                <Border BorderBrush="Gray" BorderThickness="1" CornerRadius="4" Padding="8">
+                <Border BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}" BorderThickness="1" CornerRadius="4" Padding="8">
                     <StackPanel>
                         <RadioButton GroupName="DiskSize"
                                      Content="400 KB - SS/DD GCR"
@@ -111,7 +111,7 @@ limitations under the License.
             <!-- Other -->
             <StackPanel Grid.Row="3" Margin="0,0,0,0">
                 <TextBlock Text="Other" FontWeight="Bold" Margin="0,0,0,2"/>
-                <Border BorderBrush="Gray" BorderThickness="1" CornerRadius="4" Padding="8">
+                <Border BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}" BorderThickness="1" CornerRadius="4" Padding="8">
                     <StackPanel>
                         <RadioButton GroupName="DiskSize"
                                      Content="32 MB - hard drive"
@@ -165,7 +165,7 @@ limitations under the License.
                              IsChecked="{Binding IsChecked_FS_None}"/>
 
                 <Rectangle Margin="0,6,0,6" Height="1"
-                           Stroke="LightGray" Fill="Transparent"/>
+                           Stroke="{DynamicResource SystemControlForegroundBaseLowBrush}" Fill="Transparent"/>
 
                 <Grid Margin="0,4,0,0">
                     <Grid.RowDefinitions>

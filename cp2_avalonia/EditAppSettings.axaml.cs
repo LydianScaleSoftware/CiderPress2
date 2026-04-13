@@ -184,6 +184,11 @@ namespace cp2_avalonia {
             }
         }
 
+        public int ThemeModeIndex {
+            get { return (int)mSettings.GetEnum(AppSettings.THEME_MODE, App.ThemeMode.Light); }
+            set { mSettings.SetEnum(AppSettings.THEME_MODE, (App.ThemeMode)value); OnPropertyChanged(); }
+        }
+
         public bool EnableDebugMenu {
 #if DEBUG
             get { return mSettings.GetBool(AppSettings.DEBUG_MENU_ENABLED, true); }

@@ -83,7 +83,7 @@ limitations under the License.
             <TextBlock Name="progressMsg" Text="{Binding ProgressMsg, FallbackValue=msg here}"/>
         </DockPanel>
 
-        <Border DockPanel.Dock="Top" BorderBrush="LightGray" BorderThickness="1"
+        <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1"
                 Margin="0,8,0,0">
             <TextBox Name="logTextBox" IsReadOnly="True"
                      ScrollViewer.VerticalScrollBarVisibility="Auto"/>

@@ -121,7 +121,7 @@ limitations under the License.
 
             <Rectangle Grid.Column="1" Grid.RowSpan="4" Margin="4,0,4,0"
                    HorizontalAlignment="Center" Width="1"
-                   Stroke="LightGray" Fill="Transparent"/>
+                   Stroke="{DynamicResource SystemControlForegroundBaseLowBrush}" Fill="Transparent"/>
 
             <!-- Column 1, left side: location edit boxes and navigation buttons -->
             <Grid Grid.Column="0">
@@ -147,7 +147,7 @@ limitations under the License.
                     </Grid.RowDefinitions>
 
                     <StackPanel Grid.Row="0" Grid.ColumnSpan="2" Margin="0,4"
-                            Background="#E6EEF8">
+                            Background="{DynamicResource SubSectionHeaderBrush}">
                         <TextBlock Text="Location" HorizontalAlignment="Center"/>
                     </StackPanel>
 
@@ -209,7 +209,7 @@ limitations under the License.
                 </Grid.RowDefinitions>
 
                 <StackPanel Grid.Row="0" Grid.ColumnSpan="2" Margin="0,4"
-                        Background="#E6EEF8">
+                        Background="{DynamicResource SubSectionHeaderBrush}">
                     <TextBlock Text="Configuration" HorizontalAlignment="Center"/>
                 </StackPanel>
 
