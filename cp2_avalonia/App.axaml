@@ -17,7 +17,6 @@ limitations under the License. -->
              xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:common="clr-namespace:cp2_avalonia.Common"
-             RequestedThemeVariant="Light"
              Name="CiderPress II">
     <!-- macOS system app menu (the bold first entry in the menu bar).
          On Windows/Linux, NativeMenu.Menu on Application is ignored.
@@ -40,7 +39,7 @@ limitations under the License. -->
              cannot host free-standing selector styles. -->
         <Style Selector="Button:disabled Image">
             <Setter Property="Opacity"
-                    Value="0.25" />
+                    Value="{DynamicResource IconDisabledOpacity}" />
         </Style>
         <Style Selector="DataGridCell">
             <Setter Property="Padding"
@@ -90,8 +89,28 @@ limitations under the License. -->
                 <!-- Stub created in Step 8a; actual icons ported in Iteration 2 -->
                 <ResourceInclude Source="avares://CiderPress2/Res/Icons.axaml" />
             </ResourceDictionary.MergedDictionaries>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="SectionHeaderBrush" Color="LightSteelBlue"/>
+                    <SolidColorBrush x:Key="SubSectionHeaderBrush" Color="#E6EEF8"/>
+                    <SolidColorBrush x:Key="ArchiveTypeTextBrush" Color="Green"/>
+                    <SolidColorBrush x:Key="InfoWarningTextBrush" Color="OrangeRed"/>
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="SectionHeaderBrush" Color="#3D5A80"/>
+                    <SolidColorBrush x:Key="SubSectionHeaderBrush" Color="#2A3A50"/>
+                    <SolidColorBrush x:Key="ArchiveTypeTextBrush" Color="#66BB6A"/>
+                    <SolidColorBrush x:Key="InfoWarningTextBrush" Color="#FF8A65"/>
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
             <FontFamily x:Key="GeneralMonoFont">Cascadia Mono, Consolas, DejaVu Sans Mono, Liberation Mono, Menlo, monospace</FontFamily>
             <FontFamily x:Key="ViewerMonoFont">Cascadia Mono, Consolas, DejaVu Sans Mono, Liberation Mono, Menlo, monospace</FontFamily>
+            <!-- Icon brushes and disabled opacity: initial defaults for Light theme.
+                 These are updated imperatively in App.ApplyTheme() on every theme switch
+                 because DynamicResource in ThemeDictionaries does not reliably re-resolve. -->
+            <SolidColorBrush x:Key="IconForegroundBrush" Color="#212121"/>
+            <SolidColorBrush x:Key="IconForegroundFillBrush" Color="#212121" Opacity="0.1"/>
+            <x:Double x:Key="IconDisabledOpacity">0.4</x:Double>
             <x:Double x:Key="ControlContentThemeFontSize">14</x:Double>
             <common:InverseBooleanConverter x:Key="InvertBool" />
             <!-- Checkerboard background for bitmap image display.

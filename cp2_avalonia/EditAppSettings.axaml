@@ -114,6 +114,21 @@ limitations under the License.
                         </Border>
                     </StackPanel>
 
+                    <StackPanel Grid.Row="3" Grid.Column="0" Margin="4,8,0,0">
+                        <Border BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                BorderThickness="1" CornerRadius="2" Padding="4">
+                            <StackPanel>
+                                <TextBlock Text="Theme" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                                <ComboBox SelectedIndex="{Binding ThemeModeIndex}"
+                                          HorizontalAlignment="Stretch">
+                                    <ComboBoxItem>Light</ComboBoxItem>
+                                    <ComboBoxItem>Dark</ComboBoxItem>
+                                    <ComboBoxItem>System Default</ComboBoxItem>
+                                </ComboBox>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
                     <CheckBox Grid.Column="0" Grid.Row="4" Content="Enable DEBUG menu" Margin="4,16,0,0"
                               IsChecked="{Binding EnableDebugMenu}"/>
                 </Grid>

@@ -23,6 +23,7 @@ using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Platform.Storage;
@@ -190,6 +191,8 @@ namespace cp2_avalonia {
             UpdateRecentFilesList(pathName);
             mMainWin.LaunchPanelVisible = false;
             mMainWin.MainPanelVisible = true;
+
+            mMainWin.InvalidateCommands();
         }
 
         /// <summary>
@@ -216,6 +219,8 @@ namespace cp2_avalonia {
             ClearClipboardIfPending();
 
             SaveAppSettings();
+
+            mMainWin.InvalidateCommands();
 
             GC.Collect();
             return true;
@@ -443,6 +448,8 @@ namespace cp2_avalonia {
             }
         }
 
+        private bool mIsFirstApplySettings = true;
+
         private void ApplyAppSettings() {
             Debug.WriteLine("Applying app settings...");
             SettingsHolder settings = AppSettings.Global;
@@ -455,16 +462,20 @@ namespace cp2_avalonia {
             mMainWin.ShowDebugMenu = settings.GetBool(AppSettings.DEBUG_MENU_ENABLED, false);
 #endif
 
-            // Restore window position, size, and state from the previous session.
-            string? placement = settings.GetString(AppSettings.MAIN_WINDOW_PLACEMENT, "");
-            if (!string.IsNullOrEmpty(placement)) {
-                WindowPlacement.Restore(mMainWin, placement);
-            }
+            // Restore window position, size, and state only on initial startup.
+            if (mIsFirstApplySettings) {
+                string? placement = settings.GetString(AppSettings.MAIN_WINDOW_PLACEMENT, "");
+                if (!string.IsNullOrEmpty(placement)) {
+                    WindowPlacement.Restore(mMainWin, placement);
+                }
 
-            // Restore left panel width; setting a fixed pixel value means only the center
-            // column stretches when the window is resized (right panel is Width=Auto).
-            mMainWin.LeftPanelWidth =
-                settings.GetInt(AppSettings.MAIN_LEFT_PANEL_WIDTH, 300);
+                // Restore left panel width; setting a fixed pixel value means only the center
+                // column stretches when the window is resized (right panel is Width=Auto).
+                mMainWin.LeftPanelWidth =
+                    settings.GetInt(AppSettings.MAIN_LEFT_PANEL_WIDTH, 300);
+
+                mIsFirstApplySettings = false;
+            }
 
             UnpackRecentFileList();
 
@@ -474,6 +485,11 @@ namespace cp2_avalonia {
             AppHook.SetOptionEnum(DAAppHook.AUDIO_DEC_ALG,
                 settings.GetEnum(AppSettings.AUDIO_DECODE_ALG,
                     CassetteDecoder.Algorithm.ZeroCross));
+
+            // Apply theme setting.
+            if (Application.Current is App app) {
+                app.ApplyTheme();
+            }
         }
 
         // -----------------------------------------------------------------------------------------
