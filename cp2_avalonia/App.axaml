@@ -17,7 +17,20 @@ limitations under the License. -->
              xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:common="clr-namespace:cp2_avalonia.Common"
-             RequestedThemeVariant="Light">
+             RequestedThemeVariant="Light"
+             Name="CiderPress II">
+    <!-- macOS system app menu (the bold first entry in the menu bar).
+         On Windows/Linux, NativeMenu.Menu on Application is ignored.
+         Items here appear directly in the app menu — no wrapper NativeMenuItem needed. -->
+    <NativeMenu.Menu>
+        <NativeMenu>
+            <NativeMenuItem Header="About CiderPress II"
+                            Click="OnNativeAboutClick"/>
+            <NativeMenuItemSeparator/>
+            <NativeMenuItem Header="Settings..."
+                            Click="OnNativeSettingsClick"/>
+        </NativeMenu>
+    </NativeMenu.Menu>
     <Application.Styles>
         <FluentTheme />
         <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml" />

@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+using System;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
@@ -30,5 +31,18 @@ namespace cp2_avalonia {
             }
             base.OnFrameworkInitializationCompleted();
         }
+
+        private MainWindow? GetMainWindow() =>
+            (ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)
+                ?.MainWindow as MainWindow;
+
+        private void OnNativeAboutClick(object? sender, EventArgs e) =>
+            GetMainWindow()?.AboutCommand?.Execute(null);
+
+        private void OnNativeSettingsClick(object? sender, EventArgs e) =>
+            GetMainWindow()?.EditAppSettingsCommand?.Execute(null);
+
+        private void OnNativeQuitClick(object? sender, EventArgs e) =>
+            GetMainWindow()?.ExitCommand?.Execute(null);
     }
 }

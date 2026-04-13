@@ -140,6 +140,9 @@ namespace cp2_avalonia {
             set { mIsDropTargetVisible = value; OnPropertyChanged(); }
         }
 
+        // Reference to the native Recent Files submenu item (macOS only, lazy-initialized).
+        private NativeMenuItem? mNativeRecentFilesItem;
+
         // ---- Drag-drop state for file list (internal drag-move) ----
         private const string INTERNAL_DRAG_FORMAT = "cp2_avalonia/FileListDrag";
         private const double DRAG_THRESHOLD = 4.0;
@@ -235,26 +238,50 @@ namespace cp2_avalonia {
         /// Populates the File &gt; Recent Files submenu with the current list of recent paths.
         /// </summary>
         public void PopulateRecentFilesMenu(List<string> recentPaths) {
-            if (recentFilesMenu == null) {
-                return;
-            }
-
             ICommand[] commands = {
                 RecentFile1Command, RecentFile2Command, RecentFile3Command,
                 RecentFile4Command, RecentFile5Command, RecentFile6Command
             };
 
-            recentFilesMenu.Items.Clear();
-            if (recentPaths.Count == 0) {
-                var placeholder = new Avalonia.Controls.MenuItem { Header = "(none)" };
-                recentFilesMenu.Items.Add(placeholder);
-            } else {
-                for (int i = 0; i < recentPaths.Count && i < commands.Length; i++) {
-                    var mi = new Avalonia.Controls.MenuItem {
-                        Header = $"_{i + 1}: {recentPaths[i]}",
-                        Command = commands[i]
-                    };
-                    recentFilesMenu.Items.Add(mi);
+            if (recentFilesMenu != null) {
+                recentFilesMenu.Items.Clear();
+                if (recentPaths.Count == 0) {
+                    var placeholder = new Avalonia.Controls.MenuItem { Header = "(none)" };
+                    recentFilesMenu.Items.Add(placeholder);
+                } else {
+                    for (int i = 0; i < recentPaths.Count && i < commands.Length; i++) {
+                        var mi = new Avalonia.Controls.MenuItem {
+                            Header = $"_{i + 1}: {recentPaths[i]}",
+                            Command = commands[i]
+                        };
+                        recentFilesMenu.Items.Add(mi);
+                    }
+                }
+            }
+
+            // Update the native menu Recent Files submenu (macOS). The item is
+            // lazy-fetched: it lives in Window.NativeMenu > File > Recent Files.
+            if (OperatingSystem.IsMacOS()) {
+                if (mNativeRecentFilesItem == null) {
+                    var nm = NativeMenu.GetMenu(this);
+                    var fileItem = nm?.Items.OfType<NativeMenuItem>().FirstOrDefault();
+                    mNativeRecentFilesItem = fileItem?.Menu?.Items
+                        .OfType<NativeMenuItem>()
+                        .FirstOrDefault(i => i.Header == "Recent Files");
+                }
+                if (mNativeRecentFilesItem?.Menu != null) {
+                    mNativeRecentFilesItem.Menu.Items.Clear();
+                    if (recentPaths.Count == 0) {
+                        mNativeRecentFilesItem.Menu.Add(
+                            new NativeMenuItem("(none)") { IsEnabled = false });
+                    } else {
+                        for (int i = 0; i < recentPaths.Count && i < commands.Length; i++) {
+                            mNativeRecentFilesItem.Menu.Add(
+                                new NativeMenuItem($"{i + 1}: {recentPaths[i]}") {
+                                    Command = commands[i]
+                                });
+                        }
+                    }
                 }
             }
         }
@@ -1142,6 +1169,11 @@ namespace cp2_avalonia {
             // Physical drive access is Windows-only; hide the menu item on other platforms.
             if (!OperatingSystem.IsWindows() && openPhysicalDriveMenuItem != null) {
                 openPhysicalDriveMenuItem.IsVisible = false;
+            }
+
+            // On macOS use the native menu bar; hide the in-window menu.
+            if (OperatingSystem.IsMacOS()) {
+                mainMenu.IsVisible = false;
             }
 
             mMainCtrl = new MainController(this);
