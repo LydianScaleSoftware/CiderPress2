@@ -56,9 +56,179 @@ limitations under the License.
         <KeyBinding Gesture="Ctrl+Shift+6" Command="{Binding RecentFile6Command}"/>
     </Window.KeyBindings>
 
+    <NativeMenu.Menu>
+        <NativeMenu>
+            <!-- File -->
+            <NativeMenuItem Header="File">
+                <NativeMenuItem.Menu>
+                    <NativeMenu>
+                        <NativeMenuItem Header="New Disk Image..."
+                                        Command="{Binding NewDiskImageCommand}"
+                                        Gesture="Meta+N"/>
+                        <NativeMenuItem Header="New File Archive..."
+                                        Command="{Binding NewFileArchiveCommand}"/>
+                        <NativeMenuItem Header="Open"
+                                        Command="{Binding OpenCommand}"
+                                        Gesture="Meta+O"/>
+                        <NativeMenuItem Header="Close"
+                                        Command="{Binding CloseCommand}"
+                                        Gesture="Meta+W"/>
+                        <NativeMenuItemSeparator/>
+                        <NativeMenuItem Header="Recent Files">
+                            <NativeMenuItem.Menu>
+                                <NativeMenu>
+                                    <NativeMenuItem Header="(none)" IsEnabled="False"/>
+                                </NativeMenu>
+                            </NativeMenuItem.Menu>
+                        </NativeMenuItem>
+                    </NativeMenu>
+                </NativeMenuItem.Menu>
+            </NativeMenuItem>
+
+            <!-- Edit -->
+            <NativeMenuItem Header="Edit">
+                <NativeMenuItem.Menu>
+                    <NativeMenu>
+                        <NativeMenuItem Header="Copy"
+                                        Command="{Binding CopyCommand}"
+                                        Gesture="Meta+C"/>
+                        <NativeMenuItem Header="Paste"
+                                        Command="{Binding PasteCommand}"
+                                        Gesture="Meta+V"/>
+                        <NativeMenuItemSeparator/>
+                        <NativeMenuItem Header="Find"
+                                        Command="{Binding FindCommand}"
+                                        Gesture="Meta+F"/>
+                        <NativeMenuItemSeparator/>
+                        <NativeMenuItem Header="Select All"
+                                        Command="{Binding SelectAllCommand}"
+                                        Gesture="Meta+A"/>
+                    </NativeMenu>
+                </NativeMenuItem.Menu>
+            </NativeMenuItem>
+
+            <!-- Actions -->
+            <NativeMenuItem Header="Actions">
+                <NativeMenuItem.Menu>
+                    <NativeMenu>
+                        <NativeMenuItem Header="View Files"
+                                        Command="{Binding ViewFilesCommand}"/>
+                        <NativeMenuItem Header="Add Files..."
+                                        Command="{Binding AddFilesCommand}"
+                                        Gesture="Meta+Shift+A"/>
+                        <NativeMenuItem Header="Import Files..."
+                                        Command="{Binding ImportFilesCommand}"/>
+                        <NativeMenuItem Header="Extract Files..."
+                                        Command="{Binding ExtractFilesCommand}"
+                                        Gesture="Meta+E"/>
+                        <NativeMenuItem Header="Export Files..."
+                                        Command="{Binding ExportFilesCommand}"/>
+                        <NativeMenuItem Header="Delete Files"
+                                        Command="{Binding DeleteFilesCommand}"/>
+                        <NativeMenuItem Header="Test Files"
+                                        Command="{Binding TestFilesCommand}"/>
+                        <NativeMenuItem Header="Rename / Edit Attributes..."
+                                        Command="{Binding EditAttributesCommand}"/>
+                        <NativeMenuItem Header="Create Directory..."
+                                        Command="{Binding CreateDirectoryCommand}"
+                                        Gesture="Meta+Shift+N"/>
+                        <NativeMenuItemSeparator/>
+                        <NativeMenuItem Header="Edit Directory Attributes..."
+                                        Command="{Binding EditDirAttributesCommand}"/>
+                        <NativeMenuItemSeparator/>
+                        <NativeMenuItem Header="Edit Sectors..."
+                                        Command="{Binding EditSectorsCommand}"/>
+                        <NativeMenuItem Header="Edit Blocks..."
+                                        Command="{Binding EditBlocksCommand}"/>
+                        <NativeMenuItem Header="Save As Disk Image..."
+                                        Command="{Binding SaveAsDiskImageCommand}"/>
+                        <NativeMenuItem Header="Replace Partition Contents..."
+                                        Command="{Binding ReplacePartitionCommand}"/>
+                        <NativeMenuItem Header="Scan for Bad Blocks"
+                                        Command="{Binding ScanForBadBlocksCommand}"/>
+                        <NativeMenuItemSeparator/>
+                        <NativeMenuItem Header="Scan for Sub-Volumes"
+                                        Command="{Binding ScanForSubVolCommand}"/>
+                        <NativeMenuItem Header="Defragment Filesystem"
+                                        Command="{Binding DefragmentCommand}"/>
+                        <NativeMenuItem Header="Close File Source"
+                                        Command="{Binding CloseSubTreeCommand}"
+                                        Gesture="Meta+Shift+W"/>
+                    </NativeMenu>
+                </NativeMenuItem.Menu>
+            </NativeMenuItem>
+
+            <!-- View -->
+            <NativeMenuItem Header="View">
+                <NativeMenuItem.Menu>
+                    <NativeMenu>
+                        <NativeMenuItem Header="Show Full List"
+                                        Command="{Binding ShowFullListCommand}"/>
+                        <NativeMenuItem Header="Show Directory List"
+                                        Command="{Binding ShowDirListCommand}"/>
+                        <NativeMenuItem Header="Show Information"
+                                        Command="{Binding ShowInfoCommand}"/>
+                    </NativeMenu>
+                </NativeMenuItem.Menu>
+            </NativeMenuItem>
+
+            <!-- Navigate -->
+            <NativeMenuItem Header="Navigate">
+                <NativeMenuItem.Menu>
+                    <NativeMenu>
+                        <NativeMenuItem Header="Go To Parent Directory"
+                                        Command="{Binding NavToParentDirCommand}"/>
+                        <NativeMenuItem Header="Go To Parent"
+                                        Command="{Binding NavToParentCommand}"/>
+                    </NativeMenu>
+                </NativeMenuItem.Menu>
+            </NativeMenuItem>
+
+            <!-- Help -->
+            <NativeMenuItem Header="Help">
+                <NativeMenuItem.Menu>
+                    <NativeMenu>
+                        <NativeMenuItem Header="Help"
+                                        Command="{Binding HelpCommand}"
+                                        Gesture="F1"/>
+                    </NativeMenu>
+                </NativeMenuItem.Menu>
+            </NativeMenuItem>
+
+            <!-- Debug: greyed out (can't IsVisible) when ShowDebugMenu is false -->
+            <NativeMenuItem Header="DEBUG" IsEnabled="{Binding ShowDebugMenu}">
+                <NativeMenuItem.Menu>
+                    <NativeMenu>
+                        <NativeMenuItem Header="DiskArc Library Tests..."
+                                        Command="{Binding Debug_DiskArcLibTestCommand}"
+                                        Gesture="Meta+Shift+T"/>
+                        <NativeMenuItem Header="FileConv Library Tests..."
+                                        Command="{Binding Debug_FileConvLibTestCommand}"/>
+                        <NativeMenuItem Header="Bulk Compression Test..."
+                                        Command="{Binding Debug_BulkCompressTestCommand}"/>
+                        <NativeMenuItemSeparator/>
+                        <NativeMenuItem Header="System Info..."
+                                        Command="{Binding Debug_ShowSystemInfoCommand}"/>
+                        <NativeMenuItem Header="Show Debug Log"
+                                        Command="{Binding Debug_ShowDebugLogCommand}"
+                                        ToggleType="CheckBox"
+                                        IsChecked="{Binding IsDebugLogVisible}"/>
+                        <NativeMenuItem Header="Show Drop/Paste Target"
+                                        Command="{Binding Debug_ShowDropTargetCommand}"
+                                        ToggleType="CheckBox"
+                                        IsChecked="{Binding IsDropTargetVisible}"/>
+                        <NativeMenuItemSeparator/>
+                        <NativeMenuItem Header="Convert ANI to GIF..."
+                                        Command="{Binding Debug_ConvertANICommand}"/>
+                    </NativeMenu>
+                </NativeMenuItem.Menu>
+            </NativeMenuItem>
+        </NativeMenu>
+    </NativeMenu.Menu>
+
     <Grid>
     <DockPanel>
-        <Menu DockPanel.Dock="Top">
+        <Menu DockPanel.Dock="Top" Name="mainMenu">
             <MenuItem Header="_File">
                 <MenuItem Header="New _Disk Image..." Command="{Binding NewDiskImageCommand}"
                           HotKey="Ctrl+N"/>
