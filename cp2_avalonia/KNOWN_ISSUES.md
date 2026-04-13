@@ -23,7 +23,7 @@
  - System should retain Show/Hide Settings status and potentially add a default preference to the System Settings dialog.
 
  ## New Features
- - Theme support (light/dark/Fluent/WPF?)
+ - ~~Theme support (light/dark/Fluent/WPF?)~~
 
 ## Future Major Rework
  - Refactor UI logic out of code‑behind into a consistent, well‑structured MVVM architecture
