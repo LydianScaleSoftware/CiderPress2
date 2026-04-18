@@ -13,7 +13,7 @@ identically — but the ReactiveUI and DI plumbing is in place for subsequent ph
 
 Specifically:
 
-1. Add `Avalonia.ReactiveUI` and `Microsoft.Extensions.DependencyInjection` NuGet packages.
+1. Add `ReactiveUI.Avalonia` and `Microsoft.Extensions.DependencyInjection` NuGet packages.
 2. Wire `.UseReactiveUI()` into the Avalonia app builder.
 3. Set up a basic `IServiceProvider` in `App.axaml.cs` using `ServiceCollection`.
 4. Extract the four inner classes from `MainWindow.axaml.cs` (`ConvItem`, `CenterInfoItem`,
@@ -27,105 +27,122 @@ Specifically:
 - The workspace root is the CiderPress2 solution directory.
 - The `cp2_avalonia/` project builds and runs successfully before starting.
 
+> **Scope note:** `MVVM_Notes.md §6 Phase 0` lists six steps; this blueprint covers
+> steps 1–4 only. Steps 5 (service interfaces) and 6 (static helper method
+> refactoring) are deferred to `Iteration_3A_Blueprint.md` and later iterations
+> respectively. Do not create any service interfaces or touch `ArchiveTreeItem`,
+> `DirectoryTreeItem`, or `FileListItem` during this iteration.
+
 ---
 
 ## Step-by-Step Instructions
 
 ### Step 1: Add NuGet Packages
 
-Add two package references to `cp2_avalonia/cp2_avalonia.csproj`:
+Run the following commands from the solution root to add both packages. NuGet
+will resolve and record the latest compatible version in the project file.
+The resulting `<ItemGroup>` placement is cosmetic; the build does not require
+packages to be in a specific group.
 
-```xml
-<PackageReference Include="Avalonia.ReactiveUI" Version="11.2.*" />
-<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.*" />
+```
+dotnet add cp2_avalonia/cp2_avalonia.csproj package ReactiveUI.Avalonia
+dotnet add cp2_avalonia/cp2_avalonia.csproj package Microsoft.Extensions.DependencyInjection
 ```
 
-Add them to the existing `<ItemGroup>` containing the other Avalonia packages.
+After running, open `cp2_avalonia/cp2_avalonia.csproj` and verify that:
+- `ReactiveUI.Avalonia` resolved to a version in the **11.x** series
+  (e.g., 11.4.12 or later). This is expected — the package uses its own
+  versioning scheme independent of the Avalonia version number.
+- `Microsoft.Extensions.DependencyInjection` resolved to a version compatible
+  with `net8.0` (expected: 8.x or 9.x).
 
-After editing, run `dotnet restore` to verify the packages resolve.
+If either version looks wrong, consult the package's NuGet page or release notes
+and pin to a known-good version explicitly.
 
 ---
 
 ### Step 2: Wire ReactiveUI into the App Builder
 
-In `cp2_avalonia/Program.cs`, add `.UseReactiveUI()` to the builder chain:
+In `cp2_avalonia/Program.cs`, make two targeted additions — do **not** replace the
+entire file. Preserve the existing comment on `BuildAvaloniaApp()` and all other
+content.
+
+1. Add `using ReactiveUI.Avalonia;` to the existing using block (after `using Avalonia;`).
+2. Insert `.UseReactiveUI()` between `.WithInterFont()` and `.LogToTrace()` in the
+   builder chain.
+
+The resulting builder chain should look like:
 
 ```csharp
-using Avalonia;
-using Avalonia.ReactiveUI;
-
-namespace cp2_avalonia {
-    internal class Program {
-        public static AppBuilder BuildAvaloniaApp()
-            => AppBuilder.Configure<App>()
-                .UsePlatformDetect()
-                .WithInterFont()
-                .UseReactiveUI()
-                .LogToTrace();
-
-        [STAThread]
-        public static void Main(string[] args) {
-            BuildAvaloniaApp()
-                .StartWithClassicDesktopLifetime(args);
-        }
-    }
-}
+// Avalonia configuration; don't remove; also used by visual designer.
+public static AppBuilder BuildAvaloniaApp()
+    => AppBuilder.Configure<App>()
+        .UsePlatformDetect()
+        .WithInterFont()
+        .UseReactiveUI()
+        .LogToTrace();
 ```
 
-Changes:
-- Add `using Avalonia.ReactiveUI;`
-- Add `.UseReactiveUI()` after `.WithInterFont()`
+> **Note:** Calling `.UseReactiveUI()` causes ReactiveUI to register its internal
+> services into `Splat.Locator`. This is expected and should not be interfered with.
+> Application services continue to be registered exclusively in the
+> `Microsoft.Extensions.DependencyInjection` `ServiceCollection`.
+> See Pre-Iteration-Notes §2.
+
+After this step, run `dotnet build cp2_avalonia/cp2_avalonia.csproj` and verify
+zero errors before proceeding.
 
 ---
 
 ### Step 3: Set Up DI in App.axaml.cs
 
-Update `cp2_avalonia/App.axaml.cs` to create a `ServiceCollection` and build an
-`IServiceProvider`. For now the container is empty — services will be registered in
-later iterations.
+Update `cp2_avalonia/App.axaml.cs` to add DI infrastructure. Make **targeted
+additions only** — do not replace the entire file. The existing `ThemeMode` enum,
+`ApplyTheme()` method, icon brush logic, `GetMainWindow()` helper, and macOS native
+menu handlers (`OnNativeAboutClick`, `OnNativeSettingsClick`, `OnNativeQuitClick`)
+must all be preserved. Do not modify `Initialize()` or any other existing methods.
 
-```csharp
-using System;
+Changes to make:
 
-using Avalonia;
-using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Markup.Xaml;
+1. Add `using Microsoft.Extensions.DependencyInjection;` to the existing using block.
+   (`using System;` is already present — do not add a duplicate.)
 
-using Microsoft.Extensions.DependencyInjection;
+2. Add the following property inside the `App` class, near the top (after the
+   `ThemeMode` enum and icon color constants):
 
-namespace cp2_avalonia {
-    public partial class App : Application {
-        /// <summary>
-        /// Application-wide service provider. Populated during
-        /// OnFrameworkInitializationCompleted.
-        /// </summary>
-        public static IServiceProvider Services { get; private set; } = null!;
+   ```csharp
+   /// <summary>
+   /// Application-wide service provider. Populated during
+   /// OnFrameworkInitializationCompleted.
+   /// </summary>
+   public static IServiceProvider Services { get; private set; } = null!;
+   ```
 
-        public override void Initialize() {
-            AvaloniaXamlLoader.Load(this);
-        }
+3. In `OnFrameworkInitializationCompleted()`, insert the `ServiceCollection` setup
+   **before** the existing `desktop.MainWindow = new MainWindow();` line:
 
-        public override void OnFrameworkInitializationCompleted() {
-            var services = new ServiceCollection();
+   ```csharp
+   public override void OnFrameworkInitializationCompleted() {
+       var services = new ServiceCollection();
 
-            // Register services here in future iterations, e.g.:
-            // services.AddSingleton<ISettingsService, SettingsService>();
+       // Register services here in future iterations, e.g.:
+       // services.AddSingleton<ISettingsService, SettingsService>();
 
-            Services = services.BuildServiceProvider();
+       Services = services.BuildServiceProvider();
 
-            if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop) {
-                desktop.MainWindow = new MainWindow();
-            }
-            base.OnFrameworkInitializationCompleted();
-        }
-    }
-}
-```
+       if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop) {
+           desktop.MainWindow = new MainWindow();
+       }
+       base.OnFrameworkInitializationCompleted();
+   }
+   ```
 
-Changes:
-- Add `using System;` and `using Microsoft.Extensions.DependencyInjection;`
-- Add `public static IServiceProvider Services` property
-- Create `ServiceCollection`, build provider, assign to `Services`
+   The only change to this method is adding the three lines (`var services`,
+   comment, `Services = ...`) before the existing `if` block. All other existing
+   code in `App.axaml.cs` remains untouched.
+
+After this step, run `dotnet build cp2_avalonia/cp2_avalonia.csproj` and verify
+zero errors before proceeding.
 
 ---
 
@@ -272,12 +289,19 @@ namespace cp2_avalonia.Models {
     /// <summary>
     /// Item displayed in the metadata list in the center info panel.
     /// </summary>
+    // NOTE: MetadataItem retains INotifyPropertyChanged in Phase 0 to preserve
+    // existing behavior. It will be converted to ReactiveObject (using
+    // this.RaiseAndSetIfChanged) when the class is refactored in a later phase.
+    // Do not use this class as a template for new Models/ classes.
     public class MetadataItem : INotifyPropertyChanged {
         public string Key { get; private set; }
         public string Value { get; private set; }
         public string? Description { get; private set; }
         public string? ValueSyntax { get; private set; }
         public bool CanEdit { get; private set; }
+        // TODO (MVVM Phase 4/5): Replace IBrush dependency with a plain bool or
+        // enum and let the View convert it via a value converter (e.g.,
+        // BoolToForegroundConverter). This removes Avalonia.Media from Models/.
         public IBrush TextForeground => CanEdit ? Brushes.Black : Brushes.Gray;
 
         public MetadataItem(string key, string value, string description,
@@ -298,25 +322,51 @@ namespace cp2_avalonia.Models {
 }
 ```
 
-#### 4e. Update `MainWindow.axaml.cs`
+#### 4e. Update References in Consuming Files
 
 Remove the four inner class definitions from `MainWindow.axaml.cs` and add a
 `using cp2_avalonia.Models;` directive at the top of the file. All references to
-`ConvItem`, `CenterInfoItem`, `PartitionListItem`, and `MetadataItem` throughout
-`MainWindow.axaml.cs` will resolve to the `Models` namespace types.
+`ConvItem`, `CenterInfoItem`, `PartitionListItem`, and `MetadataItem` within
+`MainWindow.axaml.cs` are unqualified and will resolve automatically via the
+new `using`.
 
-Also add `using cp2_avalonia.Models;` to any other files that reference these types
-(check `MainController.cs`, `MainController_Panels.cs`, and dialog files).
+Also update `MainController_Panels.cs`, which references these types with their
+qualified `MainWindow.*` prefix:
+
+**In `MainController_Panels.cs`:**
+1. Add `using cp2_avalonia.Models;` to the using block.
+2. Replace `new MainWindow.CenterInfoItem(` with `new CenterInfoItem(` (line ~888
+   and any other occurrences).
+3. Replace `MainWindow.PartitionListItem` with `PartitionListItem` in parameter
+   types (line ~1099 and all usages).
+4. Replace `MainWindow.MetadataItem` with `MetadataItem` in parameter types
+   (line ~1132 and all usages).
+
+**Verification:** Run a project-wide search for `MainWindow\.ConvItem`,
+`MainWindow\.CenterInfoItem`, `MainWindow\.PartitionListItem`, and
+`MainWindow\.MetadataItem` to confirm zero remaining qualified references.
+`MainController.cs` and dialog files have no qualified references to these types
+and need no changes. If the search unexpectedly finds matches in other files,
+add `using cp2_avalonia.Models;` and remove the `MainWindow.` qualifier in those
+files before building.
+
+**AXAML:** No `.axaml` files reference these types by name (all bindings are
+property-name based). No AXAML changes are required.
 
 ---
 
 ### Step 5: Build and Validate
 
-1. Run `dotnet build` — verify zero errors and no new warnings.
+1. Run `dotnet build cp2_avalonia/cp2_avalonia.csproj` — verify zero errors and
+   no new warnings.
 2. Launch the application — verify it starts normally and displays the launch panel.
 3. Open a disk image or file archive — verify the full UI works as before.
 4. Verify all menu items, toolbar buttons, and keyboard shortcuts function.
 5. Close and reopen — verify settings persist.
+6. **Theme switch:** Open Edit → Settings, change the theme to Dark (or Light
+   if currently Dark), and click OK. Verify the application repaints with the
+   correct theme and that toolbar icons update to the appropriate color. Close
+   and reopen to verify the theme preference persisted.
 
 **Expected result:** The application is functionally identical to before this iteration.
 The only differences are:

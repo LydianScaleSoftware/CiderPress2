@@ -29,8 +29,8 @@ coupled layers:
 
 | Layer | Files | Role |
 |---|---|---|
-| **Window code-behind** | `MainWindow.axaml.cs` (~1,700 lines) | Owns all ICommand properties, all bindable UI state (panel visibility, column visibility, toolbar toggle state, options panel checkboxes, recent files, status bar text, file/metadata/partition lists, converter lists, sort state, drag-drop handlers), and implements `INotifyPropertyChanged`. Sets `DataContext = this`. |
-| **Controller** | `MainController.cs` + `MainController_Panels.cs` (~1,800+ lines combined) | Holds the `WorkTree`, `Formatter`, `AppHook`; performs all file open/close, recent-file management, settings load/save, and every Actions-menu operation (add, extract, delete, move, edit attributes, etc.). Directly reads and writes properties on `mMainWin` (the `MainWindow` reference). |
+| **Window code-behind** | `MainWindow.axaml.cs` (~1,900 lines) | Owns all ICommand properties, all bindable UI state (panel visibility, column visibility, toolbar toggle state, options panel checkboxes, recent files, status bar text, file/metadata/partition lists, converter lists, sort state, drag-drop handlers), and implements `INotifyPropertyChanged`. Sets `DataContext = this`. |
+| **Controller** | `MainController.cs` + `MainController_Panels.cs` (~3,900 lines combined; partial class split across two files) | Holds the `WorkTree`, `Formatter`, `AppHook`; performs all file open/close, recent-file management, settings load/save, and every Actions-menu operation (add, extract, delete, move, edit attributes, etc.). Directly reads and writes properties on `mMainWin` (the `MainWindow` reference). |
 | **Dialog code-behinds** | `EditSector.axaml.cs`, `EditAppSettings.axaml.cs`, `FileViewer.axaml.cs`, `EditAttributes.axaml.cs`, `CreateDiskImage.axaml.cs`, etc. | Each dialog is its own `Window : INotifyPropertyChanged` with `DataContext = this`, mixing UI state and domain logic in code-behind. |
 
 ### 1.2 Key Anti-Patterns (from an MVVM perspective)
@@ -114,7 +114,7 @@ coupled layers:
 │  IFilePickerService     — open/save file pickers      │
 │  ISettingsService       — read/write AppSettings      │
 │  IClipboardService      — clipboard operations        │
-│  IViewerService         — viewer registry/lifecycle    │
+│  IViewerService         — viewer registry/lifecycle   │
 │  WorkspaceService       — WorkTree lifecycle,         │
 │                           open/close/recent files     │
 └───────────────────┬───────────────────────────────────┘
@@ -129,14 +129,26 @@ coupled layers:
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| **MVVM framework** | **ReactiveUI** (`Avalonia.ReactiveUI` integration) | First-class Avalonia support, `ReactiveObject`, `ReactiveCommand`, `WhenAnyValue`, `Interaction<,>` for dialogs. |
+| **MVVM framework** | **ReactiveUI** (`ReactiveUI.Avalonia` integration) | First-class Avalonia support, `ReactiveObject`, `ReactiveCommand`, `WhenAnyValue`, `Interaction<,>` for dialogs. |
 | **DI container** | **Microsoft.Extensions.DependencyInjection** | Start with basic service registration; expand as needed for testing. |
 | **File reorganization** | **Incremental** | Move files into `ViewModels/`, `Services/`, `Models/` as each phase touches them — avoids overwhelming diffs and keeps cherry-picking between branches manageable. |
 | **Base class** | `ReactiveObject` | Replaces hand-rolled `INotifyPropertyChanged`; provides `RaiseAndSetIfChanged`, `WhenAnyValue`, reactive property change streams. |
 | **Commands** | `ReactiveCommand<TParam, TResult>` | Replaces `RelayCommand`; built-in async support, observable `CanExecute` via `WhenAnyValue`, automatic busy-state tracking. |
-| **Dialog invocation** | `Interaction<TInput, TOutput>` + `IDialogService` | ViewModels raise interactions; Views handle them to show dialogs. |
+| **Dialog invocation** | `Interaction<TInput, TOutput>` + `IDialogService` | ViewModels raise interactions; Views handle them to show dialogs. See §7.14 for mapping strategy, §7.15 for parent window resolution. |
 
-### 2.2 Design Principles
+### 2.2 Naming Conventions (MVVM-Specific)
+
+In addition to the general naming conventions in the Pre-Iteration-Notes:
+
+| Item | Convention | Example |
+|---|---|---|
+| `ReactiveCommand` properties | `VerbNounCommand` | `OpenFileCommand`, `DeleteFilesCommand` |
+| `Interaction` properties | `ShowDialogName` | `ShowEditSector`, `ShowFileViewer` |
+| ViewModel classes | `NounViewModel` | `MainViewModel`, `FileListViewModel` |
+| Service interfaces | `INounService` | `IDialogService`, `ISettingsService` |
+| Boolean binding props | `IsXxxEnabled`, `ShowXxxYyy` | `IsFileOpen`, `ShowOptionsPanel` |
+
+### 2.3 Design Principles
 
 - **ViewModels own all state** — every bound property moves out of code-behind.
 - **Views are declarative shells** — code-behind is limited to pure UI concerns
@@ -156,8 +168,15 @@ coupled layers:
 - **Panels as composable units** — child ViewModels (`ArchiveTreeViewModel`,
   `FileListViewModel`, `CenterInfoViewModel`, etc.) should be self-contained
   enough that they could be hosted in dockable panels in the future.
+- **ViewModel disposal** — Dialog ViewModels do not need `IDisposable` by
+  default; their subscriptions are short-lived and scoped to the dialog
+  lifetime. `MainViewModel` uses ReactiveUI's `WhenActivated` for subscription
+  management. `FileViewerViewModel` is the exception — it **must** implement
+  `IDisposable` because it holds file data/handles and must self-deregister
+  from `IViewerService` (see §7.10). Other ViewModels should implement
+  `IDisposable` only if they hold unmanaged resources or long-lived subscriptions.
 
-### 2.3 Future Architecture Directions
+### 2.4 Future Architecture Directions
 
 The MVVM refactor is designed to **enable** (not implement) the following
 future capabilities from `KNOWN_ISSUES.md`:
@@ -186,7 +205,7 @@ move to a `MainViewModel` (or child ViewModels):
 
 | Category | Approx. Count | Examples |
 |---|---|---|
-| ICommand properties | ~50 | `OpenCommand`, `CloseCommand`, `CopyCommand`, `ViewFilesCommand`, `EditSectorsCommand`, etc. |
+| ICommand properties | 51 | `OpenCommand`, `CloseCommand`, `CopyCommand`, `ViewFilesCommand`, `EditSectorsCommand`, etc. |
 | Panel visibility flags | ~8 | `LaunchPanelVisible`, `MainPanelVisible`, `ShowOptionsPanel`, `ShowCenterFileList`, `ShowCenterInfoPanel`, `ShowDebugMenu`, etc. |
 | Status bar text | 2 | `CenterStatusText`, `RightStatusText` |
 | Options panel toggle props | ~20 | `IsChecked_AddExtract`, `IsChecked_ImportExport`, `IsChecked_AddCompress`, `IsChecked_ExtPreserveNone`, etc. |
@@ -203,48 +222,47 @@ move to a `MainViewModel` (or child ViewModels):
 
 `MainController.cs` and `MainController_Panels.cs` contain:
 
-| Category | Destination |
-|---|---|
-| WorkTree lifecycle (open, close, dispose) | `WorkspaceService` |
-| Settings load/save/apply | `ISettingsService` + ViewModel init |
-| Recent files management | `WorkspaceService` or `RecentFilesService` |
-| Archive/Directory tree population | `MainViewModel` (or sub-VMs) |
-| File list population & verification | `FileListViewModel` |
-| Selection state (`CachedArchiveTreeSelection`, etc.) | `MainViewModel` properties |
-| All Actions (Add, Extract, Delete, Move, EditAttributes, etc.) | `MainViewModel` methods (calling services) |
+| Category                                                                                | Destination |
+|-----------------------------------------------------------------------------------------|---|
+| WorkTree lifecycle (open, close, dispose)                                               | `WorkspaceService` |
+| Settings load/save/apply                                                                | `ISettingsService` + ViewModel init |
+| Recent files management                                                                 | `WorkspaceService` or `RecentFilesService` |
+| Archive/Directory tree population                                                       | `MainViewModel` (or sub-VMs) |
+| Selection state (`CachedArchiveTreeSelection`, etc.)                                    | `MainViewModel` properties |
+| All Actions (Add, Extract, Delete, Move, EditAttributes, etc.)                          | `MainViewModel` methods (calling services) |
 | CanExecute helper properties (`IsFileOpen`, `CanWrite`, `AreFileEntriesSelected`, etc.) | `MainViewModel` computed properties |
-| Direct UI control access (see §1.2 #4) | Replaced by ViewModel properties + View-side behaviors |
-| Dialog creation (`new EditAttributes(mMainWin, ...)`) | `IDialogService.ShowDialog<T>(...)` |
-| File picker calls (`PlatformUtil.AskFileToOpen()`, `StorageProvider`) | `IFilePickerService` |
+| Direct UI control access (see §1.2 #4)                                                  | Replaced by ViewModel properties + View-side behaviors |
+| Dialog creation (`new EditAttributes(mMainWin, ...)`)                                   | `IDialogService.ShowDialog<T>(...)` |
+| File picker calls (`PlatformUtil.AskFileToOpen()`, `StorageProvider`)                   | `IFilePickerService` |
 
 ### 3.3 Dialog Windows
 
 Each dialog follows the same pattern: `Window : INotifyPropertyChanged` with
 `DataContext = this`. Each needs:
 
-| Dialog | ViewModel to Create |
-|---|---|
-| `EditSector.axaml.cs` | `EditSectorViewModel` |
-| `EditAppSettings.axaml.cs` | `EditAppSettingsViewModel` |
-| `Tools/FileViewer.axaml.cs` | `FileViewerViewModel` — **multi-instance**: designed for concurrent viewers (see §2.3, §7.10) |
-| `EditAttributes.axaml.cs` | `EditAttributesViewModel` |
-| `CreateDiskImage.axaml.cs` | `CreateDiskImageViewModel` |
-| `CreateFileArchive.axaml.cs` | `CreateFileArchiveViewModel` |
-| `SaveAsDisk.axaml.cs` | `SaveAsDiskViewModel` |
-| `ReplacePartition.axaml.cs` | `ReplacePartitionViewModel` |
-| `CreateDirectory.axaml.cs` | `CreateDirectoryViewModel` |
-| `FindFile.axaml.cs` | `FindFileViewModel` |
-| `EditMetadata.axaml.cs` | `EditMetadataViewModel` |
-| `AddMetadata.axaml.cs` | `AddMetadataViewModel` |
-| `EditConvertOpts.axaml.cs` | `EditConvertOptsViewModel` |
-| `AboutBox.axaml.cs` | (minimal; may not need a VM) |
-| `Tools/LogViewer.axaml.cs` | `LogViewerViewModel` |
-| `Tools/ShowText.axaml.cs` | `ShowTextViewModel` (or parametric) |
-| `Tools/DropTarget.axaml.cs` | `DropTargetViewModel` |
-| `Common/WorkProgress.axaml.cs` | `WorkProgressViewModel` |
-| `Actions/OverwriteQueryDialog.axaml.cs` | (simple; may not need a VM) |
-| `LibTest/TestManager.axaml.cs` | `TestManagerViewModel` |
-| `LibTest/BulkCompress.axaml.cs` | `BulkCompressViewModel` |
+| Dialog                                  | ViewModel to Create                 |
+|-----------------------------------------|-------------------------------------|
+| `EditSector.axaml.cs`                   | `EditSectorViewModel`               |
+| `EditAppSettings.axaml.cs`              | `EditAppSettingsViewModel`          |
+| `Tools/FileViewer.axaml.cs`             | `FileViewerViewModel` — **multi-instance**: designed for concurrent viewers (see §2.3, §7.10) |
+| `EditAttributes.axaml.cs`               | `EditAttributesViewModel`           |
+| `CreateDiskImage.axaml.cs`              | `CreateDiskImageViewModel`          |
+| `CreateFileArchive.axaml.cs`            | `CreateFileArchiveViewModel`        |
+| `SaveAsDisk.axaml.cs`                   | `SaveAsDiskViewModel`               |
+| `ReplacePartition.axaml.cs`             | `ReplacePartitionViewModel`         |
+| `CreateDirectory.axaml.cs`              | `CreateDirectoryViewModel`          |
+| `FindFile.axaml.cs`                     | `FindFileViewModel`                 |
+| `EditMetadata.axaml.cs`                 | `EditMetadataViewModel`             |
+| `AddMetadata.axaml.cs`                  | `AddMetadataViewModel`              |
+| `EditConvertOpts.axaml.cs`              | `EditConvertOptsViewModel`          |
+| `AboutBox.axaml.cs`                     | `AboutBoxViewModel` (minimal, but uses full VM pattern for consistency and testability) |
+| `Tools/LogViewer.axaml.cs`              | `LogViewerViewModel`                |
+| `Tools/ShowText.axaml.cs`               | `ShowTextViewModel` (or parametric) |
+| `Tools/DropTarget.axaml.cs`             | `DropTargetViewModel`               |
+| `Common/WorkProgress.axaml.cs.        ` | `WorkProgressViewModel`             |
+| `Actions/OverwriteQueryDialog.axaml.cs` | `OverwriteQueryViewModel` (simple, but uses full VM pattern for consistency) |
+| `LibTest/TestManager.axaml.cs`          | `TestManagerViewModel`              |
+| `LibTest/BulkCompress.axaml.cs`.        | `BulkCompressViewModel`              |
 
 ### 3.4 Data/Model Classes
 
@@ -253,7 +271,7 @@ need minor adjustments:
 
 | Class | Notes |
 |---|---|
-| `FileListItem` | Already a POCO-like data object; keep as-is or make it a lightweight VM. Currently has static helper methods that reference Avalonia `DataGrid` — those move to View code. |
+| `FileListItem` | Already a POCO-like data object; keep as-is or make it a lightweight VM. Has static helper methods that take `MainWindow` parameters (e.g., `SelectAndView`) — those move to View code-behind or ViewModel. |
 | `ArchiveTreeItem` | Reactive tree-node model. See refactoring details below. |
 | `DirectoryTreeItem` | Same pattern as `ArchiveTreeItem`. See refactoring details below. |
 | `ClipInfo` | Pure data class; no changes needed. |
@@ -305,8 +323,9 @@ data+state objects that any View (including docked panels) can bind to.
 
 All services are registered via `Microsoft.Extensions.DependencyInjection`
 in `App.axaml.cs` and injected into ViewModels through constructor parameters.
-Start with the services listed below; additional service abstractions can be
-introduced on a case-by-case basis in future iterations.
+Service lifetimes are specified in §7.19. Start with the services listed
+below; additional service abstractions can be introduced on a case-by-case
+basis in future iterations.
 
 ### 4.1 IDialogService
 
@@ -341,15 +360,22 @@ a handler.
 ```csharp
 public interface IFilePickerService
 {
-    Task<string?> OpenFileAsync(string title, IReadOnlyList<FilePickerFileType>? filters = null);
+    Task<string?> OpenFileAsync(string title,
+        IReadOnlyList<FilePickerFileType>? filters = null,
+        string? initialDir = null);
+    Task<IReadOnlyList<string>> OpenFilesAsync(string title,
+        IReadOnlyList<FilePickerFileType>? filters = null,
+        string? initialDir = null);
     Task<string?> SaveFileAsync(string title, string? suggestedName,
-        IReadOnlyList<FilePickerFileType>? filters = null);
+        IReadOnlyList<FilePickerFileType>? filters = null,
+        string? initialDir = null);
     Task<string?> OpenFolderAsync(string title, string? initialDir = null);
 }
 ```
 
 Wraps Avalonia's `StorageProvider` calls so that ViewModels don't need
-`TopLevel.GetTopLevel(mMainWin)`.
+`TopLevel.GetTopLevel(mMainWin)`. `initialDir` resolves to
+`SuggestedStartLocation` via `TryGetFolderFromPathAsync`.
 
 ### 4.3 ISettingsService
 
@@ -364,6 +390,7 @@ public interface ISettingsService
     void SetString(string key, string value);
     T GetEnum<T>(string key, T defaultValue) where T : struct, Enum;
     void SetEnum<T>(string key, T value) where T : struct, Enum;
+    IObservable<string> SettingChanged { get; }
     void Load();
     void Save();
 }
@@ -371,37 +398,76 @@ public interface ISettingsService
 
 Thin wrapper around the existing `AppSettings.Global` / `SettingsHolder`.
 
+**Thread-safety note:** `SettingChanged` fires on the caller's thread. When
+subscribing to `SettingChanged` in a ViewModel, use
+`.ObserveOn(RxApp.MainThreadScheduler)` to ensure UI-thread safety if the
+setting may be changed from a background thread.
+
 ### 4.4 IClipboardService
 
 ```csharp
 public interface IClipboardService
 {
-    Task SetFilesAsync(IEnumerable<string> paths);
-    Task<IEnumerable<string>?> GetFilesAsync();
-    void ClearIfPending();
+    Task SetClipAsync(ClipInfo clipInfo, List<ClipFileEntry> cachedEntries,
+        string? clipTempDir);
+    Task<(ClipInfo? info, List<ClipFileEntry>? cached)> GetClipAsync();
+    Task<string?> GetRawClipTextAsync();
+    Task<string?> GetUriListAsync();
+    Task ClearIfPendingAsync();
+    bool HasPendingContent { get; }
 }
 ```
 
-### 4.5 WorkspaceService
+Operates on the actual `ClipInfo` / `ClipFileEntry` types from `AppCommon`.
+`SetClipAsync` builds a `DataObject` with both `DataFormats.Text` (CP2 JSON)
+and `text/uri-list` (for external file-manager paste). `GetClipAsync` returns
+in-process cached state; `GetRawClipTextAsync` and `GetUriListAsync` cover
+cross-process CP2 paste and external file-manager paste respectively.
+The service manages the cached clip entries and temp directory lifecycle
+internally. `ClipboardService` resolves the system clipboard lazily at
+call time (not captured at construction) to support multi-window.
+
+### 4.5 IWorkspaceService / WorkspaceService
 
 Encapsulates the `WorkTree` lifecycle, recent-files management, and
-formatter setup that currently lives in `MainController`:
+formatter setup that currently lives in `MainController`. Follows the
+same interface + implementation pattern as the other services.
 
 ```csharp
-public class WorkspaceService
+public interface IWorkspaceService
 {
-    public WorkTree? WorkTree { get; }
-    public bool IsFileOpen { get; }
-    public bool CanWrite { get; }
-    public string WorkPathName { get; }
-    public Formatter Formatter { get; }
-    public AppHook AppHook { get; }
-    public List<string> RecentFilePaths { get; }
+    WorkTree? WorkTree { get; }
+    bool IsFileOpen { get; }
+    string WorkPathName { get; }
+    Formatter Formatter { get; }
+    AppHook AppHook { get; }
+    DebugMessageLog DebugLog { get; }
+    ObservableCollection<string> RecentFilePaths { get; }
 
-    public Task OpenAsync(string path, bool readOnly, AutoOpenDepth depth);
+    public Task<WorkTree> OpenAsync(string path, bool readOnly, AutoOpenDepth depth);
     public bool Close();
-    // ...
+
+    /// <summary>Fires after any operation that modifies the workspace
+    /// (add, delete, move, set-attr, etc.).</summary>
+    IObservable<Unit> WorkspaceModified { get; }
 }
+```
+
+**`CanWrite` note:** `CanWrite` is a **computed ViewModel property**, not a
+service concern. It depends on both workspace state and UI context. It belongs
+on `MainViewModel`, not `IWorkspaceService`.
+
+**`OpenAsync` pattern:** `OpenAsync` returns a completed `WorkTree`. The calling
+ViewModel is responsible for showing the `WorkProgressViewModel` dialog and
+orchestrating the UI around the async operation. This pattern (Pattern A) keeps
+the service testable — callers can await `OpenAsync` in tests without needing
+a dialog. The VM command body looks like:
+
+```csharp
+var progressVM = new WorkProgressViewModel(worker, isIndeterminate);
+await _dialogService.ShowDialogAsync(progressVM);
+var workTree = await _workspaceService.OpenAsync(path, readOnly, depth);
+// attach to VM state
 ```
 
 ### 4.6 IViewerService
@@ -456,6 +522,7 @@ cp2_avalonia/
 ├── Services/
 │   ├── IDialogService.cs
 │   ├── DialogService.cs
+│   ├── IDialogHost.cs                 (owner window abstraction — see §7.15)
 │   ├── IFilePickerService.cs
 │   ├── FilePickerService.cs
 │   ├── ISettingsService.cs
@@ -464,6 +531,7 @@ cp2_avalonia/
 │   ├── ClipboardService.cs
 │   ├── IViewerService.cs
 │   ├── ViewerService.cs
+│   ├── IWorkspaceService.cs
 │   └── WorkspaceService.cs
 ├── Models/
 │   ├── FileListItem.cs                 (moved from root, static UI helpers removed)
@@ -494,7 +562,7 @@ cp2_avalonia/
 
 ### Phase 0: Preparation (non-breaking)
 
-1. **Add ReactiveUI NuGet packages** — add `Avalonia.ReactiveUI` (which pulls
+1. **Add ReactiveUI NuGet packages** — add `ReactiveUI.Avalonia` (which pulls
    in `ReactiveUI` transitively) to `cp2_avalonia.csproj`.
 2. **Add `Microsoft.Extensions.DependencyInjection`** NuGet package.
 3. **Wire up ReactiveUI in `App.axaml.cs`** — call `.UseReactiveUI()` in the
@@ -502,20 +570,13 @@ cp2_avalonia/
    `ServiceCollection` for DI registration.
 4. **Extract inner classes** from `MainWindow` (`ConvItem`, `CenterInfoItem`,
    `PartitionListItem`, `MetadataItem`) into standalone files under `Models/`.
-5. **Create service interfaces** (`IDialogService`, `IFilePickerService`,
-   `ISettingsService`, `IClipboardService`) with concrete implementations,
-   registered in the DI container.
-6. **Refactor static helper methods** in `ArchiveTreeItem`, `DirectoryTreeItem`,
-   `FileListItem` that take `MainWindow` or Avalonia control references — split
-   into model-only logic (stays) and view-specific logic (moves to View
-   code-behind or attached behaviors).
 
 **Note:** No custom `ViewModelBase` or `AsyncRelayCommand` needed — ReactiveUI's
 `ReactiveObject` and `ReactiveCommand` provide these capabilities.
 
 **Validation:** Application behavior is 100% unchanged after Phase 0.
 
-### Phase 1: MainViewModel — Core State
+### Phase 1A: Create MainViewModel + Move Properties
 
 1. Create `MainViewModel` inheriting `ReactiveObject`.
 2. Move all **bindable properties** from `MainWindow.axaml.cs`:
@@ -528,23 +589,34 @@ cp2_avalonia/
    - Options panel toggles
    - Recent file properties
    - Toolbar brush properties
-3. Change `MainWindow.axaml` root `DataContext` to `MainViewModel` instance.
-4. Update `MainWindow.axaml.cs`:
+   - canExecute state properties (`IsFileOpen`, `CanWrite`, etc.)
+3. Properties in `MainViewModel` use `this.RaiseAndSetIfChanged(ref field, value)`
+   (explicit backing-field pattern). Do not use `[Reactive]` — see Pre-Iteration-Notes §4.
+4. **Do NOT switch DataContext yet** — that happens in Phase 1B.
+
+**Validation:** Build succeeds; no runtime changes (ViewModel exists but is unused).
+
+### Phase 1B: Wire DataContext + Redirect Controller
+
+1. Change `MainWindow.axaml` root `DataContext` to `MainViewModel` instance.
+2. Update `MainWindow.axaml.cs`:
+   - Change base class to `ReactiveWindow<MainViewModel>` (enables
+     `WhenActivated` for subscription lifecycle management)
    - Remove `INotifyPropertyChanged` implementation
-   - Resolve `MainViewModel` from DI (or construct with injected services),
-     set as `DataContext`
+   - Construct `MainViewModel`, set as `DataContext`
    - Keep only pure-UI code (drag-drop handlers, focus management, sort plumbing,
      pointer events, column auto-size)
-5. `MainWindow.axaml` bindings should continue working unchanged (property names
-   stay the same).
-6. Properties in `MainViewModel` use `this.RaiseAndSetIfChanged(ref field, value)`
-   (ReactiveObject pattern) or `[Reactive]` attribute where appropriate.
+3. Give `MainController` a reference to the ViewModel (`mViewModel`).
+4. Redirect all `mMainWin.PropertyName` accesses in the controller to
+   `mViewModel.PropertyName`.
+5. Remove duplicate properties from `MainWindow.axaml.cs`.
+6. `MainWindow.axaml` bindings work unchanged (property names stay the same).
 
 **Validation:** Build, run, verify all panels render and data binds correctly.
 
 ### Phase 2: Commands → MainViewModel
 
-1. Move all ~50 command properties from `MainWindow` to `MainViewModel`,
+1. Move all 51 command properties from `MainWindow` to `MainViewModel`,
    converting from `RelayCommand` to `ReactiveCommand<Unit, Unit>` (or
    appropriate type parameters).
 2. `canExecute` observables use `this.WhenAnyValue(x => x.IsFileOpen, ...)`
@@ -559,47 +631,94 @@ cp2_avalonia/
 
 **Validation:** Verify all menu items, toolbar buttons, and key bindings work.
 
-### Phase 3: Dissolve MainController
+### Phase 3A: Service Interfaces, Implementations & DI Container
 
-1. **Merge `MainController` logic into `MainViewModel`** and services:
+1. Create all service interfaces and concrete implementations:
+   - `IDialogService` / `DialogService` — modal/modeless dialog management with
+     ViewModel→View mapping dictionary.
+   - `IFilePickerService` / `FilePickerService` — wraps Avalonia `StorageProvider`.
+   - `ISettingsService` / `SettingsService` — wraps `AppSettings.Global`.
+   - `IClipboardService` / `ClipboardService` — same-process clipboard.
+   - `IWorkspaceService` — interface only (implementation in Phase 3B).
+   - `IViewerService` — interface only (implementation in Phase 4A/6).
+   - `IDialogHost` — owner-window abstraction, implemented by `MainWindow`.
+2. Configure the DI container in `App.axaml.cs` (`ServiceCollection` +
+   `BuildServiceProvider`).
+3. **Register in DI container (Phase 3A):** `ISettingsService`, `IClipboardService`,
+   `IDialogService`, `IFilePickerService`. **Not yet registered:**
+   `IWorkspaceService` (implementation deferred to Phase 3B) and `IViewerService`
+   (implementation deferred to Phase 4A/6). Do not attempt to resolve unregistered
+   services from the container in Phase 3A.
+4. Inject services into `MainViewModel` constructor.
+5. Services are registered but **not yet consumed** — commands still delegate
+   to `mController`.
+
+**Validation:** Build, run; no functional changes (services exist but are unused).
+
+### Phase 3B: Dissolve MainController
+
+1. **Implement `WorkspaceService`** — move WorkTree lifecycle from controller.
+2. **Merge remaining `MainController` logic into `MainViewModel`** and services.
+   (`MainController.cs` ~2,700 lines and `MainController_Panels.cs` ~1,200 lines
+   form a single partial class split across two files.)
    - File open/close → `WorkspaceService` (DI-injected) + VM orchestration
    - Settings load/save → `ISettingsService` (DI-injected)
    - Actions (add, extract, delete, etc.) → VM methods calling services
-   - Tree population → VM methods
-   - File list population → `FileListViewModel` or VM method
-2. **Eliminate the `mMainWin` back-reference.** Anywhere `MainController` accesses
-   `mMainWin.SomeProperty`, the ViewModel now owns that property directly.
-   Anywhere it accesses a control (`mMainWin.fileListDataGrid`), replace with:
+   - Dialog creation → `IDialogService.ShowDialogAsync<TVM>(vm)`
+   - File picker calls → `IFilePickerService`
+   - Clipboard operations → `IClipboardService`
+   - Tree/list population → VM methods
+3. **Eliminate the `mMainWin` back-reference.** Replace control access with:
    - ViewModel property + View binding (for selection, scroll position)
-   - `IDialogService` (for showing dialogs)
-   - `IFilePickerService` (for file/folder pickers)
-   - ReactiveUI `Interaction<,>` requests (for focus, cursor changes,
-     scroll-into-view, and other view-specific actions)
-3. Delete `MainController.cs` and `MainController_Panels.cs`.
+   - `IViewActions` interface (for scroll-into-view, focus, cursor)
+   - ReactiveUI `Interaction<,>` requests where appropriate
+4. Delete `MainController.cs` and `MainController_Panels.cs`.
+5. Work incrementally — move one method group at a time, building and testing
+   after each group.
 
 **Validation:** Full regression test of all features.
 
-### Phase 4: Dialog ViewModels
+### Phase 4A: Complex Dialog ViewModels
 
-For each dialog, repeat the pattern:
+For the 7 complex dialogs (500+ lines), create ViewModels:
+1. `EditSectorViewModel` (~1,194 lines — hex grid, sector/block navigation)
+2. `FileViewerViewModel` (~1,081 lines — format conversion, magnification;
+   **must support multiple concurrent instances** — see §2.3, §7.10)
+3. `EditAttributesViewModel` (~1,050 lines — ProDOS/HFS types, timestamps)
+4. `CreateDiskImageViewModel` (~580 lines — filesystem selection, validation)
+5. `SaveAsDiskViewModel` (~728 lines — format options, chunk access)
+6. `TestManagerViewModel` (~351 lines — debug-only test runner)
+7. `BulkCompressViewModel` (~308 lines — debug-only benchmark)
+
+For each dialog:
 1. Create `SomeDialogViewModel` in `ViewModels/`.
 2. Move all bindable properties and logic from dialog code-behind to the VM.
 3. Register the ViewModel→View mapping in `DialogService`.
 4. Thin the dialog code-behind to `InitializeComponent()` + minimal event handlers.
-5. The main `MainViewModel` creates the dialog VM, calls
+5. The `MainViewModel` creates the dialog VM, calls
    `IDialogService.ShowDialogAsync(vm)`, and reads results from the VM.
 
-Priority order (most complex / highest value first):
-1. `EditSectorViewModel` (complex state, hex editing)
-2. `FileViewerViewModel` (tabs, converter options, bitmap display;
-   **must support multiple concurrent instances** — see §2.3, §7.10)
-3. `EditAppSettingsViewModel` (settings copy, apply/cancel)
-4. `EditAttributesViewModel`
-5. Remaining dialogs in any order
+**Validation:** Build, test every converted dialog thoroughly.
+
+### Phase 4B: Remaining Dialog ViewModels
+
+Convert the remaining ~14 dialogs (medium and simple complexity):
+
+**Medium (~100–500 lines):** `EditConvertOpts`, `EditAppSettings`,
+`WorkProgress`, `LogViewer`, `DropTarget`, `ReplacePartition`.
+
+**Simple (< 175 lines):** `CreateDirectory`, `EditMetadata`,
+`CreateFileArchive`, `FindFile`, `AboutBox`, `AddMetadata`,
+`OverwriteQueryDialog`, `ShowText`.
+
+Same pattern as Phase 4A. After all dialogs are converted, retire
+`RelayCommand.cs` (zero remaining usages expected). Verify with:
+`grep -rn 'RelayCommand' cp2_avalonia/ | grep -v RelayCommand.cs` — zero
+matches expected before deletion.
 
 ### Phase 5: Sub-ViewModels & Panel Modularity
 
-1. Extract child ViewModels if `MainViewModel` is too large:
+1. Extract child ViewModels (unconditionally — see §7.22):
    - `ArchiveTreeViewModel` — selection, population, sub-tree close
    - `DirectoryTreeViewModel` — selection, population
    - `FileListViewModel` — population, sorting, column visibility
@@ -820,6 +939,276 @@ The MVVM refactor enables this by:
 This architecture is not implemented in the current MVVM phases but the
 design choices above ensure it's achievable without re-architecting.
 
+### 7.13 Interim Wiring (Phases 1–2 Transition Strategy)
+
+During Phases 1 and 2 the `MainController` still exists and holds all business
+logic, but the ViewModel is progressively taking ownership of state and commands.
+**This interim period must be explicitly managed** to avoid ad hoc decisions in
+individual blueprints.
+
+**Phase 1 interim wiring:**
+
+- `MainWindow` creates both `MainViewModel` (set as `DataContext`) and
+  `MainController` (as before).
+- `MainViewModel` receives a reference to `MainController` via a constructor
+  parameter or a `SetController()` init method. This is a **temporary coupling**
+  that will be removed in Phase 3.
+- Bindable properties now live on `MainViewModel`. Any controller code that
+  previously wrote to `mMainWin.SomeProperty` changes to write to
+  `mMainWin.ViewModel.SomeProperty` (or the controller receives its own VM
+  reference).
+- `MainWindow` code-behind accesses the VM via its `DataContext` cast, not
+  through direct property ownership.
+
+**Recommended initialization sequence in MainWindow constructor:**
+
+```csharp
+// 1. InitializeComponent();
+// 2. var viewModel = new MainViewModel();
+// 3. DataContext = viewModel;
+// 4. mMainCtrl = new MainController(this, viewModel);
+// 5. viewModel.SetController(mMainCtrl);
+// 6. (wire command pass-throughs and remaining init)
+```
+
+This order ensures the ViewModel exists before the Controller, and the
+Controller can be passed to the ViewModel for interim Phase 1–2 wiring.
+
+**Phase 2 interim wiring:**
+
+- Commands move to `MainViewModel` and call `mController.DoSomething()`.
+- `canExecute` observables use `WhenAnyValue` over VM properties. Properties
+  like `IsFileOpen`, `CanWrite`, `AreFileEntriesSelected` must already exist
+  on the VM (from Phase 1); the controller sets them via the VM reference.
+- `RefreshAllCommandStates()` is eliminated; instead, the controller sets
+  VM properties and `ReactiveCommand` auto-reevaluates.
+
+**Phase 3 dissolves this coupling:** controller logic merges into VM + services,
+the `mController` field is removed, and the temporary reference chain is deleted.
+
+### 7.14 ViewModel→View Mapping Strategy for IDialogService
+
+`DialogService` uses an **explicit registration dictionary** to map ViewModel
+types to View types. This is simpler and more debuggable than convention-based
+or attribute-based approaches.
+
+```csharp
+// In DialogService constructor or registration method:
+Register<EditSectorViewModel, EditSector>();
+Register<FileViewerViewModel, FileViewer>();
+Register<EditAppSettingsViewModel, EditAppSettings>();
+// ... one line per dialog
+```
+
+The `Register<TViewModel, TView>()` method stores a `Dictionary<Type, Func<Window>>`
+mapping. `ShowDialogAsync<TViewModel>(vm)` looks up the type, creates the View,
+sets `DataContext = vm`, and calls `ShowDialog()`.
+
+**Do not use** ReactiveUI's built-in `ViewLocator` for dialog windows — it is
+designed for `UserControl`-based view resolution, not top-level `Window` creation.
+Reserve `ViewLocator` for potential future use with dockable panels.
+
+### 7.15 Parent Window Resolution for Dialogs and File Pickers
+
+`ShowDialog` and `StorageProvider` require an owner `Window`. Since services are
+DI singletons without direct View references, the implementation uses:
+
+- `IDialogService` and `IFilePickerService` both accept an **`IDialogHost`
+  interface** (implemented by `MainWindow`) that provides the owner window.
+- `MainViewModel` holds a reference to `IDialogHost` (set during View
+  initialization). This is the **only** ViewModel→View coupling, and it is
+  through an abstraction.
+- In multi-window scenarios, each `MainViewModel` has its own `IDialogHost`.
+
+```csharp
+public interface IDialogHost {
+    Window GetOwnerWindow();
+}
+```
+
+Alternative considered: using `Application.Current.ApplicationLifetime` to find
+the active window. Rejected because it breaks under multi-window and is fragile.
+
+### 7.16 Error Propagation Strategy
+
+Errors during command execution propagate through a consistent two-tier pattern:
+
+1. **`ReactiveCommand.ThrownExceptions`** — every command subscribes to this
+   observable. Unhandled exceptions from command execution are caught here
+   rather than crashing the application. A default subscription on each
+   `ReactiveCommand` pipes errors to `IDialogService.ShowMessageAsync()`.
+
+2. **Explicit error results** — operations that can fail in expected ways
+   (file not found, disk full, format error) return result objects or throw
+   domain-specific exceptions. The VM calls `IDialogService.ShowMessageAsync()`
+   with the user-facing message.
+
+Pattern for command error handling:
+
+```csharp
+SomeCommand.ThrownExceptions.Subscribe(ex =>
+    this.ShowError(ex.Message));
+```
+
+Where `ShowError` is a helper on a base class or extension method that calls
+`IDialogService.ShowMessageAsync()`.
+
+### 7.17 AppSettings.Global Migration Strategy
+
+`AppSettings.Global` is a static singleton accessed from 12+ files across
+`cp2_avalonia`. Full replacement in a single phase would be disruptive.
+
+**Strategy: coexistence with directional migration.**
+
+- `ISettingsService` wraps `AppSettings.Global` — reads/writes pass through
+  to the same underlying `SettingsHolder`. No data duplication.
+- **ViewModel code** uses `ISettingsService` (injected via constructor).
+- **View code-behind** may continue using `AppSettings.Global` directly for
+  pure view concerns (window placement, column widths) — these will never
+  move to ViewModels.
+- **Dialog code-behind** transitions to VMs in Phase 4; their `AppSettings.Global`
+  calls move to the VM's `ISettingsService` at that time.
+- `ISettingsService` exposes an `IObservable<string> SettingChanged` observable
+  so VMs can react to settings changes from any source.
+
+### 7.18 Threading Model
+
+The project follows Avalonia's standard threading rules:
+
+- **UI-bound properties** on ViewModels must be set on the UI thread.
+  Background workers that complete operations must marshal results via
+  `Dispatcher.UIThread.InvokeAsync(...)` (Avalonia's native mechanism) or
+  ReactiveUI's `ObserveOn(RxApp.MainThreadScheduler)` for reactive
+  pipelines.
+- **`ReactiveCommand.CreateFromTask()`** automatically marshals results
+  to the UI thread — command handlers can safely update VM properties.
+- **`IWorker` implementations** (AddFileWorker, ExtractFileWorker, etc.)
+  run on background threads and report progress via callbacks. The
+  `WorkProgressViewModel` bridges these callbacks to the UI thread
+  using `Dispatcher.UIThread.InvokeAsync`.
+- **`IViewerService`** collection mutations are marshaled to the UI thread
+  (see §7.10 #2).
+
+### 7.19 DI Service Lifetimes
+
+| Service | Lifetime | Rationale |
+|---|---|---|
+| `ISettingsService` | **Singleton** | Single settings store shared across all windows |
+| `IClipboardService` | **Singleton** | System clipboard is global |
+| `IViewerService` | **Singleton** | Global viewer registry (see §4.6) |
+| `WorkspaceService` | **Singleton** | Shared workspace state |
+| `IDialogService` | **Transient** | Each `MainViewModel` gets its own instance, configured with its `IDialogHost` |
+| `IFilePickerService` | **Transient** | Each instance bound to a specific owner window |
+
+Transient services that need a window reference are created manually by
+`MainViewModel` during initialization (passing `IDialogHost`), not resolved
+blindly from the container. This is explicit and avoids hidden coupling.
+
+### 7.20 What Stays in MainWindow Code-Behind
+
+After Phase 1+, `MainWindow.axaml.cs` retains only pure View concerns.
+The following categories **stay** in code-behind:
+
+| Category | Examples | Reason |
+|---|---|---|
+| **Window lifecycle** | `Window_Loaded`, `Window_Closing` | Avalonia window events |
+| **Drag-and-drop handlers** | `HandleLaunchDrop`, file list drag/drop, directory tree drop | Avalonia DragDrop API is view-level |
+| **DataGrid sorting plumbing** | `FileListDataGrid_Sorting`, `mSuppressSort`, pointer/resize handlers | Maps column headers to VM sort method |
+| **Keyboard shortcuts** | `Window_KeyDown` (if it exists) | Routes to VM commands |
+| **Named control access** | `archiveTree`, `directoryTree`, `fileListDataGrid` for scroll-into-view, focus | Triggered by VM interactions |
+| **Toast animation** | `toastBorder` show/hide animation | Pure UI animation |
+| **Window placement** | Save/restore window position and size | View-only persistence |
+| **Platform-specific visibility** | `openPhysicalDriveMenuItem.IsVisible` on non-Windows | Runtime platform check |
+
+Everything else — state, commands, data, business logic — lives in ViewModels.
+
+### 7.21 RecentFiles Design Decision
+
+**Decision: `WorkspaceService` owns the recent files list; `MainViewModel`
+exposes it for binding.**
+
+- `WorkspaceService.RecentFilePaths` is an `ObservableCollection<string>`
+  (or `IReadOnlyList<string>` with change notification).
+- `MainViewModel` subscribes to changes and exposes bindable properties
+  (`RecentFileName1` ... `RecentFileName6`, `ShowRecentFile1` ... etc.)
+  or, preferably, a single `RecentFiles` collection that the AXAML
+  `MenuItem`s bind to via an `ItemsSource` with a `DataTemplate`.
+- The 1-6 numbered property pattern is a legacy of the WPF port; migrating
+  to a collection binding is cleaner but can be deferred.
+
+### 7.22 Phase 5 Is Mandatory
+
+Phase 5 (Sub-VMs & Panel Modularity) is **not conditional**. The child
+ViewModels (`ArchiveTreeViewModel`, `DirectoryTreeViewModel`,
+`FileListViewModel`, `OptionsPanelViewModel`, `CenterInfoViewModel`,
+`StatusBarViewModel`) must all be extracted regardless of `MainViewModel`
+size. Rationale:
+
+1. Future docking/paneling (§7.11) requires each panel to be a
+   self-contained ViewModel.
+2. Multi-window architecture (§7.12) requires panels to be instantiable
+   independently.
+3. Unit testing is dramatically easier with focused, single-responsibility
+   ViewModels.
+
+The "if MainViewModel is too large" language is replaced with: **"unconditionally
+extract child ViewModels to prepare for docking, multi-window, and testability."**
+
+### 7.23 Data Flow Example: "Add Files" Operation
+
+To illustrate how the target architecture handles a representative end-to-end
+workflow, here is the data flow for the "Add Files" action:
+
+```
+1. User clicks Actions → Add Files (or presses keyboard shortcut)
+2. AXAML binding invokes MainViewModel.AddFilesCommand (ReactiveCommand)
+   - canExecute: WhenAnyValue(x => x.IsFileOpen, x => x.CanWrite,
+     (open, write) => open && write)
+3. MainViewModel.AddFilesAsync() executes:
+   a. Calls IFilePickerService.OpenFileAsync() to get source files
+      - FilePickerService uses IDialogHost.GetOwnerWindow() for the picker
+   b. If user cancels, return
+   c. Reads current options from ISettingsService (compress, raw, recurse, etc.)
+   d. Creates AddFileWorker with parameters
+   e. Creates WorkProgressViewModel, calls IDialogService.ShowDialogAsync(progressVM)
+      - DialogService looks up WorkProgressViewModel → WorkProgress View mapping
+      - WorkProgress View shows modal progress dialog
+      - AddFileWorker runs on background thread, reports progress via callbacks
+      - WorkProgressViewModel marshals progress updates to UI thread
+   f. On completion, calls WorkspaceService.RefreshAfterModification()
+   g. Updates FileList (via FileListViewModel or directly)
+   h. Updates status bar text
+4. If AddFileWorker throws, ReactiveCommand.ThrownExceptions fires,
+   MainViewModel.ShowError() calls IDialogService.ShowMessageAsync()
+```
+
+This pattern applies analogously to Extract, Delete, Move, and other
+Actions-menu operations.
+
+### 7.24 Git & Version Control Policy
+
+All MVVM work happens on the **`avalonia_mvvm`** branch.
+
+**The user (not the agent) performs all git operations.** Agents must never
+run `git add`, `git commit`, `git push`, `git checkout`, `git merge`, or
+any other git command. The agent's role is limited to editing files and
+running build/test commands. The user will commit at their discretion,
+generally at iteration boundaries but not limited to them.
+
+Recommended user workflow:
+
+1. **Create a phase-specific branch** from `avalonia_mvvm`:
+   `git checkout -b mvvm/phase-N` (e.g., `mvvm/phase-1`).
+2. **Commit incrementally** within the phase — at minimum one commit per
+   logical step in the blueprint (e.g., "move properties", "update bindings",
+   "remove old code").
+3. **Test at each commit** using the validation checklist (see §6 in
+   Pre-Iteration-Notes).
+4. **Merge to `avalonia_mvvm`** only after the phase is fully validated.
+5. If a phase goes wrong mid-way, **reset the phase branch** to the last
+   known-good commit. The `avalonia_mvvm` branch is never left in a broken
+   state.
+
 ---
 
 ## 8. Testing Opportunities
@@ -841,17 +1230,21 @@ Recommended framework: **xUnit** (as noted in `KNOWN_ISSUES.md`).
 | Phase | Scope | Relative Effort | Risk |
 |---|---|---|---|
 | 0 — Preparation | Infrastructure, no behavior change | Low | Very Low |
-| 1 — MainViewModel Core | ~100 properties + AXAML rebinding | Medium | Medium (binding breakage) |
-| 2 — Commands | ~50 commands | Medium | Low |
-| 3 — Dissolve Controller | Merge ~1,800 lines of logic | High | High (regression risk) |
-| 4 — Dialog VMs | ~20 dialogs | High (volume) | Medium |
-| 5 — Sub-VMs & Panel Modularity | Decompose large VM, self-contained panels | Medium | Low |
-| 6 — Multi-Viewer & Future (optional) | Modeless FileViewer, docking eval | Medium | Medium |
+| 1A — Create MainViewModel | ~100 properties, no DataContext switch | Medium | Low |
+| 1B — Wire DataContext | Switch DataContext, redirect controller | Medium | Medium (binding breakage) |
+| 2 — Commands | 51 commands → ReactiveCommand | Medium | Low |
+| 3A — Service Interfaces + DI | Create services, configure container | Medium | Very Low |
+| 3B — Dissolve Controller | Merge ~3,900 lines into VM + services | High | High (regression risk) |
+| 4A — Complex Dialog VMs | 7 dialogs (500+ lines each) | High | Medium |
+| 4B — Remaining Dialog VMs | ~14 dialogs + retire RelayCommand | Medium | Low |
+| 5 — Sub-VMs & Panel Modularity | 6 child VMs, decompose MainViewModel | Medium | Low |
+| 6 — Polish & Optional | Cleanup, multi-viewer, docking eval | Medium | Medium |
 
-**Total:** Phases 0–5 are the core MVVM refactor. Phase 6 is optional and
-addresses the multi-viewer and docking goals from `KNOWN_ISSUES.md`. Each
-phase should be completed and tested before moving to the next. The phased
-approach ensures the application remains functional at every step.
+**Total:** Phases 0–5 are the core MVVM refactor (10 sub-iterations). Phase 6
+is optional and addresses cleanup, multi-viewer lifecycle, and docking goals
+from `KNOWN_ISSUES.md`. Each phase should be completed and tested before moving
+to the next. The phased approach ensures the application remains functional at
+every step.
 
 ---
 
@@ -864,12 +1257,24 @@ This index provides a quick reference to where each key decision is discussed:
 |---|---|
 | MVVM framework (ReactiveUI) | §2.1 Technology Decisions |
 | DI container (MS.Extensions.DI) | §2.1 Technology Decisions |
+| Naming conventions (MVVM-specific) | §2.2 Naming Conventions |
 | File/folder reorganization (incremental) | §2.1 Technology Decisions |
 | ArchiveTreeItem / DirectoryTreeItem identity | §3.4 Data/Model Classes |
 | Column sort state ownership | §7.4 Column Sorting |
 | Multi-viewer lifecycle (IViewerService) | §4.6 IViewerService, §7.10 Multiple Concurrent FileViewers |
 | Docking framework timing (deferred) | §7.11 Panel Modularity & Composability |
 | FileViewer side panel (deferred) | §7.10 Multiple Concurrent FileViewers |
+| Interim wiring (Phases 1–2) | §7.13 Interim Wiring |
+| ViewModel→View mapping (DialogService) | §7.14 ViewModel→View Mapping Strategy |
+| Parent window resolution | §7.15 Parent Window Resolution |
+| Error propagation | §7.16 Error Propagation Strategy |
+| AppSettings.Global migration | §7.17 AppSettings.Global Migration Strategy |
+| Threading model | §7.18 Threading Model |
+| DI service lifetimes | §7.19 DI Service Lifetimes |
+| Code-behind retention list | §7.20 What Stays in MainWindow Code-Behind |
+| Recent files design | §7.21 RecentFiles Design Decision |
+| Phase 5 mandatory | §7.22 Phase 5 Is Mandatory |
+| Git & version control policy | §7.24 Git & Version Control Policy |
 
 ---
 
@@ -877,7 +1282,7 @@ This index provides a quick reference to where each key decision is discussed:
 
 | Package | Purpose |
 |---|---|
-| `Avalonia.ReactiveUI` | ReactiveUI integration for Avalonia (pulls in `ReactiveUI` transitively) |
+| `ReactiveUI.Avalonia` | ReactiveUI integration for Avalonia (pulls in `ReactiveUI` transitively) |
 | `Microsoft.Extensions.DependencyInjection` | Service registration and resolution |
 
 ---
@@ -886,11 +1291,31 @@ This index provides a quick reference to where each key decision is discussed:
 
 Detailed step-by-step implementation instructions for each phase live in
 `cp2_avalonia/MVVM_Project/`. Each iteration blueprint follows the format
-established in `cp2_avalonia/guidance/Iteration_0_Blueprint.md`:
+established in `Iteration_0_Blueprint.md`:
 
 - **Goal** — what the iteration accomplishes
 - **Prerequisites** — branch, prior iterations completed
 - **Step-by-Step Instructions** — exact code, file paths, and validation steps
+
+### Blueprint Status
+
+| Phase | Blueprint File | Status |
+|---|---|---|
+| 0 — Preparation | `Iteration_0_Blueprint.md` | **Complete** |
+| 1A — Create MainViewModel + Move Properties | `Iteration_1A_Blueprint.md` | **Complete** |
+| 1B — Wire DataContext + Redirect Controller | `Iteration_1B_Blueprint.md` | **Complete** |
+| 2 — Commands → ReactiveCommand | `Iteration_2_Blueprint.md` | **Complete** |
+| 3A — Service Interfaces + DI Container | `Iteration_3A_Blueprint.md` | **Complete** |
+| 3B — Dissolve MainController | `Iteration_3B_Blueprint.md` | **Complete** |
+| 4A — Complex Dialog ViewModels | `Iteration_4A_Blueprint.md` | **Complete** |
+| 4B — Remaining Dialog ViewModels | `Iteration_4B_Blueprint.md` | **Complete** |
+| 5 — Child ViewModels (Panel Extraction) | `Iteration_5_Blueprint.md` | **Complete** |
+| 6 — Polish & Optional Enhancements | `Iteration_6_Blueprint.md` | **Complete** |
+
+Blueprints should be generated from this notes document. Each blueprint must
+be self-contained: an implementer should be able to follow it without referring
+back to MVVM_Notes.md for decisions, though they may reference
+Pre-Iteration-Notes.md for conventions.
 
 ---
 
@@ -905,3 +1330,7 @@ established in `cp2_avalonia/guidance/Iteration_0_Blueprint.md`:
 - Porting notes: `cp2_avalonia/PORTING_NOTES.md`
 - Coding conventions: `cp2_avalonia/guidance/Pre-Iteration-Notes.md`
 - Porting overview: `cp2_avalonia/guidance/PORTING_OVERVIEW.md`
+
+---
+
+
