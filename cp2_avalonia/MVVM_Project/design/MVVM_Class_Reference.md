@@ -21,9 +21,10 @@ map of what gets created, when, and how the pieces relate.
 9. [Phase 4B — Remaining Dialog ViewModels (Iteration 4B)](#9-phase-4b--remaining-dialog-viewmodels-iteration-4b)
 10. [Phase 5 — Child ViewModels (Iteration 5)](#10-phase-5--child-viewmodels-iteration-5)
 11. [Phase 6 — Polish & Optional (Iteration 6)](#11-phase-6--polish--optional-iteration-6)
-12. [Inheritance & Interface Diagrams](#12-inheritance--interface-diagrams)
-13. [DI Registration Summary](#13-di-registration-summary)
-14. [Summary Statistics](#14-summary-statistics)
+12. [View ↔ ViewModel Mappings](#12-view--viewmodel-mappings)
+13. [Inheritance & Interface Diagrams](#13-inheritance--interface-diagrams)
+14. [DI Registration Summary](#14-di-registration-summary)
+15. [Summary Statistics](#15-summary-statistics)
 
 ---
 
@@ -306,7 +307,120 @@ optional multi-viewer preparation.
 
 ---
 
-## 12. Inheritance & Interface Diagrams
+## 12. View ↔ ViewModel Mappings
+
+Every View (an `.axaml` window or user control) gets its data and behavior from
+exactly one ViewModel, set as the View's `DataContext`. The `DialogService`
+maintains a registry of these pairings so it can create the right window for
+any given ViewModel type.
+
+### Main Window
+
+| View (AXAML) | ViewModel | Modality | Notes |
+|---|---|---|---|
+| `MainWindow.axaml` | `MainViewModel` | — | Top-level application window. Also implements `IDialogHost` and `IViewActions`. |
+
+`MainWindow` hosts several panels whose bindings reach into child ViewModels
+owned by `MainViewModel`:
+
+| Panel Region | Child ViewModel | Binding Prefix |
+|---|---|---|
+| Archive tree (left) | `ArchiveTreeViewModel` | `{Binding ArchiveTree.…}` |
+| Directory tree (left) | `DirectoryTreeViewModel` | `{Binding DirectoryTree.…}` |
+| File list (center) | `FileListViewModel` | `{Binding FileList.…}` |
+| Info / metadata (center) | `CenterInfoViewModel` | `{Binding CenterInfo.…}` |
+| Options sidebar (right) | `OptionsPanelViewModel` | `{Binding Options.…}` |
+| Status bar (bottom) | `StatusBarViewModel` | `{Binding StatusBar.…}` |
+
+### Dialog View ↔ ViewModel Map
+
+Each dialog window uses a single ViewModel as its `DataContext`. The
+`DialogService` maps ViewModel types to View types at startup so that showing
+a dialog only requires constructing the ViewModel — the service creates the
+correct window automatically.
+
+| View (AXAML) | ViewModel | Modality | Phase |
+|---|---|---|---|
+| `EditSector.axaml` | `EditSectorViewModel` | Modal | 4A |
+| `Tools/FileViewer.axaml` | `FileViewerViewModel` | Modal (multi-instance) | 4A |
+| `EditAttributes.axaml` | `EditAttributesViewModel` | Modal | 4A |
+| `CreateDiskImage.axaml` | `CreateDiskImageViewModel` | Modal | 4A |
+| `SaveAsDisk.axaml` | `SaveAsDiskViewModel` | Modal | 4A |
+| `LibTest/TestManager.axaml` | `TestManagerViewModel` | Modal | 4A |
+| `LibTest/BulkCompress.axaml` | `BulkCompressViewModel` | Modal | 4A |
+| `EditAppSettings.axaml` | `EditAppSettingsViewModel` | Modal | 4B |
+| `Common/WorkProgress.axaml` | `WorkProgressViewModel` | Modal | 4B |
+| `EditConvertOpts.axaml` | `EditConvertOptsViewModel` | Modal | 4B |
+| `FindFile.axaml` | `FindFileViewModel` | **Modeless** | 4B |
+| `ReplacePartition.axaml` | `ReplacePartitionViewModel` | Modal | 4B |
+| `Tools/LogViewer.axaml` | `LogViewerViewModel` | **Modeless** | 4B |
+| `CreateDirectory.axaml` | `CreateDirectoryViewModel` | Modal | 4B |
+| `EditMetadata.axaml` | `EditMetadataViewModel` | Modal | 4B |
+| `CreateFileArchive.axaml` | `CreateFileArchiveViewModel` | Modal | 4B |
+| `AboutBox.axaml` | `AboutBoxViewModel` | Modal | 4B |
+| `AddMetadata.axaml` | `AddMetadataViewModel` | Modal | 4B |
+| `Actions/OverwriteQueryDialog.axaml` | `OverwriteQueryViewModel` | Modal | 4B |
+| `Tools/ShowText.axaml` | `ShowTextViewModel` | Modal | 4B |
+| `Tools/DropTarget.axaml` | `DropTargetViewModel` | **Modeless** | 4B |
+| *(generated at runtime)* | `MessageBoxViewModel` | Modal | 4B |
+
+### Diagram — DialogService ViewModel → View Registry
+
+```mermaid
+graph LR
+    subgraph DialogService Registry
+        direction LR
+        ESV[EditSectorViewModel] -.-> ES[EditSector.axaml]
+        FVV[FileViewerViewModel] -.-> FV[FileViewer.axaml]
+        EAV[EditAttributesViewModel] -.-> EA[EditAttributes.axaml]
+        CDIV[CreateDiskImageViewModel] -.-> CDI[CreateDiskImage.axaml]
+        SADV[SaveAsDiskViewModel] -.-> SAD[SaveAsDisk.axaml]
+        TMV[TestManagerViewModel] -.-> TM[TestManager.axaml]
+        BCV[BulkCompressViewModel] -.-> BC[BulkCompress.axaml]
+        EASV[EditAppSettingsViewModel] -.-> EAS[EditAppSettings.axaml]
+        WPV[WorkProgressViewModel] -.-> WP[WorkProgress.axaml]
+        ECOV[EditConvertOptsViewModel] -.-> ECO[EditConvertOpts.axaml]
+        FFV[FindFileViewModel] -.-> FF[FindFile.axaml]
+        RPV[ReplacePartitionViewModel] -.-> RP[ReplacePartition.axaml]
+        LVV[LogViewerViewModel] -.-> LV[LogViewer.axaml]
+        CDirV[CreateDirectoryViewModel] -.-> CDir[CreateDirectory.axaml]
+        EMV[EditMetadataViewModel] -.-> EM[EditMetadata.axaml]
+        CFAV[CreateFileArchiveViewModel] -.-> CFA[CreateFileArchive.axaml]
+        ABV[AboutBoxViewModel] -.-> AB[AboutBox.axaml]
+        AMV[AddMetadataViewModel] -.-> AM[AddMetadata.axaml]
+        OQV[OverwriteQueryViewModel] -.-> OQ[OverwriteQueryDialog.axaml]
+        STV[ShowTextViewModel] -.-> ST[ShowText.axaml]
+        DTV[DropTargetViewModel] -.-> DT[DropTarget.axaml]
+    end
+```
+
+### Modeless Dialog Lifecycle
+
+Three dialogs are **modeless** — they stay open alongside the main window and
+communicate back via observables or callbacks rather than a dialog result:
+
+| Modeless View | ViewModel | Communication Pattern |
+|---|---|---|
+| `FindFile.axaml` | `FindFileViewModel` | Exposes `FindRequested` observable; `MainViewModel` subscribes |
+| `Tools/LogViewer.axaml` | `LogViewerViewModel` | Reads debug log; self-contained display |
+| `Tools/DropTarget.axaml` | `DropTargetViewModel` | Reads clipboard/drag data; self-contained display |
+
+### Nested Dialog Relationships
+
+Some dialogs spawn child dialogs during their operation:
+
+```mermaid
+graph TD
+    EAS[EditAppSettings] -->|opens| ECO1[EditConvertOpts<br/>import converters]
+    EAS -->|opens| ECO2[EditConvertOpts<br/>export converters]
+    WP[WorkProgress] -->|opens during operation| OQ[OverwriteQueryDialog]
+    WP -->|opens during operation| MB[MessageBox]
+    MVM[MainViewModel] -->|opens any dialog via| DS[DialogService]
+```
+
+---
+
+## 13. Inheritance & Interface Diagrams
 
 ### ViewModel Hierarchy
 
@@ -449,7 +563,7 @@ classDiagram
 
 ---
 
-## 13. DI Registration Summary
+## 14. DI Registration Summary
 
 | Interface | Implementation | Lifetime | Iteration | Injected Into |
 |-----------|---------------|----------|-----------|---------------|
@@ -467,7 +581,7 @@ classDiagram
 
 ---
 
-## 14. Summary Statistics
+## 15. Summary Statistics
 
 | Category | Count |
 |----------|-------|
