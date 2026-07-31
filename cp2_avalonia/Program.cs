@@ -18,10 +18,17 @@ using System;
 using System.Threading.Tasks;
 using Avalonia;
 
+using cp2_avalonia.Common;
 using cp2_avalonia.Services;
 
 namespace cp2_avalonia {
     internal class Program {
+        /// <summary>
+        /// Options parsed from the command line, made available to the UI (e.g. to open a
+        /// file at startup).  Null until <see cref="Main"/> runs.
+        /// </summary>
+        public static CommandLineOptions? StartupOptions { get; private set; }
+
         // Avalonia configuration; don't remove; also used by visual designer.
         public static AppBuilder BuildAvaloniaApp()
             => AppBuilder.Configure<App>()
@@ -31,6 +38,32 @@ namespace cp2_avalonia {
 
         [STAThread]
         public static void Main(string[] args) {
+            CommandLineOptions opts = CommandLineOptions.Parse(args);
+
+            // Handle the exit-early cases before spinning up the GUI, so the messages land on
+            // stdout/stderr for anyone who launched us from a terminal.
+            if (opts.HasError) {
+                Console.Error.WriteLine(opts.ErrorMessage);
+                Console.Error.WriteLine();
+                Console.Error.WriteLine(CommandLineOptions.GetUsage());
+                Environment.Exit(2);
+                return;
+            }
+            if (opts.ShowHelp) {
+                // Everything goes to stderr: on Windows the GUI subsystem has no console, but a
+                // debugger's output window still captures stderr.
+                Console.Error.WriteLine(CommandLineOptions.GetUsage());
+                return;
+            }
+            if (opts.IsPhysicalDrive) {
+                Console.Error.WriteLine("Opening a physical drive (" + opts.FilePath +
+                    ") is not yet implemented on this platform.");
+                Environment.Exit(1);
+                return;
+            }
+
+            StartupOptions = opts;
+
             InstallGlobalExceptionHandlers();
             BuildAvaloniaApp()
                 .StartWithClassicDesktopLifetime(args);

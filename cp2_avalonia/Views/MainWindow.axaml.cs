@@ -582,6 +582,7 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
             {
                 InstallLinuxDrag();
             }
+            OpenStartupFile();
         };
         Closing += (s, e) =>
         {
@@ -593,6 +594,24 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
             }
             if (OperatingSystem.IsLinux()) UninstallLinuxDrag();
         };
+    }
+
+    /// <summary>
+    /// Opens the file passed on the command line, if any.  Deferred to Background priority so
+    /// the window is fully shown and laid out before the load's progress dialog appears.
+    /// </summary>
+    private void OpenStartupFile()
+    {
+        Common.CommandLineOptions? opts = Program.StartupOptions;
+        if (opts?.FilePath == null || DataContext is not MainViewModel vm)
+        {
+            return;
+        }
+        string path = opts.FilePath;
+        bool readOnly = opts.ReadOnly;
+        Dispatcher.UIThread.Post(
+            () => _ = vm.OpenWorkFileAsync(path, readOnly),
+            DispatcherPriority.Background);
     }
 
     // ---- Linux XDND receive (external drag from desktop/file manager) ----

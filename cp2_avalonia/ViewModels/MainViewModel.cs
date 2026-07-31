@@ -664,7 +664,7 @@ public class MainViewModel : ObservableObject
     /// Core logic for opening a work file. Runs OpenProgress on a background
     /// thread via WorkspaceService; shows a busy cursor during load.
     /// </summary>
-    public async Task OpenWorkFileAsync(string? path = null)
+    public async Task OpenWorkFileAsync(string? path = null, bool readOnly = false)
     {
         path ??= await mFilePickerService.OpenFileAsync("Open");
         if (path == null) { return; }
@@ -683,7 +683,7 @@ public class MainViewModel : ObservableObject
                 AppSettings.AUTO_OPEN_DEPTH, AutoOpenDepth.SubVol);
             await mDialogService.ShowLoadingAsync(
                 "Loading ‘" + Path.GetFileName(path) + "’…",
-                async () => await _workspaceService.OpenAsync(path, readOnly: false, depth));
+                async () => await _workspaceService.OpenAsync(path, readOnly, depth));
             if (!_workspaceService.IsFileOpen) { return; }
             PopulateArchiveTree();
         }
