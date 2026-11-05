@@ -603,12 +603,35 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
     private void OpenStartupFile()
     {
         Common.CommandLineOptions? opts = Program.StartupOptions;
-        if (opts?.FilePath == null || DataContext is not MainViewModel vm)
+        if (opts?.FilePath == null)
         {
             return;
         }
-        string path = opts.FilePath;
-        bool readOnly = opts.ReadOnly;
+        OpenFileDeferred(opts.FilePath, opts.ReadOnly);
+    }
+
+    /// <summary>
+    /// Opens a file handed to an already-running (or just-launched) instance via the OS's
+    /// file-activation mechanism.  Currently only reachable on macOS, via Finder's "Open
+    /// With"/double-click or a drag onto the Dock/Finder icon; see
+    /// <see cref="App.OnMacFileActivated"/>.
+    /// </summary>
+    public void OpenFileFromActivation(string path)
+    {
+        OpenFileDeferred(path, readOnly: false);
+        if (WindowState == WindowState.Minimized)
+        {
+            WindowState = WindowState.Normal;
+        }
+        Activate();
+    }
+
+    private void OpenFileDeferred(string path, bool readOnly)
+    {
+        if (DataContext is not MainViewModel vm)
+        {
+            return;
+        }
         Dispatcher.UIThread.Post(
             () => _ = vm.OpenWorkFileAsync(path, readOnly),
             DispatcherPriority.Background);

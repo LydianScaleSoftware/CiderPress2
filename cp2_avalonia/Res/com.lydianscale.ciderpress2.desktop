@@ -1,0 +1,39 @@
+[Desktop Entry]
+Type=Application
+Name=CiderPress II
+Comment=View, edit, and manage Apple II disk images and file archives
+Exec=CiderPress2 %f
+TryExec=CiderPress2
+Icon=com.lydianscale.ciderpress2
+Terminal=false
+Categories=Utility;Archiving;
+StartupWMClass=CiderPress2
+
+# Notes for packaging this (sample file -- adjust paths/names to match your install layout):
+#
+# 1. Install this file as ~/.local/share/applications/com.lydianscale.ciderpress2.desktop
+#    (per-user) or /usr/share/applications/com.lydianscale.ciderpress2.desktop (system-wide),
+#    and make sure "CiderPress2" (the launch script/binary) is on $PATH, or change Exec/TryExec
+#    to an absolute path.
+#
+# 2. "Icon=" expects an icon *name*, resolved through the user's icon theme, not a file
+#    path. There's no Linux-sized icon asset in this repo yet (Res/ only has .ico/.icns);
+#    export one (e.g. from ndocs/images/cp2_app.png) and install it as, for example,
+#    ~/.local/share/icons/hicolor/256x256/apps/com.lydianscale.ciderpress2.png, then run
+#    `gtk-update-icon-cache` or `xdg-icon-resource install`. Until an icon is installed under
+#    that name, most desktop environments fall back to a generic icon.
+#
+# 3. `Exec=... %f` is what makes "drag a file onto this app's icon" work on desktop
+#    environments that support dropping files on a taskbar/dock/launcher entry (behavior
+#    varies by DE and is not universal the way it is on Windows/macOS) -- the dropped file's
+#    path is substituted for %f and arrives as a normal command-line argument, which
+#    cp2_avalonia/Common/CommandLineOptions.cs already parses.
+#
+# 4. This does NOT register MIME-type/double-click association for the Apple II-specific
+#    extensions (.2mg, .woz, .shk, etc.) -- most of them have no shared-mime-info entry on
+#    Linux, so file managers won't know to offer CiderPress II for them automatically. That
+#    needs a separate shared-mime-info XML (installed under
+#    /usr/share/mime/packages/, or ~/.local/share/mime/packages/, followed by
+#    `update-mime-database`) declaring a MIME type per extension, then listing those types
+#    under a MimeType= line here. Until that exists, users can still pick CiderPress II
+#    manually via their file manager's "Open With -> Other Application" option.

@@ -16,9 +16,11 @@
  */
 using System;
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
+using Avalonia.Platform.Storage;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using Microsoft.Extensions.DependencyInjection;
@@ -129,7 +131,35 @@ namespace cp2_avalonia
 
                 desktop.MainWindow = mainWindow;
             }
+
+            // macOS delivers "open this file" requests (Finder double-click, drag onto the
+            // Dock/Finder icon, "Open With") as an activation event rather than as argv, both
+            // for a cold launch and while already running.  Windows/Linux get the file via
+            // argv instead (see Program.StartupOptions); ActivationKind.File is currently
+            // macOS-only in Avalonia, so this is a no-op elsewhere.
+            if (OperatingSystem.IsMacOS() &&
+                TryGetFeature(typeof(IActivatableLifetime)) is IActivatableLifetime activatable)
+            {
+                activatable.Activated += OnMacFileActivated;
+            }
+
             base.OnFrameworkInitializationCompleted();
+        }
+
+        private void OnMacFileActivated(object? sender, ActivatedEventArgs e)
+        {
+            if (e is not FileActivatedEventArgs fileArgs || fileArgs.Files.Count == 0)
+            {
+                return;
+            }
+            // Only the first file is honored; opening more than one disk image/archive at a
+            // time isn't supported.
+            string? path = fileArgs.Files[0].TryGetLocalPath();
+            if (path == null)
+            {
+                return;
+            }
+            Dispatcher.UIThread.Post(() => GetMainWindow()?.OpenFileFromActivation(path));
         }
 
         private MainWindow? GetMainWindow() =>
