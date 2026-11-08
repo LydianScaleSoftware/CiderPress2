@@ -41,6 +41,11 @@ limitations under the License. -->
             <Setter Property="Opacity"
                     Value="{DynamicResource IconDisabledOpacity}" />
         </Style>
+        <!-- Same fade, for toolbar buttons that use a PathIcon instead of an Image. -->
+        <Style Selector="Button:disabled PathIcon">
+            <Setter Property="Opacity"
+                    Value="{DynamicResource IconDisabledOpacity}" />
+        </Style>
         <Style Selector="DataGridCell">
             <Setter Property="Padding"
                     Value="1,0" />

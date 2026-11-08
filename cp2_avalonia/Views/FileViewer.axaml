@@ -128,15 +128,19 @@ xmlns:vm="clr-namespace:cp2_avalonia.ViewModels"
                 <!-- History navigation buttons -->
                 <Button x:Name="backButton"
                         DockPanel.Dock="Left" Width="30" Height="30"
-                        FontSize="22"
                         Margin="1,2"
                         HorizontalContentAlignment="Center"
                         VerticalContentAlignment="Center"
-                        Content="←"
                         Padding="0"
                         ToolTip.Tip="{Binding BackTip}"
                         IsEnabled="{Binding HasBackHistory}"
                         Command="{Binding BackCommand}">
+                    <!-- Curved "undo"-style arrow (Material Design icon set); a vector path
+                         renders identically everywhere, unlike a Unicode arrow glyph, which
+                         varies with whatever font the OS substitutes for it. -->
+                    <PathIcon Width="16" Height="16"
+                              Foreground="{DynamicResource IconForegroundBrush}"
+                              Data="M12.5,8C9.85,8,7.45,8.99,5.6,10.6L2,7V16H11L7.38,12.38C8.77,11.22,10.54,10.5,12.5,10.5C16.04,10.5,19.05,12.81,20.1,16L22.47,15.22C21.08,11.03,17.15,8,12.5,8Z"/>
                     <Button.ContextMenu>
                         <ContextMenu x:Name="backContextMenu" />
                     </Button.ContextMenu>
@@ -144,15 +148,17 @@ xmlns:vm="clr-namespace:cp2_avalonia.ViewModels"
                 <Button x:Name="forwardButton"
                         DockPanel.Dock="Left"
                         Width="30" Height="30"
-                        FontSize="22"
                         Margin="0,2"
                         HorizontalContentAlignment="Center"
                         VerticalContentAlignment="Center"
-                        Content="→"
                         Padding="0"
                         ToolTip.Tip="{Binding ForwardTip}"
                         IsEnabled="{Binding HasForwardHistory}"
                         Command="{Binding ForwardCommand}">
+                    <!-- Mirror of backButton's icon ("redo"-style). -->
+                    <PathIcon Width="16" Height="16"
+                              Foreground="{DynamicResource IconForegroundBrush}"
+                              Data="M18.4,10.6C16.55,8.99,14.15,8,11.5,8C6.85,8,2.92,11.03,1.53,15.22L3.9,16C4.95,12.81,7.96,10.5,11.5,10.5C13.46,10.5,15.23,11.22,16.62,12.38L13,16H22V7Z"/>
                     <Button.ContextMenu>
                         <ContextMenu x:Name="forwardContextMenu" />
                     </Button.ContextMenu>
