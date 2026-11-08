@@ -375,6 +375,9 @@ internal static class MacOSDrag
     /// </summary>
     private static void CopyItem(string src, string dest)
     {
+        // The temp files already carry the original dates (see ClipFileTimestamps); copy
+        // them explicitly rather than relying on File.Copy, and set directory dates after
+        // the children are written so they aren't disturbed.
         if (Directory.Exists(src))
         {
             Directory.CreateDirectory(dest);
@@ -383,10 +386,12 @@ internal static class MacOSDrag
                 string name = Path.GetFileName(entry);
                 CopyItem(entry, Path.Combine(dest, name));
             }
+            ClipFileTimestamps.CopyTimes(src, dest, isDirectory: true);
         }
         else
         {
             File.Copy(src, dest, overwrite: true);
+            ClipFileTimestamps.CopyTimes(src, dest, isDirectory: false);
         }
     }
 

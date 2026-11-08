@@ -666,6 +666,30 @@ public class MainViewModel : ObservableObject
     /// </summary>
     public async Task OpenWorkFileAsync(string? path = null, bool readOnly = false)
     {
+        // Only one open may run at a time.  The load runs on a background thread, so
+        // without this a second request arriving mid-load would find nothing open yet,
+        // start a second load, and the WorkTree from the first would be overwritten
+        // without being disposed.  This happens on macOS when a file is passed on the
+        // command line: AppKit also delivers it as an "open document" activation event.
+        if (mOpenInProgress)
+        {
+            AppLog.W("Open: ignoring request for '" + path + "' while another open is in progress");
+            return;
+        }
+        mOpenInProgress = true;
+        try
+        {
+            await OpenWorkFileCoreAsync(path, readOnly);
+        }
+        finally
+        {
+            mOpenInProgress = false;
+        }
+    }
+    private bool mOpenInProgress;
+
+    private async Task OpenWorkFileCoreAsync(string? path, bool readOnly)
+    {
         path ??= await mFilePickerService.OpenFileAsync("Open");
         if (path == null) { return; }
         if (!CloseWorkFile()) { return; }
@@ -1915,7 +1939,7 @@ public class MainViewModel : ObservableObject
 
         IFileEntry baseDir = IFileEntry.NO_ENTRY;
         if (mCurrentWorkObject is IFileSystem && ShowSingleDirFileList) {
-            DirectoryTreeItem? dirItem = DirectoryTree.SelectedItem;
+            DirectoryTreeItem? dirItem = CachedDirectoryTreeSelection;
             if (dirItem != null) {
                 baseDir = dirItem.FileEntry;
             }
@@ -1979,7 +2003,7 @@ public class MainViewModel : ObservableObject
 
         IFileEntry baseDir = IFileEntry.NO_ENTRY;
         if (mCurrentWorkObject is IFileSystem && ShowSingleDirFileList) {
-            DirectoryTreeItem? dirItem = DirectoryTree.SelectedItem;
+            DirectoryTreeItem? dirItem = CachedDirectoryTreeSelection;
             if (dirItem != null) baseDir = dirItem.FileEntry;
         }
 
@@ -2048,7 +2072,7 @@ public class MainViewModel : ObservableObject
 
         IFileEntry baseDir = IFileEntry.NO_ENTRY;
         if (mCurrentWorkObject is IFileSystem && ShowSingleDirFileList) {
-            DirectoryTreeItem? dirItem = DirectoryTree.SelectedItem;
+            DirectoryTreeItem? dirItem = CachedDirectoryTreeSelection;
             if (dirItem != null) baseDir = dirItem.FileEntry;
         }
 
@@ -2114,6 +2138,9 @@ public class MainViewModel : ObservableObject
         var extractedPaths = new List<string>();
         var seenTopLevel = new System.Collections.Generic.HashSet<string>(
             StringComparer.OrdinalIgnoreCase);
+        // The OS file manager copies (or moves) these files as they are, so they need the
+        // original dates, matching "Extract files" and the WPF virtual-file descriptors.
+        var timestamps = new Services.ClipFileTimestamps();
         foreach (ClipFileEntry entry in clipSet.ForeignEntries) {
             string extractPath = System.IO.Path.Combine(tempDir, entry.ExtractPath);
             string? dirName = System.IO.Path.GetDirectoryName(extractPath);
@@ -2121,12 +2148,15 @@ public class MainViewModel : ObservableObject
                 System.IO.Directory.CreateDirectory(dirName);
             if (entry.Attribs.IsDirectory) {
                 System.IO.Directory.CreateDirectory(extractPath);
+                timestamps.Add(extractPath, entry.Attribs);
             } else {
                 if (entry.mStreamGen == null) continue;
                 try {
-                    using var outStream = new System.IO.FileStream(
-                        extractPath, System.IO.FileMode.Create);
-                    entry.mStreamGen.OutputToStream(outStream);
+                    using (var outStream = new System.IO.FileStream(
+                            extractPath, System.IO.FileMode.Create)) {
+                        entry.mStreamGen.OutputToStream(outStream);
+                    }
+                    timestamps.Add(extractPath, entry.Attribs);
                 } catch (Exception ex) {
                     AppLog.E("Drag/copy: foreign-format extraction failed", ex);
                 }
@@ -2137,6 +2167,7 @@ public class MainViewModel : ObservableObject
             string topName = sep >= 0 ? rel.Substring(0, sep) : rel;
             seenTopLevel.Add(System.IO.Path.Combine(tempDir, topName));
         }
+        timestamps.Apply();
         extractedPaths.AddRange(seenTopLevel);
 
         return new DragTransferData(clipJsonText, extractedPaths, tempDir);
@@ -3594,8 +3625,6 @@ public class MainViewModel : ObservableObject
     // Step 3H — State fields, selection caches, and helpers
     // =========================================================================
 
-    // Reentrancy guard for file list ↔ directory tree selection sync.
-    private bool mSyncingSelection;
     // mSwitchFocusToFileList → FileList.RequestFocusAfterPopulate()
 
     /// <summary>
@@ -3635,8 +3664,7 @@ public class MainViewModel : ObservableObject
     internal ArchiveTreeItem? CachedArchiveTreeSelection { get; private set; }
 
     /// <summary>
-    /// Cached directory tree selection. Updated in OnDirectoryTreeSelectionChanged and
-    /// SyncDirectoryTreeToFileSelection.
+    /// Cached directory tree selection. Updated in OnDirectoryTreeSelectionChanged.
     /// </summary>
     internal DirectoryTreeItem? CachedDirectoryTreeSelection { get; private set; }
 
@@ -4027,10 +4055,6 @@ public class MainViewModel : ObservableObject
             FileList.Items.Clear();
             return;
         }
-        if (mSyncingSelection) {
-            return;
-        }
-
         if (mCurrentWorkObject is IArchive archive) {
             bool hasRsrc = archive.Characteristics.HasResourceForks;
             if (archive is Zip) {
@@ -4064,47 +4088,6 @@ public class MainViewModel : ObservableObject
             ConfigureCenterPanel(isInfoOnly: true, isArchive: false,
                 isHierarchic: false, hasRsrc: false, hasRaw: false);
             StatusBar.ClearEntryCounts();
-        }
-
-        RefreshAllCommandStates();
-    }
-
-    /// <summary>
-    /// When the user selects a file in the full file list, sync the directory tree
-    /// to show the containing directory of the selected file.
-    /// </summary>
-    internal void SyncDirectoryTreeToFileSelection()
-    {
-        if (mSyncingSelection || ShowSingleDirFileList ||
-                mCurrentWorkObject is not IFileSystem) {
-            return;
-        }
-
-        FileListItem? selItem = FileList.SelectedItem;
-        if (selItem == null) {
-            return;
-        }
-
-        IFileEntry entry = selItem.FileEntry;
-        IFileEntry targetDir = entry.IsDirectory ? entry : entry.ContainingDir;
-        if (targetDir == IFileEntry.NO_ENTRY) {
-            return;
-        }
-
-        DirectoryTreeItem? curDirItem = CachedDirectoryTreeSelection;
-        if (curDirItem != null && curDirItem.FileEntry == targetDir) {
-            return;
-        }
-
-        mSyncingSelection = true;
-        try {
-            bool found = _viewActions.SelectDirectoryTreeItemByEntry(
-                DirectoryTree.TreeRoot, targetDir);
-            if (found) {
-                // CachedDirectoryTreeSelection will be updated via OnDirectoryTreeSelectionChanged
-            }
-        } finally {
-            mSyncingSelection = false;
         }
 
         RefreshAllCommandStates();

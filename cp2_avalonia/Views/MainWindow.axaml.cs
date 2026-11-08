@@ -1465,10 +1465,11 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
     private void FileListDataGrid_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
         if (DataContext is MainViewModel vm) {
-            // Snapshot the multi-selection into the VM before any further processing.
+            // Snapshot the multi-selection into the VM.  As in WPF, selecting entries in the
+            // file list never moves the directory tree selection (the tree only drives the
+            // list, not the other way around).
             var sel = fileListDataGrid.SelectedItems.Cast<FileListItem>().ToList();
             vm.UpdateFileListSelection(sel);
-            vm.SyncDirectoryTreeToFileSelection();
         }
     }
 

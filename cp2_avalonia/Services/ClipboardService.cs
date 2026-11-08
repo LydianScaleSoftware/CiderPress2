@@ -103,6 +103,9 @@ public class ClipboardService : IClipboardService {
 
         if (foreignEntries.Count > 0) {
             var uriList = new StringBuilder();
+            // Pasting into a file manager copies these files as-is, so give them the
+            // original dates (see ClipFileTimestamps).
+            var timestamps = new ClipFileTimestamps();
             foreach (ClipFileEntry entry in foreignEntries) {
                 string extractPath = Path.Combine(mClipTempDir!, entry.ExtractPath);
                 string? dirName = Path.GetDirectoryName(extractPath);
@@ -110,6 +113,7 @@ public class ClipboardService : IClipboardService {
                     Directory.CreateDirectory(dirName);
                 if (entry.Attribs.IsDirectory) {
                     Directory.CreateDirectory(extractPath);
+                    timestamps.Add(extractPath, entry.Attribs);
                     continue;
                 }
                 if (entry.mStreamGen == null) continue;
@@ -117,12 +121,14 @@ public class ClipboardService : IClipboardService {
                     using (var outStream = new FileStream(extractPath, FileMode.Create)) {
                         entry.mStreamGen.OutputToStream(outStream);
                     }
+                    timestamps.Add(extractPath, entry.Attribs);
                     uriList.Append(new Uri(extractPath).AbsoluteUri);
                     uriList.Append("\r\n");
                 } catch (Exception ex) {
                     AppLog.E("Clipboard: failed to extract entry", ex);
                 }
             }
+            timestamps.Apply();
             if (uriList.Length > 0)
                 dataObj.Set("text/uri-list", uriList.ToString());
         }

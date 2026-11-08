@@ -59,7 +59,7 @@ public class DirectoryTreeViewModel : ObservableObject, IDisposable {
 
     /// <summary>
     /// Retains the last non-null SelectedItem. Used by cross-VM coordination
-    /// methods (SyncDirectoryTreeToFileSelection, NavToParent, etc.).
+    /// methods (NavToParent, etc.).
     /// Reset to null on workspace close.
     /// </summary>
     public DirectoryTreeItem? CachedSelectedItem { get; private set; }
