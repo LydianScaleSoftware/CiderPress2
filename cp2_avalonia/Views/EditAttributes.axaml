@@ -185,10 +185,11 @@ limitations under the License.
                 <TextBlock Grid.Row="0" Grid.Column="0" Margin="0,4,0,0"
                            VerticalAlignment="Center"
                            Text="Creation:" Classes.invalid="{Binding !IsCreateWhenValid}"/>
-                <DatePicker Grid.Row="0" Grid.Column="1" Margin="8,0,0,0"
+                <CalendarDatePicker Grid.Row="0" Grid.Column="1" Margin="8,0,0,0"
+                            SelectedDateFormat="Short"
                             IsEnabled="{Binding CreateWhenEnabled}"
-                            MinYear="{Binding TimestampStart}"
-                            MaxYear="{Binding TimestampEnd}"
+                            DisplayDateStart="{Binding TimestampStart}"
+                            DisplayDateEnd="{Binding TimestampEnd}"
                             SelectedDate="{Binding CreateDate}"/>
                 <TextBox Grid.Row="0" Grid.Column="2" Width="80" Margin="16,0,0,0"
                          MaxLength="8" HorizontalAlignment="Left"
@@ -199,10 +200,11 @@ limitations under the License.
                 <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,6,0,0"
                            VerticalAlignment="Center"
                            Text="Modification:" Classes.invalid="{Binding !IsModWhenValid}"/>
-                <DatePicker Grid.Row="1" Grid.Column="1" Margin="8,2,0,0"
+                <CalendarDatePicker Grid.Row="1" Grid.Column="1" Margin="8,2,0,0"
+                            SelectedDateFormat="Short"
                             IsEnabled="{Binding ModWhenEnabled}"
-                            MinYear="{Binding TimestampStart}"
-                            MaxYear="{Binding TimestampEnd}"
+                            DisplayDateStart="{Binding TimestampStart}"
+                            DisplayDateEnd="{Binding TimestampEnd}"
                             SelectedDate="{Binding ModDate}"/>
                 <TextBox Grid.Row="1" Grid.Column="2" Width="80" Margin="16,2,0,0"
                          MaxLength="8" HorizontalAlignment="Left"

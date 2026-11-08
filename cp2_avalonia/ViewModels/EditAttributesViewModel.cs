@@ -389,13 +389,13 @@ public class EditAttributesViewModel : ObservableObject
     // Timestamps section
 
     public bool IsTimestampVisible { get; private set; } = true;
-    public DateTimeOffset TimestampStart { get; private set; }
-    public DateTimeOffset TimestampEnd { get; private set; }
+    public DateTime TimestampStart { get; private set; }
+    public DateTime TimestampEnd { get; private set; }
     public string TimestampStartStr { get; private set; } = string.Empty;
     public string TimestampEndStr { get; private set; } = string.Empty;
 
-    private DateTimeOffset? mCreateDate;
-    public DateTimeOffset? CreateDate {
+    private DateTime? mCreateDate;
+    public DateTime? CreateDate {
         get => mCreateDate;
         set {
             SetProperty(ref mCreateDate, value);
@@ -425,8 +425,8 @@ public class EditAttributesViewModel : ObservableObject
 
     public bool CreateWhenEnabled { get; private set; } = true;
 
-    private DateTimeOffset? mModDate;
-    public DateTimeOffset? ModDate {
+    private DateTime? mModDate;
+    public DateTime? ModDate {
         get => mModDate;
         set {
             SetProperty(ref mModDate, value);
@@ -457,10 +457,10 @@ public class EditAttributesViewModel : ObservableObject
     private const string TIME_PATTERN = @"^(\d{1,2}):(\d\d)(?>:(\d\d))?$";
     private static readonly Regex sTimeRegex = new Regex(TIME_PATTERN);
 
-    private DateTime DateTimeUpdated(DateTimeOffset? ndt, string timeStr, out bool isValid) {
+    private DateTime DateTimeUpdated(DateTime? ndt, string timeStr, out bool isValid) {
         isValid = true;
         if (ndt == null) return TimeStamp.NO_DATE;
-        DateTime dt = ndt.Value.DateTime;
+        DateTime dt = ndt.Value;
         DateTime newWhen;
         if (!string.IsNullOrEmpty(timeStr)) {
             MatchCollection matches = sTimeRegex.Matches(timeStr);
@@ -476,7 +476,7 @@ public class EditAttributesViewModel : ObservableObject
         } else {
             newWhen = DateTime.SpecifyKind(new DateTime(dt.Year, dt.Month, dt.Day), DateTimeKind.Local);
         }
-        isValid = newWhen >= TimestampStart.DateTime && newWhen <= TimestampEnd.DateTime;
+        isValid = newWhen >= TimestampStart && newWhen <= TimestampEnd;
         return newWhen;
     }
 
@@ -496,8 +496,8 @@ public class EditAttributesViewModel : ObservableObject
             tsStart = fs.Characteristics.TimeStampStart;
             tsEnd = fs.Characteristics.TimeStampEnd;
         }
-        TimestampStart = new DateTimeOffset(tsStart);
-        TimestampEnd = new DateTimeOffset(tsEnd);
+        TimestampStart = tsStart;
+        TimestampEnd = tsEnd;
         TimestampStartStr = tsStart.ToShortDateString();
         TimestampEndStr = tsEnd.ToShortDateString();
 
@@ -509,11 +509,11 @@ public class EditAttributesViewModel : ObservableObject
         }
 
         if (TimeStamp.IsValidDate(NewAttribs.CreateWhen)) {
-            mCreateDate = new DateTimeOffset(NewAttribs.CreateWhen);
+            mCreateDate = NewAttribs.CreateWhen;
             mCreateTimeString = NewAttribs.CreateWhen.ToString("HH:mm:ss");
         }
         if (TimeStamp.IsValidDate(NewAttribs.ModWhen)) {
-            mModDate = new DateTimeOffset(NewAttribs.ModWhen);
+            mModDate = NewAttribs.ModWhen;
             mModTimeString = NewAttribs.ModWhen.ToString("HH:mm:ss");
         }
         mCreateWhenValid = mModWhenValid = true;
