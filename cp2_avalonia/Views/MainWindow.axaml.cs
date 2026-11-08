@@ -748,13 +748,58 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
     /// <summary>Select all items in the file list DataGrid.</summary>
     internal void SelectAllFileListItems() => fileListDataGrid.SelectAll();
 
-    /// <summary>Clear sort tags on all file list DataGrid columns.</summary>
+    /// <summary>Clear sort tags and the sort indicator on all file list DataGrid columns.</summary>
     internal void ClearColumnSortTags()
     {
         foreach (DataGridColumn col in fileListDataGrid.Columns)
         {
             col.Tag = null;
         }
+        SetFileListSortIndicator(null, true);
+    }
+
+    // Style classes that show the sort arrow on a file list column header; see the
+    // "DataGridColumnHeader.sortAscending" styles in App.axaml.
+    private const string SORT_ASC_CLASS = "sortAscending";
+    private const string SORT_DESC_CLASS = "sortDescending";
+    private DataGridColumnHeader? mSortIndicatorHeader;
+
+    /// <summary>
+    /// Shows the ascending/descending sort arrow on the header of the given file list
+    /// column, removing it from whichever header had it before.  Pass null to clear it.
+    /// </summary>
+    /// <remarks>
+    /// Avalonia's DataGrid only draws its arrow (via the :sortascending/:sortdescending
+    /// pseudo-classes) for sorts it performs itself through its collection view.  We handle
+    /// Sorting ourselves (WPF's equivalent is setting DataGridColumn.SortDirection), so we
+    /// drive the same SortIcon with our own style classes.  Pseudo-classes can't be used
+    /// because the header recomputes them on every pointer enter/exit/press.
+    /// </remarks>
+    private void SetFileListSortIndicator(DataGridColumn? col, bool ascending)
+    {
+        if (mSortIndicatorHeader != null)
+        {
+            mSortIndicatorHeader.Classes.Remove(SORT_ASC_CLASS);
+            mSortIndicatorHeader.Classes.Remove(SORT_DESC_CLASS);
+            mSortIndicatorHeader = null;
+        }
+        if (col == null)
+        {
+            return;
+        }
+        // The column's header control isn't public; find it by its content, which is bound
+        // to the column's (unique) Header string.  Each column keeps one header control for
+        // its lifetime, so the classes stick until we remove them.
+        DataGridColumnHeader? header = fileListDataGrid.GetVisualDescendants()
+            .OfType<DataGridColumnHeader>()
+            .FirstOrDefault(h => Equals(h.Content, col.Header));
+        if (header == null)
+        {
+            return;
+        }
+        header.Classes.Set(SORT_ASC_CLASS, ascending);
+        header.Classes.Set(SORT_DESC_CLASS, !ascending);
+        mSortIndicatorHeader = header;
     }
 
     /// <summary>Reset the tracked sort column.</summary>
@@ -1459,6 +1504,7 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
         col.Tag = direction;
 
         bool isAscending = (direction == System.ComponentModel.ListSortDirection.Ascending);
+        SetFileListSortIndicator(col, isAscending);
 
         // Remember the sort state so it can be reapplied after repopulation.
         mSortColumn = col;

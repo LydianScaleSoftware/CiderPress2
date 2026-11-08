@@ -66,6 +66,22 @@ limitations under the License. -->
             <Setter Property="FontSize"
                     Value="12" />
         </Style>
+        <!-- Sort arrow for DataGrids that sort themselves in a Sorting handler (the file
+             list).  The DataGrid's own :sortascending/:sortdescending pseudo-classes only
+             reflect sorts done through its collection view, so code-behind sets these
+             classes instead; they show the theme's SortIcon the same way. -->
+        <Style Selector="DataGridColumnHeader.sortAscending /template/ Path#SortIcon">
+            <Setter Property="IsVisible"
+                    Value="True" />
+            <Setter Property="Data"
+                    Value="{DynamicResource DataGridSortIconAscendingPath}" />
+        </Style>
+        <Style Selector="DataGridColumnHeader.sortDescending /template/ Path#SortIcon">
+            <Setter Property="IsVisible"
+                    Value="True" />
+            <Setter Property="Data"
+                    Value="{DynamicResource DataGridSortIconDescendingPath}" />
+        </Style>
         <Style Selector="TreeViewItem">
             <!-- Reduce the vertical padding -->
             <Setter Property="Padding"
