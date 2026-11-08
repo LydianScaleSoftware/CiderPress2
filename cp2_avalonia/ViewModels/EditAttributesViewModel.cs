@@ -381,8 +381,11 @@ public class EditAttributesViewModel : ObservableObject
         }
         mHFSTypeHexString = NewAttribs.HFSFileType == 0
             ? string.Empty : NewAttribs.HFSFileType.ToString("X8");
+        mHFSTypeCharsString = SetCharsFromHex(mHFSTypeHexString, out _, out mHFSTypeValid);
         mHFSCreatorHexString = NewAttribs.HFSCreator == 0
             ? string.Empty : NewAttribs.HFSCreator.ToString("X8");
+        mHFSCreatorCharsString =
+            SetCharsFromHex(mHFSCreatorHexString, out _, out mHFSCreatorValid);
     }
 
     // -----------------------------------------------------------------------------------------

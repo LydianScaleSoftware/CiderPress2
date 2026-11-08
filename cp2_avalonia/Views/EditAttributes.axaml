@@ -135,12 +135,12 @@ limitations under the License.
 
                 <TextBlock Grid.Row="0" Grid.Column="0" Text="File Type:" VerticalAlignment="Center"
                            Classes.invalid="{Binding !IsHFSTypeValid}"/>
-                <TextBox Grid.Row="0" Grid.Column="1" Width="60" Margin="8,0,0,0"
+                <TextBox Grid.Row="0" Grid.Column="1" Width="70" Margin="8,0,0,0"
                          MaxLength="4"
                          Text="{Binding HFSTypeCharsString}"
                          FontFamily="{DynamicResource GeneralMonoFont}"
                          IsReadOnly="{Binding IsAllReadOnly}"/>
-                <TextBox Grid.Row="0" Grid.Column="2" Width="75" Margin="8,0,0,0"
+                <TextBox Grid.Row="0" Grid.Column="2" Width="100" Margin="8,0,0,0"
                          MaxLength="8" HorizontalAlignment="Left"
                          Text="{Binding HFSTypeHexString}"
                          FontFamily="{DynamicResource GeneralMonoFont}"
@@ -149,12 +149,12 @@ limitations under the License.
                 <TextBlock Grid.Row="1" Grid.Column="0" Text="Creator:" Margin="0,4,0,0"
                            VerticalAlignment="Center"
                            Classes.invalid="{Binding !IsHFSCreatorValid}"/>
-                <TextBox Grid.Row="1" Grid.Column="1" Width="60" Margin="8,4,0,0"
+                <TextBox Grid.Row="1" Grid.Column="1" Width="70" Margin="8,4,0,0"
                          MaxLength="4"
                          Text="{Binding HFSCreatorCharsString}"
                          FontFamily="{DynamicResource GeneralMonoFont}"
                          IsReadOnly="{Binding IsAllReadOnly}"/>
-                <TextBox Grid.Row="1" Grid.Column="2" Width="75" Margin="8,4,0,0"
+                <TextBox Grid.Row="1" Grid.Column="2" Width="100" Margin="8,4,0,0"
                          MaxLength="8" HorizontalAlignment="Left"
                          Text="{Binding HFSCreatorHexString}"
                          FontFamily="{DynamicResource GeneralMonoFont}"
