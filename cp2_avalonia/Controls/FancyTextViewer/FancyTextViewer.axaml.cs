@@ -137,7 +137,12 @@ public partial class FancyTextViewer : Control
             o => o.Padding,
             (o, v) => o.Padding = v);
 
-    private readonly TextFragmentStyle state = new();
+    // Colors a fragment carries when the source document never set one. Fragments still
+    // at these defaults are drawn with the viewer's Foreground/Background instead.
+    private static readonly Color DefaultDocumentForeground = Colors.Black;
+    private static readonly Color DefaultDocumentBackground = Colors.White;
+    // Style used to size blank lines that precede any text in the document.
+    private static readonly TextFragmentStyle DefaultFragmentStyle = new();
     private FancyTextDocument? _document;
     private Color _background = Colors.White;
     private Color _foreground = Colors.Black;
@@ -161,6 +166,15 @@ public partial class FancyTextViewer : Control
     }
 
     private const double MIN_SCALE = 0.25;
+    private const double MAX_SCALE = 8.0;
+    // Upper bound on the cached ruler bitmap width, in pixels.
+    private const double MAX_RULER_PIXEL_WIDTH = 16384.0;
+    // Tab stops: every half inch in formatted documents (the RTF default), every eight
+    // columns in plain text.
+    private const double FANCY_TAB_INTERVAL_DIP = 48.0;
+    private const int PLAIN_TAB_COLUMNS = 8;
+    // Scroll-into-view is repeated while realizing content keeps moving the target.
+    private const int MAX_BRING_INTO_VIEW_PASSES = 4;
     private const double ZOOM_STEP = 0.10;
     private double _scale = 1.00;
     private double _pageWidth = ViewerLayoutConstants.DefaultPageWidth;
@@ -434,10 +448,10 @@ public partial class FancyTextViewer : Control
             return;
         }
 
-        state.Background = value;
         SetAndRaise(BackgroundProperty, ref _background, value);
         _viewerBackgroundBrush = GetCachedBrush(value);
-        InvalidateVisual();
+        // Realized elements cache their resolved colors; rebuild them.
+        InvalidateRealizations();
     }
 
     /// <summary>
@@ -451,9 +465,9 @@ public partial class FancyTextViewer : Control
             return;
         }
 
-        state.Foreground = value;
         SetAndRaise(ForegroundProperty, ref _foreground, value);
-        InvalidateVisual();
+        // Realized elements cache their resolved colors; rebuild them.
+        InvalidateRealizations();
     }
 
     /// <summary>
@@ -462,7 +476,9 @@ public partial class FancyTextViewer : Control
     /// <param name="value">The requested scale factor.</param>
     private void SetScale(double value)
     {
-        var clamped = double.IsNaN(value) || value < MIN_SCALE ? MIN_SCALE : value;
+        var clamped = double.IsNaN(value) || value < MIN_SCALE
+            ? MIN_SCALE
+            : Math.Min(value, MAX_SCALE);
         if (Math.Abs(_scale - clamped) < double.Epsilon)
         {
             return;
@@ -689,9 +705,24 @@ public partial class FancyTextViewer : Control
             return;
         }
 
+        BringRangeIntoView(start, end, MAX_BRING_INTO_VIEW_PASSES);
+    }
+
+    /// <summary>
+    /// Scrolls a selected range into view. Slot positions are estimates until the
+    /// content around the target is realized, so after a scroll the check is repeated
+    /// (bounded by <paramref name="passesLeft"/>) until the range stays put.
+    /// </summary>
+    /// <param name="start">Selection start offset.</param>
+    /// <param name="end">Selection end offset.</param>
+    /// <param name="passesLeft">Remaining scroll attempts.</param>
+    private void BringRangeIntoView(int start, int end, int passesLeft)
+    {
         Dispatcher.UIThread.Post(() =>
         {
-            if (!TryGetSelectionBounds(start, end, out Rect unscaledRect))
+            // Stop if the selection changed while this was queued.
+            if (_selectionAnchorOffset != start || _selectionCaretOffset != end ||
+                !TryGetSelectionBounds(start, end, out Rect unscaledRect))
             {
                 return;
             }
@@ -701,7 +732,12 @@ public partial class FancyTextViewer : Control
                 unscaledRect.Y * Scale,
                 Math.Max(1, unscaledRect.Width * Scale),
                 Math.Max(1, unscaledRect.Height * Scale));
-            ScrollRectIntoView(scaledRect);
+            if (ScrollRectIntoView(scaledRect) && passesLeft > 1)
+            {
+                // The render that follows the scroll realizes the newly visible
+                // paragraphs and may shift the target; check again afterwards.
+                BringRangeIntoView(start, end, passesLeft - 1);
+            }
         }, DispatcherPriority.Background);
     }
 
@@ -737,6 +773,22 @@ public partial class FancyTextViewer : Control
         UpdateContextMenuState();
         InvalidateVisual();
         e.Handled = true;
+    }
+
+    /// <summary>
+    /// Ends an active selection drag when pointer capture is taken away before the
+    /// button release arrives (window deactivation, a popup opening, etc.).
+    /// </summary>
+    /// <param name="e">The capture-lost event data.</param>
+    protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
+    {
+        base.OnPointerCaptureLost(e);
+
+        if (_isSelecting)
+        {
+            _isSelecting = false;
+            UpdateContextMenuState();
+        }
     }
 
     /// <summary>
@@ -902,7 +954,8 @@ public partial class FancyTextViewer : Control
             return false;
         }
 
-        var nextScale = Math.Max(MIN_SCALE, Math.Round(Scale + delta, 2, MidpointRounding.AwayFromZero));
+        var nextScale = Math.Clamp(
+            Math.Round(Scale + delta, 2, MidpointRounding.AwayFromZero), MIN_SCALE, MAX_SCALE);
         if (Math.Abs(nextScale - Scale) < double.Epsilon)
         {
             return false;
@@ -1163,18 +1216,22 @@ public partial class FancyTextViewer : Control
                     });
                     lastEndOffset = endOffset;
                 }
-                else if (lastFragmentHeight > 0)
+                else
                 {
-                    // Blank paragraph: occupies one line at the preceding fragment height.
+                    // Blank paragraph: occupies one line at the preceding fragment
+                    // height, or at the default text height when it comes before any
+                    // text (blank lines at the top of the document).
+                    double blankHeight = lastFragmentHeight > 0
+                        ? lastFragmentHeight
+                        : EstimateFragmentHeight(DefaultFragmentStyle);
                     _slots.Add(new ParagraphSlot
                     {
                         Paragraph = paragraph,
-                        LineHeightEst = lastFragmentHeight,
+                        LineHeightEst = blankHeight,
                         StartOffset = lastEndOffset,
                         EndOffset = lastEndOffset
                     });
                 }
-                // else: annotation-only paragraph with no known height - skipped
             }
 
             // Add a page break marker slot after each page (except the last)
@@ -1383,6 +1440,26 @@ public partial class FancyTextViewer : Control
     }
 
     /// <summary>
+    /// Sizes a tab element so the content after it starts at the next tab stop.
+    /// </summary>
+    /// <param name="element">The tab element.</param>
+    /// <param name="lineX">The tab's distance from the start of its line.</param>
+    private void ApplyTabWidth(PhysicalElement element, double lineX)
+    {
+        double interval = _documentIsPlain
+            ? PLAIN_TAB_COLUMNS * GetMyFontMetrics(element.Typeface, element.FontSize).AvgCharWidth
+            : FANCY_TAB_INTERVAL_DIP;
+        if (interval <= 0)
+        {
+            interval = FANCY_TAB_INTERVAL_DIP;
+        }
+
+        // The small bias keeps a tab that already sits on a stop from collapsing to zero.
+        double nextStop = (Math.Floor((lineX / interval) + 1e-6) + 1) * interval;
+        element.SetWidth(nextStop - lineX);
+    }
+
+    /// <summary>
     /// Breaks a realized paragraph into lines and positions its elements starting at the
     /// slot's current Y position, honoring word wrap, trimming, and justification.
     /// </summary>
@@ -1418,11 +1495,18 @@ public partial class FancyTextViewer : Control
             for (int i = 0; i < paragraph.Elements.Count; i++)
             {
                 var element = paragraph.Elements[i];
+                if (element.IsTab)
+                {
+                    ApplyTabWidth(element, currentLineWidth);
+                }
                 double elementWidth = element.LayoutWidth;
                 
                 // Check if element fits on current line
                 if (currentLine.Elements.Count > 0 && 
-                    currentLineWidth + elementWidth > availableWidth)
+                    currentLineWidth + elementWidth > availableWidth &&
+                    // An overflowing breakable space stays on the line (it hangs past
+                    // the margin) and becomes the break point for the next word.
+                    !element.IsBreakableSpace)
                 {
                     // Only break at a BreakableSpace boundary
                     // Look back to find the last BreakableSpace in the current line
@@ -1468,6 +1552,10 @@ public partial class FancyTextViewer : Control
                         
                         foreach (var elem in elementsToMove)
                         {
+                            if (elem.IsTab)
+                            {
+                                ApplyTabWidth(elem, currentLineWidth);
+                            }
                             currentLine.Elements.Add(elem);
                             currentLine.MaxAscender = Math.Max(currentLine.MaxAscender, elem.Ascent);
                             currentLine.MaxHeight = Math.Max(currentLine.MaxHeight, elem.Ascent + elem.Descent);
@@ -1481,6 +1569,13 @@ public partial class FancyTextViewer : Control
                     }
                 }
                 
+                // A line break above changes where a tab starts; size it again.
+                if (element.IsTab)
+                {
+                    ApplyTabWidth(element, currentLineWidth);
+                    elementWidth = element.LayoutWidth;
+                }
+
                 // Add element to current line (elements are shared with the
                 // paragraph; per-layout state is reset at the top of the pass)
                 currentLine.Elements.Add(element);
@@ -1505,8 +1600,14 @@ public partial class FancyTextViewer : Control
                 Justification = paragraph.Justification
             };
             
+            double runningWidth = 0;
             foreach (var element in paragraph.Elements)
             {
+                if (element.IsTab)
+                {
+                    ApplyTabWidth(element, runningWidth);
+                }
+                runningWidth += element.LayoutWidth;
                 line.Elements.Add(element);
                 line.MaxAscender = Math.Max(line.MaxAscender, element.Ascent);
                 line.MaxHeight = Math.Max(line.MaxHeight, element.Ascent + element.Descent);
@@ -1636,11 +1737,15 @@ public partial class FancyTextViewer : Control
                     break;
                     
                 case FancyTextDocument.Justification.Right:
-                    xpos = Padding.Left + rightMargin - lineWidth;
+                    // Never start left of the left margin: a line wider than the
+                    // margins would otherwise land at a negative, unscrollable X.
+                    xpos = Math.Max(Padding.Left + leftMargin,
+                        Padding.Left + rightMargin - lineWidth);
                     break;
                     
                 case FancyTextDocument.Justification.Center:
-                    xpos = Padding.Left + leftMargin + (availableWidth - lineWidth) / 2.0;
+                    xpos = Padding.Left + leftMargin +
+                        Math.Max(0, availableWidth - lineWidth) / 2.0;
                     break;
                     
                 case FancyTextDocument.Justification.Full:
@@ -1667,7 +1772,11 @@ public partial class FancyTextViewer : Control
                 line.MaxX = Math.Max(line.MaxX, xpos + element.LayoutWidth);
                 
                 // Track maximum right extent for document
-                maxRightExtent = Math.Max(maxRightExtent, xpos + element.LayoutWidth);
+                // (breakable spaces may hang past the margin and do not count)
+                if (!element.IsBreakableSpace)
+                {
+                    maxRightExtent = Math.Max(maxRightExtent, xpos + element.LayoutWidth);
+                }
                 
                 // Use the element's actual width (which may have been expanded for full justification)
                 xpos += element.LayoutWidth;
@@ -1917,7 +2026,13 @@ public partial class FancyTextViewer : Control
         }
 
         // Render at zoom * screen-scaling so the blitted result stays sharp at any zoom.
+        // Capped so an extreme zoom or page width cannot demand an enormous bitmap; past
+        // the cap the blit simply upscales.
         double effectiveScale = Scale * renderScaling;
+        if (pageWidthDip * effectiveScale > MAX_RULER_PIXEL_WIDTH)
+        {
+            effectiveScale = MAX_RULER_PIXEL_WIDTH / pageWidthDip;
+        }
         int pixelWidth = Math.Max(1, (int)Math.Ceiling(pageWidthDip * effectiveScale));
         int pixelHeight = Math.Max(1, (int)Math.Ceiling(RULER_HEIGHT * effectiveScale));
 
@@ -2032,10 +2147,12 @@ public partial class FancyTextViewer : Control
         public Rect Bounds { get; private set; }
         public bool IsWhiteSpace => LogicalItem.GetLogicalType() != ILogicalItem.Type.Text;
         public bool IsBreakableSpace => LogicalItem.GetLogicalType() == ILogicalItem.Type.BreakableSpace;
+        public bool IsTab => LogicalItem.GetLogicalType() == ILogicalItem.Type.Tab;
         public Typeface Typeface => LogicalItem.Style.Typeface;
         public double FontSize { get; }
-        public Color Foreground => LogicalItem.Style.Foreground;
-        public Color Background => LogicalItem.Style.Background;
+        // Resolved colors: document-default colors map to the viewer's own.
+        public Color Foreground { get; }
+        public Color Background { get; }
         public string Text => LogicalItem.Text;
         public int StartOffset => LogicalItem.StartOffset;
         public int EndOffset => LogicalItem.EndOffset;
@@ -2057,8 +2174,14 @@ public partial class FancyTextViewer : Control
             _viewer = viewer;
             LogicalItem = logicalItem;
             Position = new Point(0, 0);
-            _foregroundBrush = GetCachedBrush(logicalItem.Style.Foreground);
-            _backgroundBrush = GetCachedBrush(logicalItem.Style.Background);
+            Foreground = logicalItem.Style.Foreground == DefaultDocumentForeground
+                ? viewer._foreground
+                : logicalItem.Style.Foreground;
+            Background = logicalItem.Style.Background == DefaultDocumentBackground
+                ? viewer._background
+                : logicalItem.Style.Background;
+            _foregroundBrush = GetCachedBrush(Foreground);
+            _backgroundBrush = GetCachedBrush(Background);
 
             var text = logicalItem.Text;
             bool isSuperscript = logicalItem.Style.IsSuperscript;
@@ -2161,7 +2284,7 @@ public partial class FancyTextViewer : Control
         public void RenderBackground(DrawingContext context, bool drawBaseline = false, bool drawBounds = false)
         {
             // Skip fills that would be invisible against the viewer background
-            var background = LogicalItem.Style.Background;
+            var background = Background;
             if (background.A != 0 && background != _viewer._background)
             {
                 context.FillRectangle(_backgroundBrush, new Rect(Position, Bounds.Size));
@@ -2202,6 +2325,17 @@ public partial class FancyTextViewer : Control
 
             int localStart = start - StartOffset;
             int localLength = end - start;
+
+            // Whitespace whose width was changed by layout (tabs, full-justification
+            // gaps) is highlighted across its laid-out width, not its natural glyph width.
+            if (IsWhiteSpace && Text.Length > 0 && Math.Abs(LayoutWidth - _naturalWidth) > 0.01)
+            {
+                double unit = LayoutWidth / Text.Length;
+                context.FillRectangle(SelectionBrush, new Rect(
+                    Position.X + (unit * localStart), Position.Y,
+                    unit * localLength, Bounds.Height));
+                return;
+            }
             var renderOrigin = Position + GlyphOffset;
             var selectionGeometry = FormattedText.BuildHighlightGeometry(renderOrigin, localStart, localLength);
             if (selectionGeometry != null)
@@ -2479,7 +2613,7 @@ public partial class FancyTextViewer : Control
         }
         if (realized == null || realized.Lines.Count == 0)
         {
-            return Document.Text.Length;
+            return slot.StartOffset;
         }
 
         // Find the line containing (or vertically nearest to) the point.
@@ -2504,7 +2638,8 @@ public partial class FancyTextViewer : Control
         }
         if (nearestLine == null)
         {
-            return Document.Text.Length;
+            // Every line was trimmed empty (e.g. a centered whitespace-only paragraph).
+            return slot.StartOffset;
         }
 
         // Within the nearest line, pick the element containing the point, or the
@@ -2529,7 +2664,7 @@ public partial class FancyTextViewer : Control
         }
 
         return closestElement == null ?
-            Document.Text.Length : GetOffsetForElementPoint(closestElement, point);
+            slot.StartOffset : GetOffsetForElementPoint(closestElement, point);
     }
 
     /// <summary>
@@ -2748,13 +2883,14 @@ public partial class FancyTextViewer : Control
     /// <summary>
     /// Scrolls the nearest parent ScrollViewer so that the supplied rect is visible.
     /// </summary>
-    private void ScrollRectIntoView(Rect rect)
+    /// <returns><c>true</c> if the scroll offset was changed.</returns>
+    private bool ScrollRectIntoView(Rect rect)
     {
         ScrollViewer? scrollViewer =
             _scrollHost ?? this.GetVisualAncestors().OfType<ScrollViewer>().FirstOrDefault();
         if (scrollViewer == null)
         {
-            return;
+            return false;
         }
 
         Vector offset = scrollViewer.Offset;
@@ -2780,7 +2916,13 @@ public partial class FancyTextViewer : Control
             y = rect.Bottom - viewport.Height;
         }
 
-        scrollViewer.Offset = new Vector(Math.Max(0, x), Math.Max(0, y));
+        var newOffset = new Vector(Math.Max(0, x), Math.Max(0, y));
+        if (Math.Abs(newOffset.X - offset.X) < 0.5 && Math.Abs(newOffset.Y - offset.Y) < 0.5)
+        {
+            return false;
+        }
+        scrollViewer.Offset = newOffset;
+        return true;
     }
 
     /// <summary>

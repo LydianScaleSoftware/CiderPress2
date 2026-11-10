@@ -53,9 +53,21 @@ public class FancyTextParser
         var curOffset = 0;
         while (curOffset < length)
         {
-            while (currAnnotationIndex < items.Count && items[currAnnotationIndex].Offset == curOffset)
+            while (currAnnotationIndex < items.Count && items[currAnnotationIndex].Offset <= curOffset)
             {
-                curOffset += factory.ProcessAnnotation(items[currAnnotationIndex]);
+                var anno = items[currAnnotationIndex];
+                if (anno.Offset == curOffset)
+                {
+                    curOffset += factory.ProcessAnnotation(anno);
+                }
+                else if (anno.Type != FancyTextDocument.AnnoType.NewParagraph)
+                {
+                    // The parse position stepped past this annotation (a raw CR/LF pair
+                    // swallowed its offset). Apply it late rather than stalling every
+                    // annotation behind it. A late NewParagraph is dropped: its line
+                    // break characters are handled as unannotated breaks instead.
+                    factory.ProcessAnnotation(anno);
+                }
                 currAnnotationIndex++;
             }
 
@@ -111,13 +123,13 @@ public class FancyTextParser
             int lineEnd = text.IndexOfAny(LineBreakChars, offset);
             if (lineEnd < 0)
             {
-                factory.AddTextRun(text[offset..], offset);
+                AddPlainLine(factory, text, offset, length);
                 break;
             }
 
             if (lineEnd > offset)
             {
-                factory.AddTextRun(text[offset..lineEnd], offset);
+                AddPlainLine(factory, text, offset, lineEnd);
             }
             factory.ProcessAnnotation(new FancyTextDocument.Annotation(
                 FancyTextDocument.AnnoType.NewParagraph, null, 0, lineEnd));
@@ -138,6 +150,35 @@ public class FancyTextParser
 
         factory.Flush();
         return factory.GetDocument();
+    }
+
+    /// <summary>
+    /// Emits one plain line as text runs separated by individual tab fragments. A line
+    /// without tabs is a single run.
+    /// </summary>
+    /// <param name="factory">The document builder.</param>
+    /// <param name="text">The full source text.</param>
+    /// <param name="start">Inclusive start offset of the line.</param>
+    /// <param name="end">Exclusive end offset of the line (before its line break).</param>
+    private static void AddPlainLine(
+            FancyTextLogicalDocumentBuilder factory, string text, int start, int end)
+    {
+        int pos = start;
+        while (pos < end)
+        {
+            int tab = text.IndexOf('\t', pos, end - pos);
+            if (tab < 0)
+            {
+                factory.AddTextRun(text[pos..end], pos);
+                break;
+            }
+            if (tab > pos)
+            {
+                factory.AddTextRun(text[pos..tab], pos);
+            }
+            factory.AddTab(tab);
+            pos = tab + 1;
+        }
     }
 
     /// <summary>

@@ -37,6 +37,11 @@ public interface ILogicalItem
         /// </summary>
         BreakableSpace,
         /// <summary>
+        /// A single tab character; its width is resolved at layout time so that the
+        /// following content starts at the next tab stop.
+        /// </summary>
+        Tab,
+        /// <summary>
         /// A non-text formatting or structural marker.
         /// </summary>
         Formatting
@@ -149,6 +154,24 @@ public class BreakableSpaceFragment : TextFragmentBase
     /// </summary>
     /// <returns>A short debug string for the fragment.</returns>
     public override string ToString() => "[SP:" + Text + "]";
+}
+
+/// <summary>
+/// Represents a single tab character. Each tab is its own fragment so the layout pass
+/// can size it to reach the next tab stop.
+/// </summary>
+public class TabFragment : TextFragmentBase
+{
+    /// <summary>
+    /// Identifies this fragment as a tab.
+    /// </summary>
+    /// <returns><see cref="ILogicalItem.Type.Tab"/>.</returns>
+    public override ILogicalItem.Type GetLogicalType() => ILogicalItem.Type.Tab;
+    /// <summary>
+    /// Returns a debug-oriented representation of this fragment.
+    /// </summary>
+    /// <returns>A short debug string for the fragment.</returns>
+    public override string ToString() => "[TAB]";
 }
 
 /// <summary>

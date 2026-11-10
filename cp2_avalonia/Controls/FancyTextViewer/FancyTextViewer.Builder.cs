@@ -61,7 +61,10 @@ public class FancyTextLogicalDocumentBuilder
             currentParagraph!.OnlyWhiteSpace = false;
         }
 
-        if (currentFragment != null && currentFragment.GetLogicalType() != expectedType)
+        // Tabs never merge: each one is sized individually against the tab stops.
+        if (currentFragment != null &&
+            (currentFragment.GetLogicalType() != expectedType ||
+             expectedType == ILogicalItem.Type.Tab))
         {
             FinalizeCurrentFragment();
         }
@@ -97,6 +100,21 @@ public class FancyTextLogicalDocumentBuilder
 
         var fragment = new FancyTextFragment { StartOffset = sourceOffset };
         fragment.AppendText(text);
+        currentParagraph!.AppendItem(fragment, state);
+    }
+
+    /// <summary>
+    /// Appends a single tab fragment. Used by the plain-text fast path, which otherwise
+    /// emits whole lines as single fragments.
+    /// </summary>
+    /// <param name="sourceOffset">The tab character's offset in the source document.</param>
+    public void AddTab(int sourceOffset)
+    {
+        FinalizeCurrentFragment();
+        GuaranteeParagraph();
+
+        var fragment = new TabFragment { StartOffset = sourceOffset };
+        fragment.AppendCharacter('\t');
         currentParagraph!.AppendItem(fragment, state);
     }
 
@@ -167,6 +185,9 @@ public class FancyTextLogicalDocumentBuilder
                 FinalizeCurrentPage();
                 break;
             case FancyTextDocument.AnnoType.Tab:
+                // The tab character itself stays in the text stream (so source offsets
+                // remain valid for selection and copy); AddCharacter turns it into a
+                // TabFragment that the layout pass sizes to the next tab stop.
                 break;
             case FancyTextDocument.AnnoType.Justification:
                 HandleJustification(anno.Data);
@@ -407,6 +428,7 @@ public class FancyTextLogicalDocumentBuilder
     private ILogicalItem.Type GetCharacterType(char c)
     {
         GuaranteeParagraph();
+        if (c == '\t') return ILogicalItem.Type.Tab;
         if (!char.IsWhiteSpace(c)) return ILogicalItem.Type.Text;
 
         var isNbsp = c == '\u00A0';
@@ -468,6 +490,7 @@ public class FancyTextLogicalDocumentBuilder
         {
             ILogicalItem.Type.NonbreakingSpace => new NonbreakingSpaceFragment(),
             ILogicalItem.Type.BreakableSpace => new BreakableSpaceFragment(),
+            ILogicalItem.Type.Tab => new TabFragment(),
             ILogicalItem.Type.Text => new FancyTextFragment(),
             _ => throw new ArgumentException("Invalid character type for fragment generation", nameof(type))
         };
