@@ -28,11 +28,9 @@ namespace cp2_avalonia.Actions
     /// <summary>
     /// Scans for bad blocks, inside a WorkProgress dialog.
     /// </summary>
-    internal class ScanBlocksProgress(IDiskImage diskImage, AppHook appHook)
+    internal class ScanBlocksProgress(IDiskImage diskImage)
         : WorkProgressViewModel.IWorker
     {
-        private AppHook mAppHook = appHook;
-
         public class Failure
         {
             public uint BlockOrTrack { get; private set; }

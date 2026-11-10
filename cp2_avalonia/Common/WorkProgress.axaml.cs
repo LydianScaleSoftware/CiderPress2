@@ -21,6 +21,7 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 
 using AppCommon;
+using cp2_avalonia.Services;
 using cp2_avalonia.Views;
 using cp2_avalonia.ViewModels;
 
@@ -49,7 +50,7 @@ namespace cp2_avalonia.Common {
                 };
                 vm.MessageBoxRequested += async mq => {
                     await PlatformUtil.ShowMessageAsync(this, mq.Text, mq.Caption);
-                    mq.SetResult(Services.MBResult.OK);
+                    mq.SetResult(MBResult.OK);
                 };
             }
         }

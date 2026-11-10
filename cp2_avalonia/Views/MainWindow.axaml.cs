@@ -276,23 +276,9 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
 
     // ---- File list ----
     // public ObservableCollection<FileListItem> FileList { get; } = new();
-    public FileListItem? SelectedFileListItem
-    {
-        get => fileListDataGrid?.SelectedItem as FileListItem;
-        set
-        {
-            if (fileListDataGrid != null)
-            {
-                fileListDataGrid.SelectedItem = value;
-            }
-        }
-    }
-
     // ---- Tree selection helpers (read-only) ----
     public ArchiveTreeItem? SelectedArchiveTreeItem =>
         archiveTree?.SelectedItem as ArchiveTreeItem;
-    public DirectoryTreeItem? SelectedDirectoryTreeItem =>
-        directoryTree?.SelectedItem as DirectoryTreeItem;
 
 
 
@@ -337,15 +323,6 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
         if (ViewModel!.FileList.Items.Count > 0)
         {
             fileListDataGrid.ScrollIntoView(ViewModel!.FileList.Items[0], null);
-        }
-    }
-
-    public void FileList_SetSelectionFocus()
-    {
-        int idx = fileListDataGrid.SelectedIndex;
-        if (idx >= 0 && idx < ViewModel!.FileList.Items.Count)
-        {
-            fileListDataGrid.ScrollIntoView(ViewModel!.FileList.Items[idx], null);
         }
     }
 
@@ -435,18 +412,8 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
         };
         ApplyFileListColumnVisibility();
 
-        // Intentionally disabled for now; retained pending a decision on how to handle
-        // OpenPhysicalDrive in general.  Suppress the unreachable-code warning for the body.
-#pragma warning disable CS0162
-        if (false)
-        {
-            // Physical drive access is Windows-only; hide the menu item on other platforms.
-            if (!OperatingSystem.IsWindows() && openPhysicalDriveMenuItem != null)
-            {
-                openPhysicalDriveMenuItem.IsVisible = false;
-            }
-        }
-#pragma warning restore CS0162
+        // Open Physical Drive is hidden on all platforms for now, pending a decision on how
+        // to handle physical drive access in general.
         openPhysicalDriveMenuItem.IsVisible = false;
 
         // On macOS use the native menu bar; hide the in-window menu.
@@ -2187,18 +2154,6 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
     }
 
     /// <summary>
-    /// Extracts the CP2 JSON from a drag/drop data object, checking both the private
-    /// UTI format and the plain-text fallback used by the macOS native drag path.
-    /// </summary>
-    private static string? GetCrossInstanceClipText(IDataObject data)
-    {
-        string? text = data.Get(ClipInfo.CROSS_INSTANCE_FORMAT) as string;
-        if (text == null)
-            text = data.Get(DataFormats.Text) as string;
-        return ClipInfo.IsClipTextFromCP2(text) ? text : null;
-    }
-
-    /// <summary>
     /// Returns the volume directory entry for the currently selected filesystem, or
     /// NO_ENTRY if no filesystem is selected.  Used as fallback drop target when
     /// dropping onto empty space in the file list.
@@ -2436,28 +2391,5 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
         {
             Debug.WriteLine("DT no valid drop");
         }
-    }
-
-    private async void NotImplemented(string featureName)
-    {
-        var dialog = new Window
-        {
-            Title = "Not Implemented",
-            Width = 350,
-            Height = 150,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Content = new StackPanel
-            {
-                VerticalAlignment = VerticalAlignment.Center,
-                Children = {
-                        new TextBlock {
-                            Text = $"'{featureName}' has not been ported yet.",
-                            HorizontalAlignment = HorizontalAlignment.Center,
-                            Margin = new Thickness(20)
-                        }
-                    }
-            }
-        };
-        await dialog.ShowDialog(this);
     }
 }

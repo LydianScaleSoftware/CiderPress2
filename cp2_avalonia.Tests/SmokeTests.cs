@@ -1,5 +1,4 @@
 /*
- * Copyright 2023 faddenSoft
  * Copyright 2026 Lydian Scale Software
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,23 +13,22 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-using System;
-using Avalonia.Controls;
-using cp2_avalonia.ViewModels;
+using cp2_avalonia.Models;
 
-namespace cp2_avalonia.Views {
-    /// <summary>
-    /// "Find file" dialog — no longer used; replaced by the inline find panel in MainWindow.
-    /// </summary>
-    public partial class FindFile : Window {
-        public FindFile() {
-            InitializeComponent();
-        }
+namespace cp2_avalonia.Tests;
 
-        private void Window_Opened(object? sender, EventArgs e) {
-            if (Design.IsDesignMode) return;
-            fileNameTextBox.SelectAll();
-            fileNameTextBox.Focus();
-        }
+/// <summary>
+/// Proves that the test project can reach types in cp2_avalonia, including internals
+/// (via InternalsVisibleTo).
+/// </summary>
+public class SmokeTests
+{
+    [Fact]
+    public void ClipInfo_RecognizesClipPrefix()
+    {
+        // CLIP_PREFIX is internal, so this also checks InternalsVisibleTo.
+        Assert.True(ClipInfo.IsClipTextFromCP2(ClipInfo.CLIP_PREFIX + "{}"));
+        Assert.False(ClipInfo.IsClipTextFromCP2("not a clip"));
+        Assert.False(ClipInfo.IsClipTextFromCP2(null));
     }
 }

@@ -41,12 +41,9 @@ namespace cp2_avalonia.Actions
     /// </remarks>
     internal class TestProgress(
         object archiveOrFileSystem,
-        List<IFileEntry> selected,
-        AppHook appHook)
+        List<IFileEntry> selected)
         : WorkProgressViewModel.IWorker
     {
-        private AppHook mAppHook = appHook;
-
         public bool EnableMacOSZip { get; init; }
 
         public class Failure(IFileEntry entry, FilePart part)

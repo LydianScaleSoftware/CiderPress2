@@ -65,7 +65,8 @@ namespace cp2_avalonia.Actions {
         }
 
         /// <summary>
-        /// Called on the GUI thread after completion.
+        /// Called after completion.  <see cref="Services.WorkspaceService.OpenAsync"/> calls this
+        /// from a thread-pool thread, not the GUI thread.
         /// </summary>
         public bool RunWorkerCompleted(object? results) {
             Results = (Result)results!;

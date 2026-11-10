@@ -258,6 +258,9 @@ namespace cp2_avalonia.Tools {
                     return dict;
                 }
 
+                // Unknown keys are collected and removed after the loop.  Replacing the value
+                // of an existing key while enumerating is allowed (since .NET Core 3.0 it does
+                // not invalidate the enumerator), but adding or removing keys is not.
                 List<string> badKeys = new List<string>();
                 foreach (KeyValuePair<string, string> kvp in dict) {
                     if (!defMap.TryGetValue(kvp.Key, out OptionDefinition? optDef)) {

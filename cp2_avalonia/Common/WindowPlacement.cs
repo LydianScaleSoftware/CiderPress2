@@ -54,7 +54,6 @@ namespace cp2_avalonia.Common {
             window.Closed += (_, _) => sNormalBounds.Remove(window);
         }
 
-        [Serializable()]
         internal class SavedPos {
             public int X { get; set; }
             public int Y { get; set; }

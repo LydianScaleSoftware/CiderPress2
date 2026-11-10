@@ -18,7 +18,6 @@ using System;
 using System.IO;
 using System.Threading.Tasks;
 using Avalonia.Controls;
-using Avalonia.Platform.Storage;
 
 namespace cp2_avalonia.Common {
     /// <summary>
@@ -26,47 +25,6 @@ namespace cp2_avalonia.Common {
     /// from cp2_wpf/WinUtil.cs.
     /// </summary>
     public static class PlatformUtil {
-        // File filter extensions, matching WinUtil.cs verbatim.
-        public const string FILE_FILTER_ALL = "All files|*.*";
-        public const string FILE_FILTER_KNOWN = "Known formats|" +
-            "*.shk;*.sdk;*.sea;*.bny;*.bqy;*.bxy;*.bse;*.wav;*.sit;" +
-            "*.dsk;*.po;*.do;*.d13;*.2mg;*.img;*.iso;*.hdv;*.dc;*.dc42;*.dc6;*.image;*.ddd;" +
-            "*.nib;*.nb2;*.raw;*.app;*.woz;*.moof;" +
-            "*.gz;*.zip;*.as;*.bin;*.macbin;*.acu";
-
-        /// <summary>
-        /// Asks the user to select a file to open.  Returns the full path, or null if canceled.
-        /// </summary>
-        public static async Task<string?> AskFileToOpen(Window parent) {
-            var topLevel = TopLevel.GetTopLevel(parent);
-            if (topLevel == null) {
-                return null;
-            }
-            var files = await topLevel.StorageProvider.OpenFilePickerAsync(
-                new FilePickerOpenOptions {
-                    Title = "Open File",
-                    AllowMultiple = false,
-                    FileTypeFilter =
-                    [
-                        new FilePickerFileType("Known formats") {
-                            Patterns =
-                            [
-                                "*.shk", "*.sdk", "*.sea", "*.bny", "*.bqy", "*.bxy", "*.bse",
-                                "*.wav",
-                                "*.dsk", "*.po", "*.do", "*.d13", "*.2mg", "*.img", "*.iso",
-                                "*.hdv", "*.dc", "*.dc42", "*.dc6", "*.image", "*.ddd",
-                                "*.nib", "*.nb2", "*.raw", "*.app", "*.woz", "*.moof",
-                                "*.gz", "*.zip", "*.as", "*.bin", "*.macbin", "*.acu"
-                            ]
-                        },
-                        new FilePickerFileType("All files") {
-                            Patterns = ["*"]
-                        }
-                    ]
-                });
-            return files.Count > 0 ? files[0].Path.LocalPath : null;
-        }
-
         /// <summary>
         /// Finds the runtime data directory.  During development, this is the repository root
         /// (where CiderPress2.sln lives).  In production, the executable and settings live in
@@ -84,14 +42,6 @@ namespace cp2_avalonia.Common {
                 dir = dir.Parent;
             }
             return baseDir;
-        }
-
-        /// <summary>
-        /// Returns true if the current process is running with elevated privileges
-        /// (Administrator on Windows, root on Unix).
-        /// </summary>
-        public static bool IsAdministrator() {
-            return Environment.IsPrivilegedProcess;
         }
 
         /// <summary>

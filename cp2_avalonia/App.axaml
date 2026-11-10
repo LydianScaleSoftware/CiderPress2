@@ -16,7 +16,6 @@ limitations under the License. -->
 <Application x:Class="cp2_avalonia.App"
              xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:common="clr-namespace:cp2_avalonia.Common"
              xmlns:controls="clr-namespace:cp2_avalonia.Controls"
              Name="CiderPress II">
     <!-- macOS system app menu (the bold first entry in the menu bar).
@@ -157,7 +156,6 @@ limitations under the License. -->
             <SolidColorBrush x:Key="IconForegroundFillBrush" Color="#212121" Opacity="0.1"/>
             <x:Double x:Key="IconDisabledOpacity">0.4</x:Double>
             <x:Double x:Key="ControlContentThemeFontSize">14</x:Double>
-            <common:InverseBooleanConverter x:Key="InvertBool" />
             <!-- Checkerboard background for bitmap image display.
                  Replicates the pattern from cp2_wpf/App.xaml: 16x16 tile with #e8e8e8/#f0f0f0. -->
             <DrawingBrush x:Key="CheckerBackground"

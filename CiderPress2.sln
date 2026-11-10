@@ -26,6 +26,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "DiskArcTests", "DiskArcTest
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "cp2_avalonia", "cp2_avalonia\cp2_avalonia.csproj", "{46DA203A-4EEE-457E-A636-DBFC7D9E4A00}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "cp2_avalonia.Tests", "cp2_avalonia.Tests\cp2_avalonia.Tests.csproj", "{98D84A2C-1C08-4443-BA4F-D712E69AA860}"
+EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ListContents", "Examples\ListContents\ListContents.csproj", "{CB6BDE83-72AD-44CB-A378-7A52413BB875}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FileConvTests", "FileConvTests\FileConvTests.csproj", "{99559618-D1CC-4CDF-B1D4-EC1EF421CCB8}"
@@ -106,6 +108,14 @@ Global
 		{46DA203A-4EEE-457E-A636-DBFC7D9E4A00}.Release|Any CPU.Build.0 = Release|Any CPU
 		{46DA203A-4EEE-457E-A636-DBFC7D9E4A00}.Release-Windows|Any CPU.ActiveCfg = Release|Any CPU
 		{46DA203A-4EEE-457E-A636-DBFC7D9E4A00}.Release-Windows|Any CPU.Build.0 = Release|Any CPU
+		{98D84A2C-1C08-4443-BA4F-D712E69AA860}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{98D84A2C-1C08-4443-BA4F-D712E69AA860}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{98D84A2C-1C08-4443-BA4F-D712E69AA860}.Debug-Windows|Any CPU.ActiveCfg = Debug|Any CPU
+		{98D84A2C-1C08-4443-BA4F-D712E69AA860}.Debug-Windows|Any CPU.Build.0 = Debug|Any CPU
+		{98D84A2C-1C08-4443-BA4F-D712E69AA860}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{98D84A2C-1C08-4443-BA4F-D712E69AA860}.Release|Any CPU.Build.0 = Release|Any CPU
+		{98D84A2C-1C08-4443-BA4F-D712E69AA860}.Release-Windows|Any CPU.ActiveCfg = Release|Any CPU
+		{98D84A2C-1C08-4443-BA4F-D712E69AA860}.Release-Windows|Any CPU.Build.0 = Release|Any CPU
 		{CB6BDE83-72AD-44CB-A378-7A52413BB875}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{CB6BDE83-72AD-44CB-A378-7A52413BB875}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{CB6BDE83-72AD-44CB-A378-7A52413BB875}.Debug-Windows|Any CPU.ActiveCfg = Debug|Any CPU

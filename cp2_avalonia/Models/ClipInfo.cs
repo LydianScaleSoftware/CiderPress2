@@ -33,9 +33,8 @@ namespace cp2_avalonia.Models {
     /// Clipboard data model for CiderPress II file entries.  Cross-platform version that
     /// uses JSON text instead of Windows-specific binary clipboard formats.
     /// </summary>
-    [Serializable]
     public class ClipInfo {
-        private const string CLIP_PREFIX = "CiderPressII:clip:v1:";
+        internal const string CLIP_PREFIX = "CiderPressII:clip:v1:";
 
         /// <summary>
         /// Custom drag-drop format name used to carry CP2 JSON between two CP2 instances.

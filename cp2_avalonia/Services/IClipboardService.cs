@@ -44,13 +44,6 @@ public interface IClipboardService {
     Task<string?> GetRawClipTextAsync();
 
     /// <summary>
-    /// Returns the xfer temp-file paths set by the most recent SetClipAsync call.
-    /// Valid only for same-process paste; null for cross-instance (use Cp2ClipUtil.ExtractFileData
-    /// on the raw clipboard text instead).
-    /// </summary>
-    string?[]? GetCachedXferPaths();
-
-    /// <summary>
     /// Gets file URIs from the clipboard. Tries text/uri-list,
     /// x-special/gnome-copied-files, and plain-text fallback.
     /// Returns null if no file URIs are found.

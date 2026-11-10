@@ -276,41 +276,98 @@ misleading UI; **S3** performance, latent, or cleanup. Test types: **Auto** (uni
 
 ### Stream Z: dead code and no-behaviour cleanup (Phase 0)
 
-- [ ] **Z1** Delete `Common/MessageBoxEnums.cs`; drop the `Services.` qualifiers it forced.
+- [x] **Z1** Delete `Common/MessageBoxEnums.cs`; drop the `Services.` qualifiers it forced.
   (Common#9) **Code**: build succeeds.
-- [ ] **Z2** Delete `PlatformUtil.AskFileToOpen`, `FILE_FILTER_ALL`, `FILE_FILTER_KNOWN`,
+  Deleted `Common/MessageBoxEnums.cs`; the `Services.MBResult/MBButton/MBIcon` qualifiers in
+  `MainViewModel.cs` and `Common/WorkProgress.axaml.cs` are gone (added `using
+  cp2_avalonia.Services;` to `WorkProgress.axaml.cs`). Only the `Services` enums remain. Checked:
+  build, 0 warnings.
+- [x] **Z2** Delete `PlatformUtil.AskFileToOpen`, `FILE_FILTER_ALL`, `FILE_FILTER_KNOWN`,
   `IsAdministrator`; delete `Common/InverseBooleanConverter.cs` and the `InvertBool` resource in
   `App.axaml`. (Common#10) **Code**. Do **not** delete `PlatformUtil.ShowMessageAsync`; X2
   keeps it.
-- [ ] **Z3** Delete `Tools/FancyTextHelper.cs` after checking `Controls/FancyTextViewer` has any
+  Removed `AskFileToOpen`, `FILE_FILTER_ALL`, `FILE_FILTER_KNOWN`, `IsAdministrator` (and the
+  now-unused `using Avalonia.Platform.Storage`), `Common/InverseBooleanConverter.cs`, the
+  `InvertBool` resource and the then-unused `xmlns:common` in `App.axaml`. `ShowMessageAsync`
+  kept (X2). Grep found no references (cs, axaml). Checked: build.
+- [x] **Z3** Delete `Tools/FancyTextHelper.cs` after checking `Controls/FancyTextViewer` has any
   rule worth keeping. (Tools#5) **Code**.
-- [ ] **Z4** Delete `Views/FindFile.axaml(.cs)`; unused `MainWindow.axaml.cs` members
+  Deleted `Tools/FancyTextHelper.cs` (no references). Comparison with `Controls/FancyTextViewer`:
+  the viewer already maps default black foreground / white background to the viewer's theme
+  colours (`PhysicalElement`), treats alpha 0 as opaque, and has the same font-family stacks
+  (incl. Symbol). **One rule the viewer lacks:** the helper mapped white-on-black "inverse" text
+  to the theme brushes `ViewerInverseForegroundBrush` / `ViewerInverseBackgroundBrush` (so it
+  inverts correctly in Light/Dark). The viewer draws literal white-on-black in both themes:
+  readable, but not theme-adapted. The brush resources are still defined in `App.axaml` and used
+  by `FileViewer.axaml`, so they were left in place. Not ported: no behaviour change in Z.
+  Checked: build.
+- [x] **Z4** Delete `Views/FindFile.axaml(.cs)`; unused `MainWindow.axaml.cs` members
   (`NotImplemented`, `GetCrossInstanceClipText`, `SelectedFileListItem`,
   `SelectedDirectoryTreeItem`, `FileList_SetSelectionFocus`, the `if (false)` block);
   `AsciiChartWindow.GetCodeName` and the no-op `EscapeDisplayChar`. (Views cleanups)
-- [ ] **Z5** Models leftovers: `FileListItem.SelectAndView`, `DebugMessageLog.GetEntryCount`,
+  Deleted `Views/FindFile.axaml(.cs)` (no references; the `FindFileViewModel`/`FindFileReq`
+  classes are live and stay), and in `MainWindow.axaml.cs`: `NotImplemented`,
+  `GetCrossInstanceClipText`, `SelectedFileListItem`, `SelectedDirectoryTreeItem`,
+  `FileList_SetSelectionFocus`, and the `if (false)` block (the live
+  `openPhysicalDriveMenuItem.IsVisible = false;` is kept, with a new comment).
+  `AsciiChartWindow`: removed `GetCodeName`; `EscapeDisplayChar` was a no-op (`'\\' => "\\"`), its
+  two callers now use `((char)x).ToString()`. Checked: build.
+- [x] **Z5** Models leftovers: `FileListItem.SelectAndView`, `DebugMessageLog.GetEntryCount`,
   `[Serializable]` on `ClipInfo` and `WindowPlacement`. (Models cleanup, Common "Also noticed")
   Leave `ArchiveTreeItem.SelectItem` for stream E.
-- [ ] **Z6** Actions leftovers: unused `mAppHook` in `ScanBlocksProgress` and `TestProgress`;
+  Removed `FileListItem.SelectAndView`, `DebugMessageLog.GetEntryCount`, `[Serializable]` on
+  `ClipInfo` and `WindowPlacement.SavedPos` (both are serialised with System.Text.Json source
+  generation). `ArchiveTreeItem.SelectItem` untouched. Checked: build.
+- [x] **Z6** Actions leftovers: unused `mAppHook` in `ScanBlocksProgress` and `TestProgress`;
   `ProgressUtil.ShowCancelled`; fix the `OpenProgress` comment about the GUI thread.
   (Actions "Smaller observations")
-- [ ] **Z7** Services leftovers: remove `IClipboardService.HasPendingContent` and
+  Removed the unused `mAppHook` field **and the now-unused `AppHook` constructor parameter** from
+  `ScanBlocksProgress` and `TestProgress` (two call sites in `MainViewModel` updated), deleted
+  `ProgressUtil.ShowCancelled`, and corrected the `OpenProgress.RunWorkerCompleted` comment
+  (runs on a thread-pool thread via `WorkspaceService.OpenAsync`). Checked: build.
+- [x] **Z7** Services leftovers: remove `IClipboardService.HasPendingContent` and
   `GetCachedXferPaths` only if B4 does not need `HasPendingContent` (it may; check B4 first);
   `FilePickerService` → `TryGetLocalPath()`; make `ClipInfo.CLIP_PREFIX` visible and use it in
   `Cp2ClipUtil`. (Services "Smaller observations")
-- [ ] **Z8** `MainViewModel` leftovers: duplicate `ConfigureCenterInfo` (keep one; the review
+  `HasPendingContent` kept (B4). Removed `GetCachedXferPaths` (no callers) from
+  `IClipboardService`/`ClipboardService`. `FilePickerService` now uses `TryGetLocalPath()`; a
+  non-local result is treated as "no selection" (null) and skipped in `OpenFilesAsync`.
+  `ClipInfo.CLIP_PREFIX` is `internal const` and `Cp2ClipUtil` uses it in place of the two
+  repeated literals. Checked: build.
+- [x] **Z8** `MainViewModel` leftovers: duplicate `ConfigureCenterInfo` (keep one; the review
   says the view-model copy in `CenterInfoViewModel` is unused, so check which one the view
   binds to); `IsFileOpen` assigned twice; always-true `if (!isMacZip)`; dead commented-out
   command block. (ViewModels cleanups)
-- [ ] **Z9** `ConfigOptCtrl`: make the dictionary-update-in-`foreach` read as intentional;
+  The view binds `CenterInfo.*` properties, and `MainViewModel.ConfigureCenterInfo` is the copy
+  that is called (from `OnArchiveTreeSelectionChanged` path); deleted the unused
+  `CenterInfoViewModel.ConfigureCenterInfo` and its private `AddInfoItem`. Also removed the
+  duplicate `IsFileOpen =` line, the always-true `if (!isMacZip)` in `EditAttributesImpl`
+  (body un-indented; its locals renamed `isReadOnly2`/`accepted2` to avoid clashing with the
+  MacZip branch), and the commented-out pass-through command block. Checked: build.
+- [x] **Z9** `ConfigOptCtrl`: make the dictionary-update-in-`foreach` read as intentional;
   merge `DropTarget`'s two identical key handlers. (Tools "Smaller observations")
+  `ConfigOptCtrl.LoadExportOptions`: comment only (logic unchanged) saying why replacing a value
+  while enumerating is safe. `DropTarget`: `TextArea_PreviewKeyDown` removed; the text box's
+  tunnel handler now uses `Window_KeyDown` (identical body). Checked: build.
 
 **Test plan Z:** build; launch; smoke test open, view, extract, add, copy/paste, settings
 dialog, debug menu windows. No behaviour change is expected.
 
-- [ ] **T0** Create `cp2_avalonia.Tests` (X7; details in section 6). Done when
+- [x] **T0** Create `cp2_avalonia.Tests` (X7; details in section 6). Done when
   `dotnet build CiderPress2.sln` and `dotnet test cp2_avalonia.Tests` both succeed with one
   trivial test, and a `MakeDist` build does not include the test assembly.
+  Created `cp2_avalonia.Tests/` (xUnit 2.9.3, `net10.0`, references `cp2_avalonia.csproj`; no
+  `Avalonia.Headless.XUnit` yet), added `<InternalsVisibleTo Include="cp2_avalonia.Tests" />` to
+  `cp2_avalonia.csproj`, and added the project to `CiderPress2.sln` (entries written by hand, Any
+  CPU only, like `cp2_avalonia`; `dotnet sln add` also injects x64/x86 platforms, so avoid it).
+  One test (`SmokeTests.ClipInfo_RecognizesClipPrefix`) reads the internal `ClipInfo.CLIP_PREFIX`,
+  so it proves both the reference and `InternalsVisibleTo`. `dotnet test cp2_avalonia.Tests`:
+  1 passed. `dotnet build CiderPress2.sln` succeeds only with `-p:EnableWindowsTargeting=true`
+  on macOS/Linux, because `cp2_wpf` is Windows-only (NETSDK1100; this predates T0).
+  `MakeDist/Build.cs` runs `dotnet publish` on `cp2` and `cp2_avalonia` (plus `cp2_wpf` on win-*)
+  and copies each publish directory; the test project is not in `sTargets` and nothing references
+  it (it references the app, not the reverse), so it is not packaged. `bin/Debug` of
+  `cp2_avalonia` has `DiskArcTests.dll`/`FileConvTests.dll` only. No full distribution build run.
 
 ### Stream A: progress dialogs, worker errors, message box (Phase 1)
 

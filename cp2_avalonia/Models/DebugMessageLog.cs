@@ -109,11 +109,5 @@ namespace cp2_avalonia.Models {
                 return list;
             }
         }
-
-        public int GetEntryCount() {
-            lock (mEntries) {
-                return mEntries.Count;
-            }
-        }
     }
 }

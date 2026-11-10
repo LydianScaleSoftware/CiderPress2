@@ -20,6 +20,8 @@ using System.IO;
 using System.Text;
 using System.Text.Json;
 
+using cp2_avalonia.Models;
+
 namespace cp2_avalonia.Services;
 
 /// <summary>
@@ -48,7 +50,7 @@ internal static class Cp2ClipUtil
         foreach (string? p in filePaths) if (p != null) { hasAny = true; break; }
         if (!hasAny) return clipText;
 
-        const string prefix = "CiderPressII:clip:v1:";
+        const string prefix = ClipInfo.CLIP_PREFIX;
         if (!clipText.StartsWith(prefix)) return clipText;
         string json = clipText.Substring(prefix.Length);
 
@@ -86,7 +88,7 @@ internal static class Cp2ClipUtil
     internal static string?[]? ExtractFileData(string? clipText)
     {
         if (clipText == null) return null;
-        const string prefix = "CiderPressII:clip:v1:";
+        const string prefix = ClipInfo.CLIP_PREFIX;
         string json = clipText.StartsWith(prefix)
             ? clipText.Substring(prefix.Length)
             : clipText;

@@ -125,12 +125,5 @@ namespace cp2_avalonia.Actions {
             bkWorker.ReportProgress(0, failMsg);
             failMsg.WaitForResult();
         }
-
-        /// <summary>
-        /// Informs the user that the action has been canceled.
-        /// </summary>
-        public static void ShowCancelled(BackgroundWorker bkWorker) {
-            ShowMessage("Cancelled.", false, bkWorker);
-        }
     }
 }

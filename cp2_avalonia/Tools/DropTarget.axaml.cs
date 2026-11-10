@@ -53,7 +53,7 @@ namespace cp2_avalonia.Tools {
                 textBox.AddHandler(DragDrop.DragOverEvent, TextArea_DragOver);
                 // Use tunneling (Preview) so we intercept paste before the TextBox
                 // handles Command+V / Ctrl+V internally and marks it as handled.
-                textBox.AddHandler(KeyDownEvent, TextArea_PreviewKeyDown,
+                textBox.AddHandler(KeyDownEvent, Window_KeyDown,
                     Avalonia.Interactivity.RoutingStrategies.Tunnel);
             }
 
@@ -110,16 +110,10 @@ namespace cp2_avalonia.Tools {
             VM?.OnWindowClosed();
         }
 
-        private void TextArea_PreviewKeyDown(object? sender, KeyEventArgs e) {
-            bool isPaste = e.Key == Key.V && (OperatingSystem.IsMacOS()
-                ? (e.KeyModifiers & KeyModifiers.Meta) != 0
-                : (e.KeyModifiers & KeyModifiers.Control) != 0);
-            if (isPaste) {
-                e.Handled = true;
-                _ = DoPasteAsync();
-            }
-        }
-
+        /// <summary>
+        /// Intercepts the paste shortcut (Cmd+V on macOS, Ctrl+V elsewhere).  Used both on
+        /// the window and, as a tunneling handler, on the text box.
+        /// </summary>
         private void Window_KeyDown(object? sender, KeyEventArgs e) {
             bool isPaste = e.Key == Key.V && (OperatingSystem.IsMacOS()
                 ? (e.KeyModifiers & KeyModifiers.Meta) != 0

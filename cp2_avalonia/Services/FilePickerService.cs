@@ -49,7 +49,7 @@ public class FilePickerService(IDialogHost host) : IFilePickerService
             FileTypeFilter = fileTypes,
             SuggestedStartLocation = await ResolveStartDir(initialDir)
         });
-        return results.Count > 0 ? results[0].Path.LocalPath : null;
+        return results.Count > 0 ? results[0].TryGetLocalPath() : null;
     }
 
     public async Task<IReadOnlyList<string>> OpenFilesAsync(string title,
@@ -64,7 +64,10 @@ public class FilePickerService(IDialogHost host) : IFilePickerService
             SuggestedStartLocation = await ResolveStartDir(initialDir)
         });
         var paths = new List<string>(results.Count);
-        foreach (var r in results) paths.Add(r.Path.LocalPath);
+        foreach (var r in results) {
+            string? path = r.TryGetLocalPath();
+            if (path != null) paths.Add(path);
+        }
         return paths;
     }
 
@@ -80,7 +83,7 @@ public class FilePickerService(IDialogHost host) : IFilePickerService
             FileTypeChoices = fileTypes,
             SuggestedStartLocation = await ResolveStartDir(initialDir)
         });
-        return result?.Path.LocalPath;
+        return result?.TryGetLocalPath();
     }
 
     public async Task<string?> OpenFolderAsync(string title, string? initialDir = null)
@@ -91,6 +94,6 @@ public class FilePickerService(IDialogHost host) : IFilePickerService
             AllowMultiple = false,
             SuggestedStartLocation = await ResolveStartDir(initialDir)
         });
-        return results.Count > 0 ? results[0].Path.LocalPath : null;
+        return results.Count > 0 ? results[0].TryGetLocalPath() : null;
     }
 }

@@ -104,58 +104,6 @@ public class CenterInfoViewModel(IDialogService dialogService) : ObservableObjec
         CanAddMetadataEntry = false;
     }
 
-    private void AddInfoItem(string name, string value) {
-        CenterInfoList.Add(new CenterInfoItem(name + ":", value));
-    }
-
-    /// <summary>
-    /// Populates the info list with summary details for the given work object.
-    /// </summary>
-    public void ConfigureCenterInfo(object workObj, string selName, Formatter formatter) {
-        CenterInfoList.Clear();
-        string infoText;
-        if (workObj is IArchive arc) {
-            infoText = "File archive - " + ThingString.IArchive(arc) + " - " + selName;
-            AddInfoItem("Entries", arc.Count.ToString());
-        } else if (workObj is IDiskImage disk) {
-            infoText = "Disk image - " + ThingString.IDiskImage(disk) + " - " + selName;
-            IChunkAccess? chunks = disk.ChunkAccess;
-            if (chunks != null) {
-                AddInfoItem("Total size",
-                    formatter.FormatSizeOnDisk(chunks.FormattedLength, KBLOCK_SIZE));
-                if (chunks.HasSectors) {
-                    AddInfoItem("Geometry",
-                        chunks.NumTracks.ToString() + " tracks, " +
-                        chunks.NumSectorsPerTrack.ToString() + " sectors");
-                    if (chunks.NumSectorsPerTrack == 16) {
-                        AddInfoItem("File order",
-                            ThingString.SectorOrder(chunks.FileOrder));
-                    }
-                }
-                if (chunks.NibbleCodec != null) {
-                    AddInfoItem("Nibble codec", chunks.NibbleCodec.Name);
-                }
-            }
-        } else if (workObj is IFileSystem fs) {
-            infoText = "Filesystem - " + ThingString.IFileSystem(fs) + " - " + selName;
-            IChunkAccess chunks = fs.RawAccess;
-            AddInfoItem("Volume size",
-                formatter.FormatSizeOnDisk(chunks.FormattedLength, KBLOCK_SIZE));
-        } else if (workObj is IMultiPart partitions) {
-            infoText = "Multi-partition format - " + ThingString.IMultiPart(partitions) +
-                       " - " + selName;
-            AddInfoItem("Partition count", partitions.Count.ToString());
-        } else if (workObj is Partition part) {
-            infoText = "Disk partition - " + ThingString.Partition(part) + " - " + selName;
-            AddInfoItem("Start block", (part.StartOffset / BLOCK_SIZE).ToString());
-            AddInfoItem("Block count", (part.Length / BLOCK_SIZE).ToString() + " (" +
-                (part.Length / (1024 * 1024.0)).ToString("N1") + " MB)");
-        } else {
-            infoText = "???";
-        }
-        CenterInfoText1 = infoText;
-    }
-
     public void SetPartitionList(IMultiPart parts) {
         PartitionList.Clear();
         for (int i = 0; i < parts.Count; i++) {

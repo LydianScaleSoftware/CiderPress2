@@ -276,14 +276,6 @@ namespace cp2_avalonia.Models {
         }
 
         /// <summary>
-        /// Select the specified item in the file list and move it into view.
-        /// </summary>
-        public static void SelectAndView(ObservableCollection<FileListItem> fileList,
-                DataGrid dataGrid, IFileEntry selEntry) {
-            SetSelectionFocusByEntry(fileList, dataGrid, selEntry);
-        }
-
-        /// <summary>
         /// Sets the current file list selection to the item with a matching IFileEntry.  If
         /// no item matches, the selection is set to the first item in the list.
         /// </summary>

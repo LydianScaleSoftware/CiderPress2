@@ -102,7 +102,7 @@ public partial class AsciiChartWindow : Window
         {
             return "SP";
         }
-        return EscapeDisplayChar((char)value);
+        return ((char)value).ToString();
     }
 
     private static string GetHighDisplayCharacter(int value)
@@ -120,30 +120,6 @@ public partial class AsciiChartWindow : Window
         {
             return " ";
         }
-        return EscapeDisplayChar((char)baseValue);
+        return ((char)baseValue).ToString();
     }
-
-    private static string EscapeDisplayChar(char ch)
-    {
-        return ch switch
-        {
-            '\\' => "\\",
-            _ => ch.ToString()
-        };
-    }
-
-    private static string GetCodeName(int value)
-    {
-        if (value < 32)
-        {
-            return CONTROL_NAMES[value];
-        }
-        return value switch
-        {
-            32 => "SP",
-            127 => "DEL",
-            _ => string.Empty
-        };
-    }
-    
 }

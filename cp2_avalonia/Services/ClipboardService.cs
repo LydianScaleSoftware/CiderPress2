@@ -150,8 +150,6 @@ public class ClipboardService : IClipboardService {
         return info;
     }
 
-    public string?[]? GetCachedXferPaths() => mXferPaths;
-
     public async Task<string?> GetRawClipTextAsync() {
         // On Linux, read clipboard directly via our background X11 connection.
         // Avalonia's GetTextAsync() requests TARGETS first (two round-trips through

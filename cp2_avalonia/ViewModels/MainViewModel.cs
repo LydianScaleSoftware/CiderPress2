@@ -969,13 +969,13 @@ public class MainViewModel : ObservableObject
         if (hasViewers && !chunks.IsReadOnly &&
                 !_settingsService.GetBool(AppSettings.VIEWER_SUPPRESS_SECTOR_EDIT_WARNING, false))
         {
-            (Services.MBResult _, bool suppress) = await mDialogService.ShowSuppressibleMessageAsync(
+            (MBResult _, bool suppress) = await mDialogService.ShowSuppressibleMessageAsync(
                 "One or more file viewers are open for this disk. " +
                 "If you write to the disk, all open file viewers will be closed.",
                 "File Viewer Warning",
                 "Don't show this message again",
-                Services.MBButton.OK,
-                Services.MBIcon.Warning);
+                MBButton.OK,
+                MBIcon.Warning);
             if (suppress)
             {
                 _settingsService.SetBool(AppSettings.VIEWER_SUPPRESS_SECTOR_EDIT_WARNING, true);
@@ -1606,8 +1606,7 @@ public class MainViewModel : ObservableObject
             return;
         }
 
-        TestProgress prog = new TestProgress(archiveOrFileSystem, selected,
-                _workspaceService.AppHook) {
+        TestProgress prog = new TestProgress(archiveOrFileSystem, selected) {
             EnableMacOSZip = _settingsService.GetBool(AppSettings.MAC_ZIP_ENABLED, true),
         };
         var workVm = new WorkProgressViewModel(prog, false);
@@ -2524,7 +2523,7 @@ public class MainViewModel : ObservableObject
             return;
         }
 
-        ScanBlocksProgress prog = new ScanBlocksProgress(diskImage, _workspaceService.AppHook);
+        ScanBlocksProgress prog = new ScanBlocksProgress(diskImage);
         var workVm = new WorkProgressViewModel(prog, false);
         if (await mDialogService.ShowDialogAsync(workVm) == true) {
             List<ScanBlocksProgress.Failure>? results = prog.FailureResults!;
@@ -2742,38 +2741,36 @@ public class MainViewModel : ObservableObject
         }
 
         // Non-MacZip path.
-        if (!isMacZip) {
-            bool isReadOnly;
-            if (archiveOrFileSystem is IFileSystem fs2) {
-                isReadOnly = fs2.IsReadOnly;
-            } else if (archiveOrFileSystem is IArchive ia2) {
-                isReadOnly = ia2.IsReadOnly;
-            } else {
-                isReadOnly = false;
-            }
+        bool isReadOnly2;
+        if (archiveOrFileSystem is IFileSystem fs2) {
+            isReadOnly2 = fs2.IsReadOnly;
+        } else if (archiveOrFileSystem is IArchive ia2) {
+            isReadOnly2 = ia2.IsReadOnly;
+        } else {
+            isReadOnly2 = false;
+        }
 
-            var vm2 = new EditAttributesViewModel(
-                archiveOrFileSystem, entry, IFileEntry.NO_ENTRY, curAttribs, isReadOnly);
-            // Only apply changes if the user accepted (OK).  IsValid just tracks
-            // field validity and is true for Cancel too, so gate on the dialog result.
-            bool? accepted = await mDialogService.ShowDialogAsync(vm2);
-            if (accepted != true) {
-                return;
-            }
+        var vm2 = new EditAttributesViewModel(
+            archiveOrFileSystem, entry, IFileEntry.NO_ENTRY, curAttribs, isReadOnly2);
+        // Only apply changes if the user accepted (OK).  IsValid just tracks
+        // field validity and is true for Cancel too, so gate on the dialog result.
+        bool? accepted2 = await mDialogService.ShowDialogAsync(vm2);
+        if (accepted2 != true) {
+            return;
+        }
 
-            EditAttributesProgress prog2 = new EditAttributesProgress(
-                    _dialogHost.GetOwnerWindow(), workNode.DAObject, workNode.FindDANode(),
-                    entry, IFileEntry.NO_ENTRY, vm2.NewAttribs, _workspaceService.AppHook) {
-                DoCompress = _settingsService.GetBool(AppSettings.ADD_COMPRESS_ENABLED, true),
-                EnableMacOSZip = isMacZipEnabled,
-            };
+        EditAttributesProgress prog2 = new EditAttributesProgress(
+                _dialogHost.GetOwnerWindow(), workNode.DAObject, workNode.FindDANode(),
+                entry, IFileEntry.NO_ENTRY, vm2.NewAttribs, _workspaceService.AppHook) {
+            DoCompress = _settingsService.GetBool(AppSettings.ADD_COMPRESS_ENABLED, true),
+            EnableMacOSZip = isMacZipEnabled,
+        };
 
-            if (prog2.DoUpdate(false)) {
-                _viewActions.ShowToast("File attributes edited", true);
-                FinishEditAttributes(entry, IFileEntry.NO_ENTRY, vm2.NewAttribs,
-                    false, fileItem, dirItem, archiveOrFileSystem);
-                CaptureActiveFileViewerState();
-            }
+        if (prog2.DoUpdate(false)) {
+            _viewActions.ShowToast("File attributes edited", true);
+            FinishEditAttributes(entry, IFileEntry.NO_ENTRY, vm2.NewAttribs,
+                false, fileItem, dirItem, archiveOrFileSystem);
+            CaptureActiveFileViewerState();
         }
 
         // Refresh with focus on the file list (WPF default) so the repopulate reselects
@@ -3565,62 +3562,6 @@ public class MainViewModel : ObservableObject
     public IRelayCommand ResetSortCommand { get; private set; }
     public IRelayCommand ToggleInfoCommand { get; }
 
-    /*
-        // ---- Temporary Pass-through properties -- removed in iteration 2 -----
-
-        public ICommand? OpenCommand { get; set; }
-        public ICommand? NewDiskImageCommand { get; set; }
-        public ICommand? NewFileArchiveCommand { get; set; }
-        public ICommand? OpenPhysicalDriveCommand { get; set; }
-        public ICommand? CloseCommand { get; set; }
-        public ICommand? RecentFile1Command { get; set; }
-        public ICommand? RecentFile2Command { get; set; }
-        public ICommand? RecentFile3Command { get; set; }
-        public ICommand? RecentFile4Command { get; set; }
-        public ICommand? RecentFile5Command { get; set; }
-        public ICommand? RecentFile6Command { get; set; }
-        public ICommand? ExitCommand { get; set; }
-        public ICommand? CopyCommand { get; set; }
-        public ICommand? PasteCommand { get; set; }
-        public ICommand? FindCommand { get; set; }
-        public ICommand? SelectAllCommand { get; set; }
-        public ICommand? EditAppSettingsCommand { get; set; }
-        public ICommand? ViewFilesCommand { get; set; }
-        public ICommand? AddFilesCommand { get; set; }
-        public ICommand? ImportFilesCommand { get; set; }
-        public ICommand? ExtractFilesCommand { get; set; }
-        public ICommand? ExportFilesCommand { get; set; }
-        public ICommand? DeleteFilesCommand { get; set; }
-        public ICommand? TestFilesCommand { get; set; }
-        public ICommand? EditAttributesCommand { get; set; }
-        public ICommand? CreateDirectoryCommand { get; set; }
-        public ICommand? EditDirAttributesCommand { get; set; }
-        public ICommand? EditSectorsCommand { get; set; }
-        public ICommand? EditBlocksCommand { get; set; }
-        public ICommand? SaveAsDiskImageCommand { get; set; }
-        public ICommand? ReplacePartitionCommand { get; set; }
-        public ICommand? ScanForBadBlocksCommand { get; set; }
-        public ICommand? ScanForSubVolCommand { get; set; }
-        public ICommand? DefragmentCommand { get; set; }
-        public ICommand? CloseSubTreeCommand { get; set; }
-        public ICommand? ShowFullListCommand { get; set; }
-        public ICommand? ShowDirListCommand { get; set; }
-        public ICommand? ShowInfoCommand { get; set; }
-        public ICommand? NavToParentDirCommand { get; set; }
-        public ICommand? NavToParentCommand { get; set; }
-        public ICommand? HelpCommand { get; set; }
-        public ICommand? AboutCommand { get; set; }
-        public ICommand? Debug_DiskArcLibTestCommand { get; set; }
-        public ICommand? Debug_FileConvLibTestCommand { get; set; }
-        public ICommand? Debug_BulkCompressTestCommand { get; set; }
-        public ICommand? Debug_ShowSystemInfoCommand { get; set; }
-        public ICommand? Debug_ShowDebugLogCommand { get; set; }
-        public ICommand? Debug_ShowDropTargetCommand { get; set; }
-        public ICommand? Debug_ConvertANICommand { get; set; }
-        public ICommand? ResetSortCommand { get; set; }
-        public ICommand? ToggleInfoCommand { get; set; }
-    */
-
     // =========================================================================
     // Step 3H — State fields, selection caches, and helpers
     // =========================================================================
@@ -3708,7 +3649,6 @@ public class MainViewModel : ObservableObject
     /// </summary>
     internal void RefreshAllCommandStates()
     {
-        IsFileOpen = _workspaceService.IsFileOpen;
         IsFileOpen = _workspaceService.IsFileOpen;
         var arcTreeSel = CachedArchiveTreeSelection;
 
@@ -4336,12 +4276,12 @@ public class MainViewModel : ObservableObject
         if (viewer.IsUnavailableCloseDialogSuppressed()) {
             Debug.WriteLine("Suppressed: unavailable-close dialog");
         } else {
-            (Services.MBResult _, bool suppress) = await mDialogService.ShowSuppressibleMessageAsync(
+            (MBResult _, bool suppress) = await mDialogService.ShowSuppressibleMessageAsync(
                 "This file is unavailable. Viewer will close",
                 "File Viewer",
                 "Don't show this message again",
-                Services.MBButton.OK,
-                Services.MBIcon.Warning);
+                MBButton.OK,
+                MBIcon.Warning);
             if (suppress) {
                 viewer.SetUnavailableCloseDialogSuppressed(true);
             }
@@ -4358,8 +4298,8 @@ public class MainViewModel : ObservableObject
         await mDialogService.ShowMessageAsync(
             "Cannot load file. Viewer will close",
             "File Viewer",
-            Services.MBButton.OK,
-            Services.MBIcon.Error);
+            MBButton.OK,
+            MBIcon.Error);
 
         if (_viewerService.ActiveViewers.Any(v => ReferenceEquals(v, viewer))) {
             viewer.RequestClose();
@@ -4371,12 +4311,12 @@ public class MainViewModel : ObservableObject
         if (viewer.IsUnavailableRevertDialogSuppressed()) {
             Debug.WriteLine("Suppressed: unavailable-revert dialog");
         } else {
-            (Services.MBResult _, bool suppress) = await mDialogService.ShowSuppressibleMessageAsync(
+            (MBResult _, bool suppress) = await mDialogService.ShowSuppressibleMessageAsync(
                 "File is unavailable. Reverting to previous file",
                 "File Viewer",
                 "Don't show this message again",
-                Services.MBButton.OK,
-                Services.MBIcon.Warning);
+                MBButton.OK,
+                MBIcon.Warning);
             if (suppress) {
                 viewer.SetUnavailableRevertDialogSuppressed(true);
             }

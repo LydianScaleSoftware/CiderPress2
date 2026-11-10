@@ -43,6 +43,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="cp2_avalonia.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <AvaloniaResource Include="Res/cp2_app.ico" />
     <AvaloniaResource Include="Res/RedX.png" />
     <None Include="Res/Info.plist" />
