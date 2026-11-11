@@ -34,6 +34,9 @@ namespace cp2_avalonia.Actions {
         }
         public class PersistentChoices {
             internal Choice Overwrite { get; set; } = Choice.Unset;
+
+            /// <summary>Number of files the user (or a standing choice) chose to skip.</summary>
+            public int SkipCount { get; internal set; }
         }
 
         /// <summary>
@@ -68,6 +71,7 @@ namespace cp2_avalonia.Actions {
                         return CallbackFacts.Results.Overwrite;
                     } else if (choices.Overwrite == Choice.None) {
                         Debug.WriteLine("Overwrite '" + what.OrigPathName + "' -> overwrite none");
+                        choices.SkipCount++;
                         return CallbackFacts.Results.Skip;
                     } else {
                         Debug.Assert(choices.Overwrite == Choice.Unset);
@@ -80,6 +84,9 @@ namespace cp2_avalonia.Actions {
                     result = query.WaitForResult(out bool useForAll);
                     Debug.WriteLine("Overwrite '" + what.OrigPathName + "' -> " + result +
                         ", all=" + useForAll);
+                    if (result == CallbackFacts.Results.Skip) {
+                        choices.SkipCount++;
+                    }
                     if (useForAll) {
                         if (result == CallbackFacts.Results.Overwrite) {
                             choices.Overwrite = Choice.All;

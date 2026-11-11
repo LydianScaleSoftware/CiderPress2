@@ -120,7 +120,7 @@ xmlns:vm="clr-namespace:cp2_avalonia.ViewModels"
         </Style>
     </Window.Styles>
 
-    <DockPanel DragDrop.AllowDrop="True">
+    <DockPanel DragDrop.AllowDrop="True" IsEnabled="{Binding IsInteractionAllowed}">
         <Border DockPanel.Dock="Top" 
                 BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="0,0,0,1"
                 Padding="4,2">

@@ -52,8 +52,9 @@ public interface IWorkspaceService
     void UnpackRecentFileList();
 
     /// <summary>
-    /// Opens a work file, closing any currently open file first.
-    /// Returns the opened WorkTree on success, or throws on failure.
+    /// Opens a work file.  No file may be open: the caller closes the current one first
+    /// (see <see cref="Close"/>).  Returns the opened WorkTree on success, and throws on
+    /// failure; it never returns null.
     /// </summary>
     Task<WorkTree> OpenAsync(string path, bool readOnly, AutoOpenDepth depth);
 

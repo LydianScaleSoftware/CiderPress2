@@ -83,6 +83,63 @@ internal static class Cp2ClipUtil
     }
 
     /// <summary>
+    /// Checks that a path from clipboard text lies inside one of our own temp directories:
+    /// an absolute path under <paramref name="tempRoot"/>, in a directory whose name starts
+    /// with <c>cp2clip_</c> or <c>cp2drag_</c>, with no <c>..</c> segments, and no symbolic
+    /// link below the temp root.
+    /// </summary>
+    internal static bool IsAllowedTransferPath(string? path, string tempRoot)
+    {
+        if (string.IsNullOrEmpty(path) || !Path.IsPathRooted(path)) return false;
+
+        // Reject ".." anywhere in the original text; normalization would hide it.
+        foreach (string segment in path.Split('/', '\\')) {
+            if (segment == "..") return false;
+        }
+
+        string full;
+        string root;
+        try {
+            full = Path.GetFullPath(path);
+            root = Path.GetFullPath(tempRoot);
+        } catch (Exception) {
+            return false;
+        }
+        if (!root.EndsWith(Path.DirectorySeparatorChar)) {
+            root += Path.DirectorySeparatorChar;
+        }
+        StringComparison cmp = OperatingSystem.IsLinux() ?
+            StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        if (!full.StartsWith(root, cmp)) return false;
+
+        // The first component below the temp root must be one of our directories, and the
+        // path must be inside it, not the directory itself.
+        string relative = full.Substring(root.Length);
+        string[] parts = relative.Split(Path.DirectorySeparatorChar);
+        if (parts.Length < 2) return false;
+        if (!parts[0].StartsWith(ClipTransferFiles.CLIP_DIR_PREFIX, cmp) &&
+                !parts[0].StartsWith(ClipTransferFiles.DRAG_DIR_PREFIX, cmp)) {
+            return false;
+        }
+
+        // No component below the temp root may be a symbolic link, which could lead out of
+        // the directory.  (The temp root itself may be, e.g. /var -> /private/var.)
+        string current = root.TrimEnd(Path.DirectorySeparatorChar);
+        foreach (string part in parts) {
+            current = Path.Combine(current, part);
+            try {
+                var info = new FileInfo(current);
+                if (info.Exists || Directory.Exists(current)) {
+                    if (info.LinkTarget != null) return false;
+                }
+            } catch (Exception) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /// <summary>
     /// Extracts the Cp2FileData array from clipboard JSON.  Returns null if absent.
     /// </summary>
     internal static string?[]? ExtractFileData(string? clipText)
@@ -100,9 +157,18 @@ internal static class Cp2ClipUtil
                 arr.ValueKind != JsonValueKind.Array)
                 return null;
 
+            string tempRoot = Path.GetTempPath();
             var result = new List<string?>();
-            foreach (JsonElement item in arr.EnumerateArray())
-                result.Add(item.ValueKind == JsonValueKind.String ? item.GetString() : null);
+            foreach (JsonElement item in arr.EnumerateArray()) {
+                string? path = item.ValueKind == JsonValueKind.String ? item.GetString() : null;
+                if (path != null && !IsAllowedTransferPath(path, tempRoot)) {
+                    // Clipboard text can come from anywhere; only trust paths in our own
+                    // temp directories.  The entry is skipped.
+                    AppLog.W("Clipboard: ignoring file path outside CiderPress II temp directories");
+                    path = null;
+                }
+                result.Add(path);
+            }
             return result.ToArray();
         }
         catch (Exception ex)

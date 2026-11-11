@@ -44,6 +44,12 @@ namespace cp2_avalonia.Actions {
         public bool StripPaths { get; init; }
         public bool RawMode { get; init; }
 
+        /// <summary>
+        /// True if any file was skipped because the user chose not to overwrite an existing
+        /// one.  A Cut+Paste must then keep the original files.
+        /// </summary>
+        public bool AnySkipped { get; private set; }
+
 
         /// <summary>
         /// Performs the operation.
@@ -55,6 +61,15 @@ namespace cp2_avalonia.Actions {
         /// <returns>Operation results.</returns>
         public object DoWork(BackgroundWorker bkWorker) {
             ProgressUtil.PersistentChoices choices = new ();
+            try {
+                return DoWorkInternal(bkWorker, choices);
+            } finally {
+                AnySkipped = choices.SkipCount > 0;
+            }
+        }
+
+        private object DoWorkInternal(BackgroundWorker bkWorker,
+                ProgressUtil.PersistentChoices choices) {
 
             CallbackFacts.Results CbFunc(CallbackFacts what)
             {

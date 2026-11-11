@@ -93,6 +93,7 @@ public class FileViewerViewModel : ObservableObject, IDisposable
     private readonly IFilePickerService _filePickerService;
     private readonly IClipboardService _clipboardService;
     private readonly IViewerService _viewerService;
+    private readonly IDialogService _dialogService;
 
     // -----------------------------------------------------------------------------------------
     // State
@@ -460,6 +461,7 @@ public class FileViewerViewModel : ObservableObject, IDisposable
             IFilePickerService filePickerService,
             IClipboardService clipboardService,
             IViewerService viewerService,
+            IDialogService dialogService,
             bool prePopulateForward = false)
     {
         mArchiveOrFileSystem = archiveOrFileSystem;
@@ -472,6 +474,8 @@ public class FileViewerViewModel : ObservableObject, IDisposable
         _filePickerService = filePickerService;
         _clipboardService = clipboardService;
         _viewerService = viewerService;
+        _dialogService = dialogService;
+        _dialogService.ModalStateChanged += OnModalStateChanged;
         CaptureSelectionPaths();
 
         // Initial property values
@@ -951,8 +955,16 @@ public class FileViewerViewModel : ObservableObject, IDisposable
     /// <param name="fileChanged">Passed through to <see cref="ShowFile"/>.</param>
     private void ShowFileDeferred(bool fileChanged)
     {
-        IsLoading = true;
         mPendingFileChanged |= fileChanged;
+        if (_dialogService.IsModalActive)
+        {
+            // A modal dialog (a worker changing the archive, say) is open.  Viewers are
+            // modeless and stay usable during one, but must not read the archive then.
+            // Load when the modal closes.
+            mReloadAfterModal = true;
+            return;
+        }
+        IsLoading = true;
         if (mShowFilePending)
         {
             return;
@@ -966,6 +978,14 @@ public class FileViewerViewModel : ObservableObject, IDisposable
             if (mIsDisposed)
             {
                 return;     // window closed while the load was queued
+            }
+            if (_dialogService.IsModalActive)
+            {
+                // A modal opened after this load was queued.
+                mPendingFileChanged |= changed;
+                mReloadAfterModal = true;
+                IsLoading = false;
+                return;
             }
             bool completed = false;
             try
@@ -985,6 +1005,25 @@ public class FileViewerViewModel : ObservableObject, IDisposable
                 }
             }
         }, DispatcherPriority.Background);
+    }
+
+    // True if a load was requested while a modal dialog was open.
+    private bool mReloadAfterModal;
+
+    /// <summary>
+    /// False while a modal dialog is open; the viewer's contents are disabled then, because
+    /// loading or navigating would read the archive while a worker may be changing it.
+    /// </summary>
+    public bool IsInteractionAllowed => !_dialogService.IsModalActive;
+
+    private void OnModalStateChanged()
+    {
+        OnPropertyChanged(nameof(IsInteractionAllowed));
+        if (!_dialogService.IsModalActive && mReloadAfterModal && !mIsDisposed)
+        {
+            mReloadAfterModal = false;
+            ShowFileDeferred(false);
+        }
     }
 
     private void ShowFile(bool fileChanged)
@@ -2081,6 +2120,7 @@ public class FileViewerViewModel : ObservableObject, IDisposable
     public void Dispose()
     {
         mIsDisposed = true;
+        _dialogService.ModalStateChanged -= OnModalStateChanged;
         _viewerService.Unregister(this);
         CloseStreams();
         DeleteTempFiles();

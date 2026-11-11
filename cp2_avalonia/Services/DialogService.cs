@@ -33,6 +33,23 @@ public class DialogService(IDialogHost host) : IDialogService
     // owned by their parent dialog rather than always by the main window.
     private Window? mCurrentOwner;
 
+    // Number of modal dialogs open (nested ones count separately).
+    private int mModalCount;
+
+    public bool IsModalActive => mModalCount > 0;
+
+    public event Action? ModalStateChanged;
+
+    private void ChangeModalCount(int delta)
+    {
+        bool wasActive = mModalCount > 0;
+        mModalCount += delta;
+        if (wasActive != (mModalCount > 0))
+        {
+            ModalStateChanged?.Invoke();
+        }
+    }
+
     // Tracks open modal windows by ViewModel type so TryActivate can find them.
     // Only populated by ShowDialogAsync; ShowModeless is intentionally excluded
     // because modeless windows (e.g. FileViewer) support multiple concurrent instances.
@@ -57,12 +74,14 @@ public class DialogService(IDialogHost host) : IDialogService
         var savedOwner = mCurrentOwner;
         mCurrentOwner = view;
         mOpenModals[typeof(TViewModel)] = view;
+        ChangeModalCount(+1);
         try
         {
             return await view.ShowDialog<bool?>(owner);
         }
         finally
         {
+            ChangeModalCount(-1);
             mCurrentOwner = savedOwner;
             mOpenModals.Remove(typeof(TViewModel));
         }
@@ -123,7 +142,15 @@ public class DialogService(IDialogHost host) : IDialogService
             catch (Exception ex) { caught = ex; }
         });
         Window owner = mCurrentOwner ?? host.GetOwnerWindow();
-        await dlg.ShowDialog<bool?>(owner);
+        ChangeModalCount(+1);
+        try
+        {
+            await dlg.ShowDialog<bool?>(owner);
+        }
+        finally
+        {
+            ChangeModalCount(-1);
+        }
         if (caught != null)
         {
             ExceptionDispatchInfo.Capture(caught).Throw();

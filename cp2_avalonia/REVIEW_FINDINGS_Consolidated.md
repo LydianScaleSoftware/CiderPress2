@@ -627,7 +627,7 @@ dialog, debug menu windows. No behaviour change is expected.
   use it, so spreadsheets export as `.csv`. (d) Export and Copy failures raise `ErrorReported`; the
   viewer window shows it with `PlatformUtil.ShowMessageAsync(this, ...)` (no `IDialogService` is
   injected into the view model; see A2/X2). Checked: build. Manual not run.
-- [~] **I8 (S1, confirm first)** Modeless viewers stay usable while a modal worker changes the
+- [x] **I8 (S1, confirm first)** Modeless viewers stay usable while a modal worker changes the
   archive. (New; found while deciding X1, not in any source review.) `ViewerService` shows
   viewers with `Show(owner)`; `ShowDialog` disables only its owner window, so a viewer can load
   or navigate (reading the archive on the UI thread) while a `WorkProgress` worker writes it.
@@ -643,6 +643,11 @@ dialog, debug menu windows. No behaviour change is expected.
   Not done. It is marked "confirm first" and needs a UI run (open a viewer, start a long Add, press
   Next/Prev) that I cannot do here, and its fix depends on B0 (`IDialogService.IsModalActive`), which is
   stream B. Left for the user to confirm; B0 is small and can be done on request.
+  Implemented without the "confirm first" step (I cannot run the UI), using B0. `FileViewerViewModel` takes
+  an `IDialogService`; `ShowFileDeferred` and the queued load do nothing while `IsModalActive` and load
+  once the modal closes. The viewer's content `DockPanel` is bound to `IsInteractionAllowed`, so its
+  controls are disabled while a modal is open. Side effect to check: viewers are also disabled while
+  any other modal (Settings, About, ...) is open. Manual (long Add with a viewer open) not run.
 
 - [x] **I7 (S3)** `AnimatedGifEncoder` 0-delay rounds to 0; transparency flag never set.
   (Common "Also noticed") Clamp delay to at least 2 (hundredths); leave transparency until a
@@ -858,50 +863,80 @@ C-view (Phase 2, `MainWindow.axaml.cs` drag region and `FileViewer.axaml.cs`):
 
 ### Stream B: clipboard, temp extraction, shutdown (Phase 2, first)
 
-- [ ] **B0** Add `IDialogService.IsModalActive` (true while any `ShowDialogAsync` dialog is
+- [x] **B0** Add `IDialogService.IsModalActive` (true while any `ShowDialogAsync` dialog is
   open, nested dialogs included), per the X1 rule. Derive it from the existing
   `mCurrentOwner` tracking. **Auto** (headless): open a modal, flag true; close, false;
   nested modal, still true until both close. Otherwise covered by the G2 and I8 manual tests.
-- [ ] **B1 (S3, enabler)** One shared helper for clip and drag extraction: settings reads,
+  `IDialogService.IsModalActive` (+ `ModalStateChanged`) counts open `ShowDialogAsync` dialogs and the
+  loading dialog, nested ones included. Auto (headless): `DialogServiceTests` (open, nested, close,
+  and exactly two change events). Added `Avalonia.Headless.XUnit` 11.3.10 and `Avalonia.Headless`
+  11.3.22 to the test project (11.3.10 alone failed against the resolved Avalonia 11.3.23; these are the
+  versions in the local NuGet cache).
+- [x] **B1 (S3, enabler)** One shared helper for clip and drag extraction: settings reads,
   base-directory lookup, `ClipFileSet` construction, writing transfer files and foreign
   entries, timestamps; returns transfer paths and top-level foreign paths. (Services#10,
   ViewModels cleanup "Three copies of the clip-building code")
   **Manual:** copy/paste between two CP2 instances, copy to file manager, drag to file manager,
   drag between instances → all unchanged.
-- [ ] **B2 (S1)** URI list flattens directory trees. (Services#3) Top-level paths only (via B1).
+  New `Services/ClipTransferFiles` (public): temp-dir naming, layout, `NeedsTempDir`, and `Extract`
+  (transfer files + foreign entries + timestamps, optional cancel/progress), used by Copy, Cut and
+  drag. `MainViewModel` copy/cut are one method (`CopySelectionToClipboardAsync`) and a shared
+  `BuildClipSetup` does the settings reads, base directory and `ClipFileSet` construction for copy,
+  cut and `BuildDragData`. `IClipboardService.SetClipAsync` now takes the already-written
+  `ClipTransferFiles.Result`. Manual not run.
+- [x] **B2 (S1)** URI list flattens directory trees. (Services#3) Top-level paths only (via B1).
   - **Manual (Linux; also Windows/macOS once B7 is done):** copy `DIR` containing `SUB/FILE1`
     and an empty `EMPTY`, paste in a file manager → `DIR/SUB/FILE1` and `DIR/EMPTY` exist.
-- [ ] **B3 (S1)** Temp subdirectory `x` collides with an entry named `X`. (Services#4) Separate
+  The file-manager URI list is built from `Result.TopLevelForeignPaths` only, so a pasted directory
+  keeps its tree and empty directories. Manual (Linux) not run.
+- [x] **B3 (S1)** Temp subdirectory `x` collides with an entry named `X`. (Services#4) Separate
   subdirectories for transfer files and foreign entries (via B1).
   - **Manual (macOS):** copy a DOS 3.3 file named `X` and paste in Finder/a file manager → file
     present. Copy a directory `X` containing `E0000`, paste into a second CP2 → correct data.
   - **Auto:** the helper's layout function never returns overlapping paths for names `x`, `X`,
     `f`, `F`.
-- [ ] **B4 (S1)** `ClearIfPendingAsync` wipes a clipboard it does not own. (Services#1) Return
+  Transfer files are in `<tmp>/xfer/eNNNN`, foreign entries in `<tmp>/files/...`: separate
+  subdirectories, so no entry name can collide. Auto: `ClipTransferFilesTests`. Manual not run.
+- [x] **B4 (S1)** `ClearIfPendingAsync` wipes a clipboard it does not own. (Services#1) Return
   early when nothing is pending; clear only when `ClipInfo.ProcessId == Environment.ProcessId`;
   reset `mXferPaths`.
   - **Manual:** copy text in another app; in CP2 open a file, then open another (or close) →
     the other app's text can still be pasted. Copy files in CP2, close the work file → paste in
     another CP2 offers nothing.
-- [ ] **B5 (S1)** Exit skips work-file close and clipboard temp cleanup. (Services#2; after
+  `ClearIfPendingAsync` returns at once if nothing is pending; otherwise it drops the cached entries,
+  `mXferPaths` and the temp dir immediately, then clears the system clipboard only if it still holds
+  a `ClipInfo` with this process id. Manual not run.
+- [x] **B5 (S1)** Exit skips work-file close and clipboard temp cleanup. (Services#2; after
   B4) Call `CloseWorkFile()` at the start of `MainViewModel.Shutdown`; also register the clip
   temp directory with `TempDirectoryTracker`.
   - **Manual:** open an archive, Ctrl+C some files, quit → no `cp2clip_*` folder remains in the
     temp directory. With a modified (unsaved) volume, quit → changes are flushed (reopen and
     check).
-- [ ] **B6 (S1, security)** File paths from clipboard text are trusted on paste. (Services#9)
+  `Shutdown` now calls `CloseWorkFile()` (flushes file systems, disposes the work tree, runs the
+  clipboard cleanup) and `ClearIfPendingAsync()`; the clipboard temp dir is also registered with
+  `TempDirectoryTracker`. The clipboard-clearing part of the cleanup is asynchronous and may not finish
+  at exit; the temp files are deleted synchronously. Manual not run.
+- [x] **B6 (S1, security)** File paths from clipboard text are trusted on paste. (Services#9)
   Accept only full paths under `Path.GetTempPath()` inside a `cp2clip_` or `cp2drag_`
   directory; reject `..` segments and symlinks out of it.
   - **Auto:** `Cp2ClipUtil.ExtractFileData` path filter with valid, outside-temp, `..`, and
     look-alike-prefix paths. **Manual:** place a crafted clip string (prefix + JSON pointing at
     `~/.ssh/known_hosts`) on the clipboard with another tool, paste into a disk image → that
     entry is skipped.
-- [ ] **B7 (S2, confirm first)** `text/uri-list` string is not read by Explorer or Finder.
+  `Cp2ClipUtil.ExtractFileData` replaces any path that fails `IsAllowedTransferPath` with null (the entry
+  is skipped): must be absolute, under the temp root, in a `cp2clip_`/`cp2drag_` directory, below it,
+  with no `..` and no symlink below the temp root. Auto: `Cp2ClipUtilTests` (valid, outside, `..`,
+  look-alike prefixes, home-directory file, symlinks, and the `ExtractFileData` filter). Manual
+  (crafted clip text) not run.
+- [~] **B7 (S2, confirm first)** `text/uri-list` string is not read by Explorer or Finder.
   (Services#5) Confirm on each OS. If confirmed, add `DataFormats.Files` with `IStorageItem`s
   for the top-level paths, keep `text/uri-list` for Linux.
   - **Manual:** copy files in CP2, paste in Explorer, Finder, and a Linux file manager → files
     appear in all three.
-- [ ] **B8 (S2)** Copy extracts every file twice on the UI thread. (Services#6; uses X1 and
+  Not done: marked "confirm first" and it needs a paste test in Explorer, Finder and a Linux file
+  manager, which I cannot run. Adding `DataFormats.Files` is left until it is confirmed that the
+  `text/uri-list` string is not read on Windows/macOS.
+- [x] **B8 (S2)** Copy extracts every file twice on the UI thread. (Services#6; uses X1 and
   B1) Run the B1 helper as a `WorkProgress` action (new `CopyProgress` in `Actions/`, modelled
   on `ExtractProgress`), so it gets progress, cancel and A1's error reporting. On cancel or
   failure, delete the partial temp directory and leave the clipboard unchanged. Also stop
@@ -912,16 +947,32 @@ C-view (Phase 2, `MainWindow.axaml.cs` drag region and `FileViewer.axaml.cs`):
     still holds what it held before, no `cp2clip_*` directory left behind. Small copies (one
     file) → dialog flashes briefly or not at all (check `WorkProgress` has a show delay; if not,
     note it as a UX follow-up rather than adding one here).
-- [ ] **B9 (S3, confirm first)** Filesystems flushed parent-first. (Services#8) In a debug
+  Copy and Cut run `CopyProgress` (new, `Actions/`) inside a `WorkProgress` dialog, so there is
+  progress, cancel and A1's error reporting. On cancel or failure the partial temp directory is
+  deleted and `SetClipAsync` is never called, so the clipboard is unchanged; the old clip's files are
+  deleted only after the new copy succeeds. The cut state is also only changed after success. Not
+  done: writing each file once. Transfer and foreign entries are different outputs (CP2 transfer
+  format vs. extract format), so they cannot share a file. **UX follow-up:** `WorkProgress` has no show
+  delay, so a one-file copy flashes the dialog. Manual not run.
+- [~] **B9 (S3, confirm first)** Filesystems flushed parent-first. (Services#8) In a debug
   build, change a file inside a disk image nested in a ProDOS volume, close the work file; if
   the `ProDOS.InvalidateFileEntries` assert fires, flush children first.
-- [ ] **B10 (S1, latent)** Cut and paste in the same directory deletes the originals when every
+  Not done: marked "confirm first" and it needs a debug-build run with a disk image nested in a ProDOS
+  volume.
+- [x] **B10 (S1, latent)** Cut and paste in the same directory deletes the originals when every
   overwrite is skipped. (ViewModels lower) Delete cut entries only for items actually pasted.
   `CutCommand` is currently unused; fix now so it is safe if enabled. **Code**, or **Manual**
   if cut is enabled in a debug build.
-- [ ] **B11 (S3)** `WorkspaceService.OpenAsync` returns `null!` and rethrows with `throw ex`;
+  `ClipPasteProgress.AnySkipped` (from a new `PersistentChoices.SkipCount`) tells the caller when an
+  overwrite was skipped; then the cut originals are kept (with a toast). They are also kept when the
+  paste went into the directory they came from. This is all-or-nothing, not per item: the library
+  does not report which entries were pasted. Code only; `CutCommand` is still unused.
+- [x] **B11 (S3)** `WorkspaceService.OpenAsync` returns `null!` and rethrows with `throw ex`;
   interface comment wrong. Cross-instance paste reads the clipboard twice. (Services "Smaller
   observations") **Code**; regression covered by G tests.
+  `WorkspaceService.OpenAsync` rethrows with `ExceptionDispatchInfo` (keeps the stack) and throws
+  `InvalidOperationException` instead of returning `null!`; the `IWorkspaceService` comment now says the
+  caller closes the current file first. Paste reads the clipboard once (`GetClipWithTextAsync`).
 
 ### Stream G: open and file-activation lifecycle (Phase 2)
 

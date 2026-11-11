@@ -557,6 +557,11 @@ public class MainViewModel : ObservableObject
     public void Shutdown()
     {
         mDebugLogViewer?.RequestClose();
+        // Close the work file the way File → Close does: flush file systems, dispose the
+        // work tree, and clean up the clipboard temp files.  (CloseWorkFile also saves the
+        // settings.)
+        CloseWorkFile();
+        _ = _clipboardService.ClearIfPendingAsync();   // no-op unless something is pending
         ArchiveTree.Dispose();
         DirectoryTree.Dispose();
         _settingsService.Save();
@@ -1115,7 +1120,7 @@ public class MainViewModel : ObservableObject
         var vm = new FileViewerViewModel(archiveOrFileSystem, selected, firstSel,
             _workspaceService.WorkPathName, _workspaceService.AppHook,
             _settingsService, mFilePickerService, _clipboardService, _viewerService,
-            prePopulateForward);
+            mDialogService, prePopulateForward);
         vm.FileNavigated += entry => {
             mViewerNavigating = true;
             try {
@@ -1939,13 +1944,32 @@ public class MainViewModel : ObservableObject
     /// Handles Edit → Copy.  Serializes selected entries to the clipboard via
     /// <see cref="IClipboardService.SetClipAsync"/>.
     /// </summary>
-    private async Task CopyToClipboard() {
-        if (!GetFileSelection(omitDir: false, omitOpenArc: false, closeOpenArc: true,
-                oneMeansAll: false, out object? archiveOrFileSystem,
-                out IFileEntry selectionDir, out List<IFileEntry>? entries, out int unused)) {
-            entries = [];
-        }
+    private Task CopyToClipboard() => CopySelectionToClipboardAsync(isCut: false);
 
+    /// <summary>
+    /// Handles Edit → Cut.  Same as Copy but marks the clipboard data as a cut and records
+    /// the source entries so they can be deleted after a successful same-process paste.
+    /// Cross-process paste (another instance) behaves as a Copy — source is not deleted.
+    /// </summary>
+    private Task CutToClipboard() => CopySelectionToClipboardAsync(isCut: true);
+
+    /// <summary>
+    /// Everything the copy, cut and drag code needs from a <see cref="ClipFileSet"/> build.
+    /// </summary>
+    /// <param name="Set">The entries to transfer and to extract for the file manager.</param>
+    /// <param name="StripPaths">The "strip paths" extract setting.</param>
+    /// <param name="ExportSpec">Export converter in use, or null for extract mode.</param>
+    private record ClipSetup(ClipFileSet Set, bool StripPaths,
+        ConvConfig.FileConvSpec? ExportSpec);
+
+    /// <summary>
+    /// Builds the <see cref="ClipFileSet"/> for <paramref name="entries"/> from the current
+    /// extract settings and directory selection.  Shared by copy, cut and drag.
+    /// </summary>
+    /// <param name="entries">Selected entries.</param>
+    /// <param name="allowExport">True to honour the Import/Export mode (copy and drag);
+    ///   false to always extract (cut, which must keep the data for re-insertion).</param>
+    private ClipSetup BuildClipSetup(List<IFileEntry> entries, bool allowExport) {
         IFileEntry baseDir = IFileEntry.NO_ENTRY;
         if (mCurrentWorkObject is IFileSystem && ShowSingleDirFileList) {
             DirectoryTreeItem? dirItem = CachedDirectoryTreeSelection;
@@ -1963,99 +1987,90 @@ public class MainViewModel : ObservableObject
         bool doMacZip = _settingsService.GetBool(AppSettings.MAC_ZIP_ENABLED, true);
         ConvConfig.FileConvSpec? exportSpec = null;
         Dictionary<string, ConvConfig.FileConvSpec>? defaultSpecs = null;
-        if (IsChecked_ImportExport) {
+        if (allowExport && IsChecked_ImportExport) {
             exportSpec = GetExportSpec();
             defaultSpecs = GetDefaultExportSpecs();
         }
 
-        ClipFileSet clipSet;
-        _viewActions.SetCursorBusy(true);
-        try {
-            clipSet = new ClipFileSet(mCurrentWorkObject!, entries, baseDir,
-                preserve, addExportExt: addExportExt, useRawData: rawMode, stripPaths: doStrip,
-                enableMacZip: doMacZip, exportSpec, defaultSpecs, _workspaceService.AppHook);
-        } finally {
-            _viewActions.SetCursorBusy(false);
-        }
-
-        // Only serialize direct-transfer (non-export) entries.
-        List<ClipFileEntry> xferEntries = clipSet.XferEntries;
-
-        // File content is extracted to temp files inside SetClipAsync so the clipboard
-        // JSON contains only metadata.  Do not base64-encode here.
-
-        ClipInfo clipInfo = new ClipInfo(xferEntries, GlobalAppVersion.AppVersion) {
-            StripPaths = doStrip
-        };
-        if (exportSpec != null) {
-            clipInfo.IsExport = true;
-        }
-
-        ClearCutState(); // New copy supersedes any pending cut.
-        await _clipboardService.SetClipAsync(clipInfo, xferEntries, clipSet.ForeignEntries);
-        _workspaceService.AppHook.LogI("Copied " + xferEntries.Count + " entries to clipboard");
-        _viewActions.ShowToast("Copied " + xferEntries.Count + " item(s)", true);
+        ClipFileSet clipSet = new ClipFileSet(mCurrentWorkObject!, entries, baseDir,
+            preserve, addExportExt: addExportExt, useRawData: rawMode, stripPaths: doStrip,
+            enableMacZip: doMacZip, exportSpec, defaultSpecs, _workspaceService.AppHook);
+        return new ClipSetup(clipSet, doStrip, exportSpec);
     }
 
-    /// <summary>
-    /// Handles Edit → Cut.  Same as Copy but marks the clipboard data as a cut and records
-    /// the source entries so they can be deleted after a successful same-process paste.
-    /// Cross-process paste (another instance) behaves as a Copy — source is not deleted.
-    /// </summary>
-    private async Task CutToClipboard() {
+    private async Task CopySelectionToClipboardAsync(bool isCut) {
         if (!GetFileSelection(omitDir: false, omitOpenArc: false, closeOpenArc: true,
                 oneMeansAll: false, out object? archiveOrFileSystem,
                 out IFileEntry selectionDir, out List<IFileEntry>? entries, out int unused)) {
             entries = [];
         }
-        if (entries == null || entries.Count == 0) return;
+        if (isCut && (entries == null || entries.Count == 0)) return;
 
-        IFileEntry baseDir = IFileEntry.NO_ENTRY;
-        if (mCurrentWorkObject is IFileSystem && ShowSingleDirFileList) {
-            DirectoryTreeItem? dirItem = CachedDirectoryTreeSelection;
-            if (dirItem != null) baseDir = dirItem.FileEntry;
-        }
-
-        ExtractFileWorker.PreserveMode preserve =
-            _settingsService.GetEnum(AppSettings.EXT_PRESERVE_MODE,
-                ExtractFileWorker.PreserveMode.None);
-        bool addExportExt = _settingsService.GetBool(AppSettings.EXT_ADD_EXPORT_EXT, true);
-        bool rawMode = _settingsService.GetBool(AppSettings.EXT_RAW_ENABLED, false);
-        bool doStrip = _settingsService.GetBool(AppSettings.EXT_STRIP_PATHS_ENABLED, false);
-        bool doMacZip = _settingsService.GetBool(AppSettings.MAC_ZIP_ENABLED, true);
-
-        // Cut always uses extract mode (not export) because we must preserve file data
-        // for reliable re-insertion after deleting the source.
-        ClipFileSet clipSet;
+        // Cut always extracts (never exports), because we must preserve file data for
+        // reliable re-insertion after deleting the source.
+        ClipSetup setup;
         _viewActions.SetCursorBusy(true);
         try {
-            clipSet = new ClipFileSet(mCurrentWorkObject!, entries, baseDir,
-                preserve, addExportExt: addExportExt, useRawData: rawMode, stripPaths: doStrip,
-                enableMacZip: doMacZip, null, null, _workspaceService.AppHook);
+            setup = BuildClipSetup(entries!, allowExport: !isCut);
+        } catch (Exception ex) {
+            AppLog.E("Copy: building clip file set failed", ex);
+            await mDialogService.ShowMessageAsync("Unable to copy: " + ex.Message, "Failed",
+                MBButton.OK, MBIcon.Error);
+            return;
         } finally {
             _viewActions.SetCursorBusy(false);
         }
 
-        List<ClipFileEntry> xferEntries = clipSet.XferEntries;
-
-        // File content is extracted to temp files inside SetClipAsync (same as CopyToClipboard).
+        // Only serialize direct-transfer (non-export) entries.
+        List<ClipFileEntry> xferEntries = setup.Set.XferEntries;
+        List<ClipFileEntry> foreignEntries = setup.Set.ForeignEntries;
 
         ClipInfo clipInfo = new ClipInfo(xferEntries, GlobalAppVersion.AppVersion) {
-            IsCut = true,
-            StripPaths = doStrip
+            IsCut = isCut,
+            StripPaths = setup.StripPaths,
         };
-
-        // Capture cut source state for post-paste deletion.
-        ClearCutState();
-        if (GetSelectedArcDir(out object? srcArcOrFS, out DiskArcNode? srcDaNode, out _)) {
-            mCutSourceObj = srcArcOrFS;
-            mCutDaNode = srcDaNode;
-            mCutEntries = new List<IFileEntry>(entries);
+        if (setup.ExportSpec != null) {
+            clipInfo.IsExport = true;
         }
 
-        await _clipboardService.SetClipAsync(clipInfo, xferEntries, clipSet.ForeignEntries);
-        _workspaceService.AppHook.LogI("Cut " + xferEntries.Count + " entries to clipboard");
-        _viewActions.ShowToast("Cut " + entries.Count + " item(s)", true);
+        // File content is written to temp files, so the clipboard JSON holds only metadata.
+        // That can take a while for a big selection, so it runs in a cancellable progress
+        // dialog.  If it is cancelled or fails, the clipboard is left as it was.
+        ClipTransferFiles.Result files;
+        if (ClipTransferFiles.NeedsTempDir(xferEntries, foreignEntries)) {
+            var copyProg = new CopyProgress(
+                ClipTransferFiles.NewTempDirPath(ClipTransferFiles.CLIP_DIR_PREFIX),
+                xferEntries, foreignEntries);
+            var workVm = new WorkProgressViewModel(copyProg, false, mDialogService);
+            if (await mDialogService.ShowDialogAsync(workVm) != true) {
+                _viewActions.ShowToast(workVm.WorkerError != null ? "Failed" : "Cancelled",
+                    false);
+                return;
+            }
+            files = copyProg.Result!;
+        } else {
+            files = ClipTransferFiles.Empty(xferEntries.Count);
+        }
+
+        // A new copy or cut supersedes any pending cut.
+        ClearCutState();
+        if (isCut && GetSelectedArcDir(out object? srcArcOrFS, out DiskArcNode? srcDaNode,
+                out _)) {
+            // Capture cut source state for post-paste deletion.
+            mCutSourceObj = srcArcOrFS;
+            mCutDaNode = srcDaNode;
+            mCutEntries = new List<IFileEntry>(entries!);
+        }
+
+        await _clipboardService.SetClipAsync(clipInfo, xferEntries, files);
+        if (isCut) {
+            _workspaceService.AppHook.LogI("Cut " + xferEntries.Count + " entries to clipboard");
+            _viewActions.ShowToast("Cut " + entries!.Count + " item(s)", true);
+        } else {
+            _workspaceService.AppHook.LogI("Copied " + xferEntries.Count +
+                " entries to clipboard");
+            _viewActions.ShowToast("Copied " + xferEntries.Count + " item(s)", true);
+        }
     }
 
     /// <summary>
@@ -2079,107 +2094,32 @@ public class MainViewModel : ObservableObject
         }
         if (entries == null || entries.Count == 0) return null;
 
-        IFileEntry baseDir = IFileEntry.NO_ENTRY;
-        if (mCurrentWorkObject is IFileSystem && ShowSingleDirFileList) {
-            DirectoryTreeItem? dirItem = CachedDirectoryTreeSelection;
-            if (dirItem != null) baseDir = dirItem.FileEntry;
-        }
-
-        ExtractFileWorker.PreserveMode preserve =
-            _settingsService.GetEnum(AppSettings.EXT_PRESERVE_MODE,
-                ExtractFileWorker.PreserveMode.None);
-        bool addExportExt = _settingsService.GetBool(AppSettings.EXT_ADD_EXPORT_EXT, true);
-        bool rawMode = _settingsService.GetBool(AppSettings.EXT_RAW_ENABLED, false);
-        bool doStrip = _settingsService.GetBool(AppSettings.EXT_STRIP_PATHS_ENABLED, false);
-        bool doMacZip = _settingsService.GetBool(AppSettings.MAC_ZIP_ENABLED, true);
-        ConvConfig.FileConvSpec? exportSpec = IsChecked_ImportExport ? GetExportSpec() : null;
-        Dictionary<string, ConvConfig.FileConvSpec>? defaultSpecs =
-            IsChecked_ImportExport ? GetDefaultExportSpecs() : null;
-
-        ClipFileSet clipSet;
+        ClipSetup setup;
         try {
-            clipSet = new ClipFileSet(mCurrentWorkObject!, entries, baseDir,
-                preserve, addExportExt: addExportExt, useRawData: rawMode, stripPaths: doStrip,
-                enableMacZip: doMacZip, exportSpec, defaultSpecs, _workspaceService.AppHook);
+            setup = BuildClipSetup(entries, allowExport: true);
         } catch (Exception ex) {
             AppLog.E("Drag/copy: building clip file set failed", ex);
             return null;
         }
+        List<ClipFileEntry> xferEntries = setup.Set.XferEntries;
 
-        List<ClipFileEntry> xferEntries = clipSet.XferEntries;
-
-        // Always create a temp dir: xfer entries go into "x/" for the CP2 JSON,
-        // foreign entries go into the root for the OS file manager.
-        string tempDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(),
-            "cp2drag_" + Environment.ProcessId + "_" +
-            DateTime.UtcNow.Ticks.ToString("x"));
-        System.IO.Directory.CreateDirectory(tempDir);
-
-        // Extract xfer entries to temp files.  Paths are passed to the destination via
-        // a "Cp2FileData" array injected into the JSON by Cp2ClipUtil — AppCommon's
-        // ClipFileEntry stays metadata-only.
-        string xferDir = System.IO.Path.Combine(tempDir, "x");
-        System.IO.Directory.CreateDirectory(xferDir);
-        var xferPaths = new string?[xferEntries.Count];
-        for (int i = 0; i < xferEntries.Count; i++) {
-            ClipFileEntry entry = xferEntries[i];
-            if (entry.mStreamGen == null || entry.Attribs.IsDirectory) continue;
-            string tempPath = System.IO.Path.Combine(xferDir, "e" + i.ToString("d4"));
-            try {
-                using var outStream = new System.IO.FileStream(tempPath, System.IO.FileMode.Create);
-                entry.mStreamGen.OutputToStream(outStream);
-                xferPaths[i] = tempPath;
-            } catch (Exception ex) {
-                AppLog.E("Drag/copy: transfer extraction failed", ex);
-            }
-        }
+        // Write the transfer files and the files for the OS file manager (see
+        // ClipTransferFiles for the layout).  This is synchronous: a drag can't show a
+        // progress dialog, and the pointer button is held for the whole drag.
+        string tempDir = ClipTransferFiles.NewTempDirPath(ClipTransferFiles.DRAG_DIR_PREFIX);
+        ClipTransferFiles.Result files = ClipTransferFiles.Extract(tempDir, xferEntries,
+            setup.Set.ForeignEntries)!;
 
         ClipInfo clipInfo = new ClipInfo(xferEntries, GlobalAppVersion.AppVersion) {
-            StripPaths = doStrip,   // carry source's EXT intent so PasteOrDrop can OR with ADD
+            StripPaths = setup.StripPaths,  // carry source's EXT intent so PasteOrDrop can OR with ADD
         };
-        if (exportSpec != null) {
+        if (setup.ExportSpec != null) {
             clipInfo.IsExport = true;
         }
-        string clipJsonText = Services.Cp2ClipUtil.InjectFileData(clipInfo.ToClipString(), xferPaths);
+        string clipJsonText = Services.Cp2ClipUtil.InjectFileData(clipInfo.ToClipString(),
+            files.XferPaths);
 
-        // Extract foreign entries to the temp dir root for OS file manager consumption.
-        // Collect top-level paths explicitly to exclude the "x" xfer subdir.
-        var extractedPaths = new List<string>();
-        var seenTopLevel = new System.Collections.Generic.HashSet<string>(
-            StringComparer.OrdinalIgnoreCase);
-        // The OS file manager copies (or moves) these files as they are, so they need the
-        // original dates, matching "Extract files" and the WPF virtual-file descriptors.
-        var timestamps = new Services.ClipFileTimestamps();
-        foreach (ClipFileEntry entry in clipSet.ForeignEntries) {
-            string extractPath = System.IO.Path.Combine(tempDir, entry.ExtractPath);
-            string? dirName = System.IO.Path.GetDirectoryName(extractPath);
-            if (dirName != null && !System.IO.Directory.Exists(dirName))
-                System.IO.Directory.CreateDirectory(dirName);
-            if (entry.Attribs.IsDirectory) {
-                System.IO.Directory.CreateDirectory(extractPath);
-                timestamps.Add(extractPath, entry.Attribs);
-            } else {
-                if (entry.mStreamGen == null) continue;
-                try {
-                    using (var outStream = new System.IO.FileStream(
-                            extractPath, System.IO.FileMode.Create)) {
-                        entry.mStreamGen.OutputToStream(outStream);
-                    }
-                    timestamps.Add(extractPath, entry.Attribs);
-                } catch (Exception ex) {
-                    AppLog.E("Drag/copy: foreign-format extraction failed", ex);
-                }
-            }
-            // Track top-level item (first path component relative to tempDir).
-            string rel = entry.ExtractPath;
-            int sep = rel.IndexOfAny(new[] { System.IO.Path.DirectorySeparatorChar, '/' });
-            string topName = sep >= 0 ? rel.Substring(0, sep) : rel;
-            seenTopLevel.Add(System.IO.Path.Combine(tempDir, topName));
-        }
-        timestamps.Apply();
-        extractedPaths.AddRange(seenTopLevel);
-
-        return new DragTransferData(clipJsonText, extractedPaths, tempDir);
+        return new DragTransferData(clipJsonText, files.TopLevelForeignPaths, tempDir);
     }
 
     /// <summary>
@@ -2235,11 +2175,9 @@ public class MainViewModel : ObservableObject
             rawClipText = clipText;
         }
         if (clipInfo == null) {
-            clipInfo = await _clipboardService.GetClipAsync();
-            // Cross-instance clipboard paste: read raw text for Cp2FileData extraction.
-            // Same-process paste uses live mStreamGen so this call is skipped there.
-            if (clipInfo != null && clipInfo.ProcessId != System.Environment.ProcessId)
-                rawClipText = await _clipboardService.GetRawClipTextAsync();
+            // One read of the clipboard gives both the ClipInfo and the raw text; the raw
+            // text carries the Cp2FileData array that a cross-instance paste needs.
+            (clipInfo, rawClipText) = await _clipboardService.GetClipWithTextAsync();
         }
 
         if (clipInfo == null) {
@@ -2346,7 +2284,20 @@ public class MainViewModel : ObservableObject
             // For same-process Cut+Paste, delete the source files now that paste succeeded.
             if (clipInfo.IsCut && clipInfo.ProcessId == Environment.ProcessId &&
                     mCutEntries != null) {
-                await DeleteCutEntries();
+                if (prog.AnySkipped) {
+                    // Some files were not pasted (existing files were kept), so deleting the
+                    // sources would lose them.
+                    ClearCutState();
+                    _viewActions.ShowToast(
+                        "Some files were skipped, so the originals were not removed", false);
+                } else if (ReferenceEquals(archiveOrFileSystem, mCutSourceObj) &&
+                        mCutEntries.TrueForAll(e => e.ContainingDir.Equals(targetDir))) {
+                    // Pasted into the directory the files came from: the "pasted" files
+                    // overwrote the originals, so there is nothing to remove.
+                    ClearCutState();
+                } else {
+                    await DeleteCutEntries();
+                }
             }
         } else {
             _viewActions.ShowToast(workVm.WorkerError != null ? "Failed" : "Cancelled", false);

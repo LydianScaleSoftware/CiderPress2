@@ -24,6 +24,11 @@ namespace cp2_avalonia.Tests;
 /// </summary>
 internal class FakeDialogService : IDialogService
 {
+    public bool IsModalActive { get; set; }
+#pragma warning disable CS0067     // never raised by the fake
+    public event Action? ModalStateChanged;
+#pragma warning restore CS0067
+
     /// <summary>If set, every dialog or message box call throws this.</summary>
     public Exception? ThrowOnShow { get; set; }
 

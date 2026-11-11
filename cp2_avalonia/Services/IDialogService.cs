@@ -30,6 +30,19 @@ public interface IDialogService
     /// <summary>Registers a ViewModel→View pair for ShowDialogAsync/ShowModeless.</summary>
     void Register<TViewModel, TView>() where TView : Window, new();
 
+    /// <summary>
+    /// True while any modal dialog shown through <see cref="ShowDialogAsync{TViewModel}"/>
+    /// or <see cref="ShowLoadingAsync"/> is open, nested dialogs included.  Work on the open
+    /// archive happens off the UI thread only while a modal progress dialog is up (the X1
+    /// rule), so anything that could touch the archive from outside a dialog, such as
+    /// modeless viewer windows or OS file activation, checks this first.  Message boxes shown
+    /// with <c>PlatformUtil.ShowMessageAsync(owner, ...)</c> do not count.
+    /// </summary>
+    bool IsModalActive { get; }
+
+    /// <summary>Raised when <see cref="IsModalActive"/> changes.</summary>
+    event Action? ModalStateChanged;
+
     /// <summary>Shows a modal dialog. Returns true if accepted, false/null otherwise.</summary>
     Task<bool?> ShowDialogAsync<TViewModel>(TViewModel viewModel);
 

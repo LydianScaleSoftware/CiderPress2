@@ -22,6 +22,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.ExceptionServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
@@ -85,9 +86,10 @@ public class WorkspaceService : IWorkspaceService {
 
         if (!success) {
             if (prog.Results.mException != null) {
-                throw prog.Results.mException;
+                // Rethrow without losing the original stack trace.
+                ExceptionDispatchInfo.Capture(prog.Results.mException).Throw();
             }
-            return null!;
+            throw new InvalidOperationException("Unable to open '" + path + "'");
         }
 
         Debug.Assert(prog.Results.mWorkTree != null);

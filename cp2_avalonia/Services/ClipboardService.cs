@@ -55,44 +55,16 @@ public class ClipboardService : IClipboardService {
     }
 
     public async Task SetClipAsync(ClipInfo clipInfo, List<ClipFileEntry> xferEntries,
-            List<ClipFileEntry> foreignEntries) {
+            ClipTransferFiles.Result files) {
+        // The new clip's files are already written.  Drop the previous clip's temp files.
+        CleanupClipTemp();
         mPendingClipInfo = clipInfo;
         mCachedClipEntries = xferEntries;
-        mXferPaths = null;
-        CleanupClipTemp();
-
-        // Create a temp dir for both the xfer entries (metadata-only JSON; file content
-        // lives in temp files so the clipboard string stays small) and the foreign entries
-        // (offered to the OS file manager as text/uri-list).
-        bool needsTemp = foreignEntries.Count > 0 ||
-            xferEntries.Any(e => e.mStreamGen != null && !e.Attribs.IsDirectory);
-        if (needsTemp) {
-            string tempDir = Path.Combine(Path.GetTempPath(),
-                "cp2clip_" + Environment.ProcessId + "_" +
-                DateTime.UtcNow.Ticks.ToString("x"));
-            Directory.CreateDirectory(tempDir);
-            mClipTempDir = tempDir;
-
-            // Extract each xfer entry to a numbered temp file.  Paths are passed to the
-            // destination via a "Cp2FileData" array injected into the clipboard JSON by
-            // Cp2ClipUtil — keeping AppCommon's ClipFileEntry metadata-only.
-            // The "x" subdir keeps xfer files separate from any foreign-entry files.
-            string xferDir = Path.Combine(tempDir, "x");
-            Directory.CreateDirectory(xferDir);
-            mXferPaths = new string?[xferEntries.Count];
-            for (int i = 0; i < xferEntries.Count; i++) {
-                ClipFileEntry entry = xferEntries[i];
-                if (entry.mStreamGen == null || entry.Attribs.IsDirectory) continue;
-                string tempPath = Path.Combine(xferDir, "e" + i.ToString("d4"));
-                try {
-                    using var outStream = new FileStream(tempPath, FileMode.Create);
-                    entry.mStreamGen.OutputToStream(outStream);
-                    mXferPaths[i] = tempPath;
-                } catch (Exception ex) {
-                    AppLog.E("Clipboard: file extraction failed", ex);
-                }
-            }
-        }
+        mClipTempDir = files.TempDir;
+        // Also register the directory, so it is deleted at exit even if nothing else
+        // gets the chance to.
+        TempDirectoryTracker.Track(mClipTempDir);
+        mXferPaths = files.TempDir != null ? files.XferPaths : null;
 
         var dataObj = new DataObject();
         // Inject Cp2FileData into the JSON so cross-instance paste can locate temp files.
@@ -101,36 +73,15 @@ public class ClipboardService : IClipboardService {
             clipJson = Cp2ClipUtil.InjectFileData(clipJson, mXferPaths);
         dataObj.Set(DataFormats.Text, clipJson);
 
-        if (foreignEntries.Count > 0) {
+        if (files.TopLevelForeignPaths.Count > 0) {
+            // Offer only the top-level items, so that pasting a directory in a file manager
+            // recreates the whole tree rather than a flat list of its files.
             var uriList = new StringBuilder();
-            // Pasting into a file manager copies these files as-is, so give them the
-            // original dates (see ClipFileTimestamps).
-            var timestamps = new ClipFileTimestamps();
-            foreach (ClipFileEntry entry in foreignEntries) {
-                string extractPath = Path.Combine(mClipTempDir!, entry.ExtractPath);
-                string? dirName = Path.GetDirectoryName(extractPath);
-                if (dirName != null && !Directory.Exists(dirName))
-                    Directory.CreateDirectory(dirName);
-                if (entry.Attribs.IsDirectory) {
-                    Directory.CreateDirectory(extractPath);
-                    timestamps.Add(extractPath, entry.Attribs);
-                    continue;
-                }
-                if (entry.mStreamGen == null) continue;
-                try {
-                    using (var outStream = new FileStream(extractPath, FileMode.Create)) {
-                        entry.mStreamGen.OutputToStream(outStream);
-                    }
-                    timestamps.Add(extractPath, entry.Attribs);
-                    uriList.Append(new Uri(extractPath).AbsoluteUri);
-                    uriList.Append("\r\n");
-                } catch (Exception ex) {
-                    AppLog.E("Clipboard: failed to extract entry", ex);
-                }
+            foreach (string path in files.TopLevelForeignPaths) {
+                uriList.Append(new Uri(path).AbsoluteUri);
+                uriList.Append("\r\n");
             }
-            timestamps.Apply();
-            if (uriList.Length > 0)
-                dataObj.Set("text/uri-list", uriList.ToString());
+            dataObj.Set("text/uri-list", uriList.ToString());
         }
 
         var clipboard = GetClipboard();
@@ -139,6 +90,11 @@ public class ClipboardService : IClipboardService {
     }
 
     public async Task<ClipInfo?> GetClipAsync() {
+        (ClipInfo? info, _) = await GetClipWithTextAsync();
+        return info;
+    }
+
+    public async Task<(ClipInfo? Info, string? RawText)> GetClipWithTextAsync() {
         string? text = await GetRawClipTextAsync();
         ClipInfo? info = ClipInfo.FromClipString(text);
         if (info != null && mCachedClipEntries != null &&
@@ -147,7 +103,7 @@ public class ClipboardService : IClipboardService {
             // Same-process paste: substitute live cached entries (have stream generators).
             info.ClipEntries = mCachedClipEntries;
         }
-        return info;
+        return (info, text);
     }
 
     public async Task<string?> GetRawClipTextAsync() {
@@ -223,11 +179,29 @@ public class ClipboardService : IClipboardService {
     }
 
     public async Task ClearIfPendingAsync() {
+        if (mPendingClipInfo == null) {
+            return;     // we didn't put anything on the clipboard
+        }
+        // Release our data and files now.  Do this before awaiting anything, so it is done
+        // even if the process is exiting.
         mPendingClipInfo = null;
         mCachedClipEntries = null;
+        mXferPaths = null;
         CleanupClipTemp();
+
+        // Clear the system clipboard only if it still holds our data.  If the user has
+        // since copied something in another application, leave it alone.
         var clipboard = GetClipboard();
-        if (clipboard != null) await clipboard.ClearAsync();
+        if (clipboard == null) return;
+        try {
+            string? text = await GetRawClipTextAsync();
+            ClipInfo? onClipboard = ClipInfo.FromClipString(text);
+            if (onClipboard != null && onClipboard.ProcessId == Environment.ProcessId) {
+                await clipboard.ClearAsync();
+            }
+        } catch (Exception ex) {
+            AppLog.W("Clipboard: failed to clear", ex);
+        }
     }
 
     public async Task SetTextAsync(string text) {

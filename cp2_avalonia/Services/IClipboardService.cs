@@ -27,11 +27,12 @@ public interface IClipboardService {
     bool HasPendingContent { get; }
 
     /// <summary>
-    /// Sets the clipboard. Caches xferEntries for same-process paste, extracts
-    /// foreignEntries to a temp directory, and sets text/uri-list for cross-app paste.
+    /// Sets the clipboard. Caches xferEntries for same-process paste, takes ownership of the
+    /// temp files that were already written (see <see cref="ClipTransferFiles"/>), and sets
+    /// text/uri-list for cross-app paste.  The previous clip's temp files are deleted.
     /// </summary>
     Task SetClipAsync(ClipInfo clipInfo, List<ClipFileEntry> xferEntries,
-        List<ClipFileEntry> foreignEntries);
+        ClipTransferFiles.Result files);
 
     /// <summary>
     /// Gets the ClipInfo from the system clipboard. If the data was set by this process,
@@ -39,6 +40,12 @@ public interface IClipboardService {
     /// Returns null if the clipboard does not contain CP2 data.
     /// </summary>
     Task<ClipInfo?> GetClipAsync();
+
+    /// <summary>
+    /// Like <see cref="GetClipAsync"/>, but also returns the raw clipboard text that the
+    /// ClipInfo was parsed from, so a caller that needs both reads the clipboard once.
+    /// </summary>
+    Task<(ClipInfo? Info, string? RawText)> GetClipWithTextAsync();
 
     /// <summary>Gets the raw text from the system clipboard. Returns null if unavailable.</summary>
     Task<string?> GetRawClipTextAsync();
@@ -51,8 +58,10 @@ public interface IClipboardService {
     Task<string?> GetUriListAsync();
 
     /// <summary>
-    /// Clears the cached pending data, the system clipboard, and the temp directory
-    /// used for cross-app paste.
+    /// Releases the data this process put on the clipboard: forgets the cached entries and
+    /// deletes the temp files immediately, then clears the system clipboard only if it still
+    /// holds this process's data.  Does nothing if this process has not copied anything, so
+    /// another application's clipboard contents are never touched.
     /// </summary>
     Task ClearIfPendingAsync();
 
