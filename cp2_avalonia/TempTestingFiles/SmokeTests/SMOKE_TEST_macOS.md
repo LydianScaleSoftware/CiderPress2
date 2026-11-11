@@ -4,7 +4,9 @@ Manual pass for the fixes in `REVIEW_FINDINGS_Consolidated.md` (streams A–L an
 fixes AH1–AH4), plus a short end-to-end check. The ID on each step points at the item in that
 plan; record failures there as new unchecked items.
 
-Run on Apple silicon; C9 also needs an Intel Mac or Rosetta. Items marked *passed* were run on macOS already; rerun them only as a regression check.
+Test machine: Intel Mac (x86_64) on macOS 15 Sequoia, the only Mac available; the macOS
+target is Intel. Every macOS result, including the ones marked *passed*, is from that machine.
+Apple silicon (`osx-arm64`) is not tested. Rerun items marked *passed* only as a regression check.
 
 ## Setup
 
@@ -197,7 +199,7 @@ Mark each step `[x]` when it passes, or leave it and add a note when it fails.
   → Finder reports an error (CP2 does not report success).
 - [ ] **C8** Drag several large files to Finder.
   → The UI stays responsive.
-- [ ] **C9** On an Intel Mac or under Rosetta (`arch -x86_64`), drag a file to Finder.
+- [ ] **C9** On the Intel Mac (native x86_64, so no Rosetta needed), drag a file to Finder.
   → Works.
 
 ## 9. File viewer

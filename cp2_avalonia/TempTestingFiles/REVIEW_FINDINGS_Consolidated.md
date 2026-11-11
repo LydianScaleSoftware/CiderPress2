@@ -750,7 +750,8 @@ dialog, debug menu windows. No behaviour change is expected.
 ### Stream C: native drag and drop (C-native in Phase 1, C-view in Phase 2)
 
 All Linux items need testing on both a plain Xorg session with a reparenting window manager and
-KDE Plasma (XWayland). macOS items need both Apple Silicon and, for C9, an Intel Mac or Rosetta.
+KDE Plasma (XWayland). macOS items are tested on the one Mac available: Intel (x86_64), macOS 15
+Sequoia, which is the macOS target and covers C9 natively. Apple Silicon is not tested.
 
 C-native (`Platform/` only):
 
@@ -1491,7 +1492,8 @@ Run the per-item manual steps above, then this end-to-end pass:
 8. Keyboard: find box editing keys, tree Enter (F1).
 9. Dark theme: Information panel (L1).
 10. Debug menu: log viewer save/copy, DropTarget, animated GIF (K1–K4, I7).
-11. macOS only: `-r` launch, Finder activation during work (G1, G2); Intel/Rosetta drag (C9).
+11. macOS only (Intel Mac, Sequoia): `-r` launch, Finder activation during work (G1, G2); drag to
+    Finder (C9).
 12. Run the in-app Test Manager (DiskArc and FileConv tests) to confirm no library regression.
 
 Record results per platform in the item notes. Anything that fails becomes a new unchecked item
