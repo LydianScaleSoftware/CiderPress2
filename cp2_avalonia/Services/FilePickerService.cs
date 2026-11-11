@@ -25,8 +25,21 @@ namespace cp2_avalonia.Services;
 
 public class FilePickerService(IDialogHost host) : IFilePickerService
 {
+    // Number of pickers currently showing (they cannot nest, but be safe).
+    private int mActiveCount;
+
+    public bool IsPickerActive => mActiveCount > 0;
+
     private IStorageProvider GetProvider() =>
         TopLevel.GetTopLevel(host.GetOwnerWindow())!.StorageProvider;
+
+    /// <summary>Runs a picker call, keeping <see cref="IsPickerActive"/> set while it is up.</summary>
+    private async Task<T> Track<T>(Func<Task<T>> show)
+    {
+        mActiveCount++;
+        try { return await show(); }
+        finally { mActiveCount--; }
+    }
 
     private async Task<IStorageFolder?> ResolveStartDir(string? initialDir)
     {
@@ -42,13 +55,14 @@ public class FilePickerService(IDialogHost host) : IFilePickerService
             IReadOnlyList<FilePickerFileType>? fileTypes = null,
             string? initialDir = null)
     {
-        var results = await GetProvider().OpenFilePickerAsync(new FilePickerOpenOptions
-        {
-            Title = title,
-            AllowMultiple = false,
-            FileTypeFilter = fileTypes,
-            SuggestedStartLocation = await ResolveStartDir(initialDir)
-        });
+        var results = await Track(async () => await GetProvider().OpenFilePickerAsync(
+            new FilePickerOpenOptions
+            {
+                Title = title,
+                AllowMultiple = false,
+                FileTypeFilter = fileTypes,
+                SuggestedStartLocation = await ResolveStartDir(initialDir)
+            }));
         return results.Count > 0 ? results[0].TryGetLocalPath() : null;
     }
 
@@ -56,13 +70,14 @@ public class FilePickerService(IDialogHost host) : IFilePickerService
             IReadOnlyList<FilePickerFileType>? fileTypes = null,
             string? initialDir = null)
     {
-        var results = await GetProvider().OpenFilePickerAsync(new FilePickerOpenOptions
-        {
-            Title = title,
-            AllowMultiple = true,
-            FileTypeFilter = fileTypes,
-            SuggestedStartLocation = await ResolveStartDir(initialDir)
-        });
+        var results = await Track(async () => await GetProvider().OpenFilePickerAsync(
+            new FilePickerOpenOptions
+            {
+                Title = title,
+                AllowMultiple = true,
+                FileTypeFilter = fileTypes,
+                SuggestedStartLocation = await ResolveStartDir(initialDir)
+            }));
         var paths = new List<string>(results.Count);
         foreach (var r in results) {
             string? path = r.TryGetLocalPath();
@@ -76,24 +91,26 @@ public class FilePickerService(IDialogHost host) : IFilePickerService
             IReadOnlyList<FilePickerFileType>? fileTypes = null,
             string? initialDir = null)
     {
-        var result = await GetProvider().SaveFilePickerAsync(new FilePickerSaveOptions
-        {
-            Title = title,
-            SuggestedFileName = suggestedName,
-            FileTypeChoices = fileTypes,
-            SuggestedStartLocation = await ResolveStartDir(initialDir)
-        });
+        var result = await Track(async () => await GetProvider().SaveFilePickerAsync(
+            new FilePickerSaveOptions
+            {
+                Title = title,
+                SuggestedFileName = suggestedName,
+                FileTypeChoices = fileTypes,
+                SuggestedStartLocation = await ResolveStartDir(initialDir)
+            }));
         return result?.TryGetLocalPath();
     }
 
     public async Task<string?> OpenFolderAsync(string title, string? initialDir = null)
     {
-        var results = await GetProvider().OpenFolderPickerAsync(new FolderPickerOpenOptions
-        {
-            Title = title,
-            AllowMultiple = false,
-            SuggestedStartLocation = await ResolveStartDir(initialDir)
-        });
+        var results = await Track(async () => await GetProvider().OpenFolderPickerAsync(
+            new FolderPickerOpenOptions
+            {
+                Title = title,
+                AllowMultiple = false,
+                SuggestedStartLocation = await ResolveStartDir(initialDir)
+            }));
         return results.Count > 0 ? results[0].TryGetLocalPath() : null;
     }
 }

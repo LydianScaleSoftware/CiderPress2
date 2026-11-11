@@ -976,7 +976,7 @@ C-view (Phase 2, `MainWindow.axaml.cs` drag region and `FileViewer.axaml.cs`):
 
 ### Stream G: open and file-activation lifecycle (Phase 2)
 
-- [ ] **G1 (S2)** Open guard is timing-based and can lose `--read-only`; `DropOpenWorkFile` and
+- [x] **G1 (S2)** Open guard is timing-based and can lose `--read-only`; `DropOpenWorkFile` and
   `OpenRecentFile` close the current file before the guard can refuse. (ViewModels#3)
   Treat a request for the file already open or loading as a no-op that keeps the stricter
   read-only flag; ignore an activation whose path matches the startup path; move the
@@ -984,7 +984,21 @@ C-view (Phase 2, `MainWindow.axaml.cs` drag region and `FileViewer.axaml.cs`):
   - **Manual (macOS):** `CiderPress2 -r disk.po` repeated 5 times → always read-only, opened
     once (check the debug log for a single open). Open Recent while a load is in progress →
     current file not closed.
-- [ ] **G2 (S1)** macOS file activation can close the work file under a modal dialog or during
+  Done in `MainViewModel.OpenWorkFileAsync` (new `fromOs` parameter) and the new pure helper
+  `ViewModels/OpenRequestPolicy.cs` (`IsSamePath`, `IsSatisfiedByOpenFile`). No startup-path
+  special case; the duplicate is recognised by path instead. (1) A request for the file that is
+  loading is dropped (logged); if it asks for read-only and the load is read-write, a flag makes
+  the open reopen it read-only when the load finishes. (2) OS-delivered requests (command line
+  and macOS activation, both now `fromOs: true` in `MainWindow.OpenFileDeferred`) are also
+  dropped when that file is already open, unless they ask for read-only and it is writable (then
+  it is reopened read-only). User commands (Open, Recent, drop) still reload an open file as
+  before. (3) `DropOpenWorkFile` and `OpenRecentFile` no longer call `CloseWorkFile()`: the close
+  is inside the guarded open. The picker now runs inside the guard too, and `File.Exists` is
+  checked before the close, so a missing file (stale Recent entry) leaves the current file open.
+  Checked: build 0 warnings, 8 new `OpenRequestPolicyTests` (path normalising, case rule,
+  read-only/read-write combinations); 76 tests pass. **Manual steps NOT run** (macOS launch
+  with `-r`, Open Recent during a load).
+- [x] **G2 (S1)** macOS file activation can close the work file under a modal dialog or during
   a worker. (Views#9; uses X1 / B0) While `IsModalActive` is set, refuse the activation with a
   message (or queue it and run it once the flag clears; pick one and note which). Every modal
   case counts, not only workers: Edit Attributes, Edit Sector and Settings hold references into
@@ -992,6 +1006,25 @@ C-view (Phase 2, `MainWindow.axaml.cs` drag region and `FileViewer.axaml.cs`):
   - **Manual (macOS):** start a long Add or Extract, double-click another image in Finder →
     message, current operation completes normally. With Edit Attributes open, same → message,
     dialog still works.
+  Done: **refuse, not queue** (the modal count drops to zero between the dialogs of one
+  command, so a queued open could fire in the middle of that command). `OpenWorkFileAsync` with
+  `fromOs` checks `IDialogService.IsModalActive` and, new, `IFilePickerService.IsPickerActive`
+  (native pickers are not counted as modal; Add Files holds tree references while its picker is
+  up), and tells the user with a message box. **Changed after the first manual run:** the
+  first version showed a toast; it is drawn on the main window, under the dialog, so the user
+  saw it only after closing the dialog. Now `IViewActions.ShowNotice` (MainWindow) walks
+  `OwnedWindows` to the topmost window and shows `PlatformUtil.ShowMessageAsync(top, ...)`
+  there. That path bypasses `DialogService`, so it cannot corrupt `mCurrentOwner` (the reason
+  a `DialogService` message box was rejected: a second modal on top of the progress dialog can
+  close out of order). `OpenFileFromActivation` now raises the topmost window
+  (`GetTopmostWindow`) instead of the main window: activating the main window put it above the
+  open dialog, which hid the dialog until the box was dismissed (seen in the second manual
+  run, macOS). One notice at a time. The box closes if its owner dialog closes (a
+  progress dialog finishing). A different file arriving while a load is in flight gets the same
+  notice; the duplicate of the file being loaded is
+  silent. `App.axaml.cs` needed no change. Residual: an activation arriving in the instant
+  between two dialogs of one command is not caught. Checked: build 0 warnings; no automated
+  test of the refusal (needs a full `MainViewModel`). **Manual steps NOT run.**
 
 ### Stream D: file list sort, selection and grid input (Phase 2)
 

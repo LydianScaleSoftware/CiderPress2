@@ -676,45 +676,137 @@ public class MainViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Core logic for opening a work file. Runs OpenProgress on a background
-    /// thread via WorkspaceService; shows a busy cursor during load.
+    /// Opens a work file.  Only one open may run at a time, and a request that duplicates the
+    /// one in flight is dropped.
     /// </summary>
-    public async Task OpenWorkFileAsync(string? path = null, bool readOnly = false)
+    /// <remarks>
+    /// <para>The load runs on a background thread, so without the guard a second request
+    /// arriving mid-load would find nothing open yet, start a second load, and the WorkTree
+    /// from the first would be overwritten without being disposed.</para>
+    /// <para>The OS can deliver one request twice: on macOS a file named on the command line
+    /// arrives from <c>Program.StartupOptions</c> (carrying <c>-r</c>) and again as an "open
+    /// document" activation (never read-only), in either order.  Requests with
+    /// <paramref name="fromOs"/> set are therefore also dropped when the file is already open,
+    /// and when a read-only request arrives for a file that is loading or open read-write,
+    /// the result is a read-only file.</para>
+    /// </remarks>
+    /// <param name="path">File to open, or null to ask with the file picker.</param>
+    /// <param name="readOnly">True to open read-only.</param>
+    /// <param name="fromOs">True if the request came from the OS (command line or file
+    ///   activation) rather than from a user command.  Such a request is refused while a
+    ///   dialog is open (X1 rule): it would close the work tree under the dialog.</param>
+    public async Task OpenWorkFileAsync(string? path = null, bool readOnly = false,
+            bool fromOs = false)
     {
-        // Only one open may run at a time.  The load runs on a background thread, so
-        // without this a second request arriving mid-load would find nothing open yet,
-        // start a second load, and the WorkTree from the first would be overwritten
-        // without being disposed.  This happens on macOS when a file is passed on the
-        // command line: AppKit also delivers it as an "open document" activation event.
         if (mOpenInProgress)
         {
-            AppLog.W("Open: ignoring request for '" + path + "' while another open is in progress");
+            if (path != null && OpenRequestPolicy.IsSamePath(path, mOpeningPath))
+            {
+                if (readOnly && !mOpeningReadOnly)
+                {
+                    // Opening read-write right now; make it read-only when the load is done.
+                    AppLog.I("Open: '" + path + "' is loading; will reopen it read-only");
+                    mReadOnlyUpgrade = true;
+                }
+                else
+                {
+                    AppLog.I("Open: ignoring duplicate request for '" + path + "'");
+                }
+            }
+            else
+            {
+                AppLog.W("Open: ignoring request for '" + path +
+                    "' while another open is in progress");
+                if (fromOs)
+                {
+                    RefuseOsOpen(path);
+                }
+            }
             return;
         }
+        if (fromOs && path != null)
+        {
+            if (mDialogService.IsModalActive || mFilePickerService.IsPickerActive)
+            {
+                // G2: refuse rather than queue.  The modal count also drops to zero briefly
+                // between the dialogs of one command, so a queued open could fire in the
+                // middle of that command.
+                AppLog.W("Open: refusing OS request for '" + path + "' while a dialog is open");
+                RefuseOsOpen(path);
+                return;
+            }
+            if (OpenRequestPolicy.IsSatisfiedByOpenFile(
+                    _workspaceService.IsFileOpen ? _workspaceService.WorkPathName : null,
+                    _workspaceService.WorkTree?.CanWrite ?? false, path, readOnly))
+            {
+                AppLog.I("Open: '" + path + "' is already open");
+                return;
+            }
+        }
+
         mOpenInProgress = true;
+        mOpeningPath = path;
+        mOpeningReadOnly = readOnly;
+        mReadOnlyUpgrade = false;
         try
         {
+            path ??= await mFilePickerService.OpenFileAsync("Open");
+            if (path == null) { return; }
+            mOpeningPath = path;
+
             await OpenWorkFileCoreAsync(path, readOnly);
+
+            if (mReadOnlyUpgrade && _workspaceService.IsFileOpen &&
+                _workspaceService.WorkTree!.CanWrite &&
+                OpenRequestPolicy.IsSamePath(_workspaceService.WorkPathName, path))
+            {
+                await OpenWorkFileCoreAsync(path, true);
+            }
         }
         finally
         {
             mOpenInProgress = false;
+            mOpeningPath = null;
+            mOpeningReadOnly = false;
+            mReadOnlyUpgrade = false;
         }
     }
+
+    // State of the open in flight (valid while mOpenInProgress is set).  mOpeningPath is
+    // null while the file picker is up.
     private bool mOpenInProgress;
+    private string? mOpeningPath;
+    private bool mOpeningReadOnly;
+    private bool mReadOnlyUpgrade;
 
-    private async Task OpenWorkFileCoreAsync(string? path, bool readOnly)
+    /// <summary>
+    /// Tells the user an OS "open this file" request was not carried out.  A message box
+    /// on top of the dialog, not a toast: the toast is drawn on the main window, under the
+    /// dialog, and would only be seen after the dialog closed.
+    /// </summary>
+    private void RefuseOsOpen(string? path)
     {
-        path ??= await mFilePickerService.OpenFileAsync("Open");
-        if (path == null) { return; }
-        if (!CloseWorkFile()) { return; }
+        string name = string.IsNullOrEmpty(path) ? "the file" : "‘" + Path.GetFileName(path) + "’";
+        _viewActions.ShowNotice("Can't open " + name +
+            " while a dialog or operation is in progress.\r\nFinish or cancel it first, " +
+            "then open the file again.", "Open File");
+    }
 
+    /// <summary>
+    /// Closes the current work file and opens <paramref name="path"/>.  The caller has
+    /// already passed the one-open-at-a-time guard in <see cref="OpenWorkFileAsync"/>.
+    /// </summary>
+    private async Task OpenWorkFileCoreAsync(string path, bool readOnly)
+    {
+        // Check before closing, so a bad path (e.g. a stale Recent Files entry) leaves the
+        // current file open.
         if (!File.Exists(path))
         {
             AppLog.W("Open: file not found: '" + path + "'");
             _ = mDialogService.ShowMessageAsync("File not found: '" + path + "'", "Error");
             return;
         }
+        if (!CloseWorkFile()) { return; }
 
         try
         {
@@ -745,7 +837,8 @@ public class MainViewModel : ObservableObject
     /// </summary>
     public async Task DropOpenWorkFile(string pathName)
     {
-        if (!CloseWorkFile()) { return; }
+        // The current file is closed by the open itself, once the request is known to be
+        // accepted (a refused request must not close it).
         await OpenWorkFileAsync(pathName);
     }
 
@@ -755,7 +848,6 @@ public class MainViewModel : ObservableObject
     public async Task OpenRecentFile(int recentIndex)
     {
         if (recentIndex >= _workspaceService.RecentFilePaths.Count) { return; }
-        if (!CloseWorkFile()) { return; }
         await OpenWorkFileAsync(_workspaceService.RecentFilePaths[recentIndex]);
     }
 

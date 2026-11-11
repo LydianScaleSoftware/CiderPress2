@@ -38,7 +38,17 @@ public interface IViewActions
     void SetFileListSelection(IList<FileListItem> items);
 
     // --- Toast/Notification (timer animation requires imperative control) ---
-    void ShowToast(string message, bool success);
+    /// <param name="seconds">How long the toast stays up.</param>
+    void ShowToast(string message, bool success, double seconds = 3);
+
+    /// <summary>
+    /// Shows an OK-only message box in front of whatever window is on top, without going
+    /// through <see cref="Services.IDialogService"/> (so it does not count as a modal and
+    /// cannot disturb that service's owner tracking).  For telling the user about a request
+    /// that was refused because a dialog is open, where a toast on the main window would be
+    /// hidden by the dialog.  Does nothing if such a notice is already showing.
+    /// </summary>
+    void ShowNotice(string message, string caption);
 
     // --- Cursor (direct Window.Cursor manipulation) ---
     void SetCursorBusy(bool busy);

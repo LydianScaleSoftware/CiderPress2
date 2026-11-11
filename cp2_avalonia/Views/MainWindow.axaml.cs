@@ -585,12 +585,31 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
     /// </summary>
     public void OpenFileFromActivation(string path)
     {
+        // The open itself runs later (Background priority); the window is raised below so a
+        // refusal toast (a dialog or operation is in progress) is visible.
         OpenFileDeferred(path, readOnly: false);
         if (WindowState == WindowState.Minimized)
         {
             WindowState = WindowState.Normal;
         }
-        Activate();
+        // Raise the topmost window, not necessarily this one: activating the main window
+        // while a modal dialog is open puts it above the dialog.
+        GetTopmostWindow().Activate();
+    }
+
+    /// <summary>
+    /// Returns the window at the top of the modal stack: this window, or the innermost
+    /// dialog owned (directly or indirectly) by it.  Modal dialogs are owned by the one
+    /// below them, so the last owned window is the one on top.
+    /// </summary>
+    private Window GetTopmostWindow()
+    {
+        Window top = this;
+        while (top.OwnedWindows.Count > 0)
+        {
+            top = top.OwnedWindows[top.OwnedWindows.Count - 1];
+        }
+        return top;
     }
 
     private void OpenFileDeferred(string path, bool readOnly)
@@ -600,7 +619,9 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
             return;
         }
         Dispatcher.UIThread.Post(
-            () => _ = vm.OpenWorkFileAsync(path, readOnly),
+            // Both callers are OS-delivered requests, which can arrive twice for one launch
+            // (command line plus macOS activation), and which must not disturb a dialog.
+            () => _ = vm.OpenWorkFileAsync(path, readOnly, fromOs: true),
             DispatcherPriority.Background);
     }
 
@@ -822,7 +843,30 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
         }
     }
 
-    public void ShowToast(string message, bool success) => PostNotification(message, success);
+    public void ShowToast(string message, bool success, double seconds = 3) =>
+        PostNotification(message, success, seconds);
+
+    private bool mNoticeShowing;
+
+    public async void ShowNotice(string message, string caption)
+    {
+        if (mNoticeShowing)
+        {
+            return;
+        }
+        // A box owned by the main window would open behind a dialog.
+        Window top = GetTopmostWindow();
+        mNoticeShowing = true;
+        try
+        {
+            await PlatformUtil.ShowMessageAsync(top, message, caption, MBButton.OK,
+                MBIcon.Information);
+        }
+        finally
+        {
+            mNoticeShowing = false;
+        }
+    }
 
     public void SetCursorBusy(bool busy)
     {
@@ -955,7 +999,8 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
     /// </summary>
     /// <param name="msg">Message to display.</param>
     /// <param name="success">True for a success (green) tint, false for error (red).</param>
-    public void PostNotification(string msg, bool success)
+    /// <param name="seconds">How long the toast stays up.</param>
+    public void PostNotification(string msg, bool success, double seconds = 3)
     {
         toastText.Text = msg;
         toastBorder.Background = success
@@ -964,7 +1009,7 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
         toastBorder.IsVisible = true;
 
         mToastTimer?.Stop();
-        mToastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+        mToastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(seconds) };
         mToastTimer.Tick += (_, _) =>
         {
             toastBorder.IsVisible = false;

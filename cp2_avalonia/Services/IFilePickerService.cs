@@ -24,6 +24,14 @@ namespace cp2_avalonia.Services;
 
 public interface IFilePickerService
 {
+    /// <summary>
+    /// True while any picker opened through this service is showing.  Native pickers are not
+    /// counted by <see cref="IDialogService.IsModalActive"/>, but a command such as Add Files
+    /// holds references into the work tree while its picker is up, so OS file activation
+    /// (G2) must check this as well.
+    /// </summary>
+    bool IsPickerActive { get; }
+
     /// <summary>Opens a file picker for a single file. Returns the path, or null if canceled.</summary>
     Task<string?> OpenFileAsync(string title,
         IReadOnlyList<FilePickerFileType>? fileTypes = null,
