@@ -782,18 +782,25 @@ limitations under the License.
                                 <StackPanel IsVisible="{Binding CenterInfo.ShowMetadata}" Margin="0,8,0,0">
                                     <TextBlock Text="Metadata:" Margin="0,0,0,4"/>
                                     <DataGrid Name="metadataDataGrid" ItemsSource="{Binding CenterInfo.MetadataItems}" MaxHeight="400" IsReadOnly="True" GridLinesVisibility="Vertical" AutoGenerateColumns="False" HeadersVisibility="Column" CanUserReorderColumns="False" CanUserResizeColumns="True" DoubleTapped="MetadataList_DoubleTapped" Sorting="InfoDataGrid_Sorting">
+                                        <DataGrid.Styles>
+                                            <!-- Editable entries use the normal text colour; read-only ones are dimmed.
+                                                 A theme resource, so it follows Light/Dark (including a live switch). -->
+                                            <Style Selector="TextBlock.readOnlyEntry">
+                                                <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                                            </Style>
+                                        </DataGrid.Styles>
                                         <DataGrid.Columns>
                                             <DataGridTemplateColumn Header="Key" Width="150" CanUserResize="True">
                                                 <DataGridTemplateColumn.CellTemplate>
                                                     <DataTemplate>
-                                                        <TextBlock Text="{Binding Key}" Foreground="{Binding TextForeground}" ToolTip.Tip="{Binding Description}"/>
+                                                        <TextBlock Text="{Binding Key}" Classes.readOnlyEntry="{Binding !CanEdit}" ToolTip.Tip="{Binding Description}"/>
                                                     </DataTemplate>
                                                 </DataGridTemplateColumn.CellTemplate>
                                             </DataGridTemplateColumn>
                                             <DataGridTemplateColumn Header="Value" Width="*" CanUserResize="True">
                                                 <DataGridTemplateColumn.CellTemplate>
                                                     <DataTemplate>
-                                                        <TextBlock Text="{Binding Value}" Foreground="{Binding TextForeground}" ToolTip.Tip="{Binding ValueSyntax}"/>
+                                                        <TextBlock Text="{Binding Value}" Classes.readOnlyEntry="{Binding !CanEdit}" ToolTip.Tip="{Binding ValueSyntax}"/>
                                                     </DataTemplate>
                                                 </DataGridTemplateColumn.CellTemplate>
                                             </DataGridTemplateColumn>

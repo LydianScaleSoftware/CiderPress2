@@ -52,6 +52,7 @@ internal class FakeViewActions : IViewActions
     public void ShowToast(string message, bool success, double seconds = 3) { }
     public void ShowNotice(string message, string caption) { }
     public void SetCursorBusy(bool busy) { }
+    public bool IsTextInputFocused { get; set; }
     public void SelectArchiveTreeItem(ArchiveTreeItem item) { }
     public void SelectBestArchiveTreeItem(ArchiveTreeItem root) { }
     public void SelectDirectoryTreeItem(DirectoryTreeItem? item) { }

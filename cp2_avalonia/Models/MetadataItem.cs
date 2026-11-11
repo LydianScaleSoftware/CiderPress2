@@ -16,8 +16,6 @@
  */
 using System.ComponentModel;
 
-using Avalonia.Media;
-
 namespace cp2_avalonia.Models {
     /// <summary>
     /// Item displayed in the metadata list in the center info panel.
@@ -35,7 +33,6 @@ namespace cp2_avalonia.Models {
         public string? Description { get; private set; } = string.IsNullOrEmpty(description) ? null : description;
         public string? ValueSyntax { get; private set; } = string.IsNullOrEmpty(valueSyntax) ? null : valueSyntax;
         public bool CanEdit { get; private set; } = canEdit;
-        public IBrush TextForeground => CanEdit ? Brushes.Black : Brushes.Gray;
 
         public event PropertyChangedEventHandler? PropertyChanged;
         public void SetValue(string value) {

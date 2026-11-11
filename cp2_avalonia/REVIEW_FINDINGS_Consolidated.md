@@ -1348,10 +1348,22 @@ C-view (Phase 2, `MainWindow.axaml.cs` drag region and `FileViewer.axaml.cs`):
 
 ### Stream L: theming (Phase 2)
 
-- [ ] **L1 (S2)** Metadata text is hard-coded black, unreadable in the dark theme. (Models#1)
+> **Pending: smoke test deferred.** All manual smoke tests for streams D, E, F and L wait until
+> the coding is finished (decided 2026-11-11). Windows and Linux are deferred further.
+
+- [x] **L1 (S2)** Metadata text is hard-coded black, unreadable in the dark theme. (Models#1)
   Model exposes `CanEdit` only; the view chooses brushes with theme resources.
   - **Manual:** Dark theme, open a WOZ or 2IMG with metadata, show the Information panel →
     readable; switch to Light while open → still readable.
+  - **Done (macOS build only).** `MetadataItem.TextForeground` (hard-coded `Brushes.Black` /
+    `Brushes.Gray`) is gone; the model exposes only `CanEdit`. The Key and Value cells set
+    `Classes.readOnlyEntry="{Binding !CanEdit}"`, and a style in the metadata `DataGrid` gives that
+    class `{DynamicResource SystemControlForegroundBaseMediumBrush}` (a theme resource, so a live
+    Light/Dark switch is followed). Editable entries now use the inherited text colour.
+  - **Not checked in a running app:** that the compiled `!CanEdit` binding and the class style
+    render as intended, and the colours in either theme. No Auto test (the plan lists none; the
+    style lives in `MainWindow.axaml`). **Manual steps not run.** Not run on Windows/Linux;
+    deferred.
 
 ---
 
