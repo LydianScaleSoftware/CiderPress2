@@ -50,6 +50,13 @@ public interface IViewActions
     /// </summary>
     void ShowNotice(string message, string caption);
 
+    /// <summary>
+    /// True while keyboard focus is in a text box (the Find box).  The commands bound to
+    /// Delete, Copy, Paste and Select All report CanExecute false then, so those keys edit
+    /// the text instead of acting on files.
+    /// </summary>
+    bool IsTextInputFocused { get; }
+
     // --- Cursor (direct Window.Cursor manipulation) ---
     void SetCursorBusy(bool busy);
 

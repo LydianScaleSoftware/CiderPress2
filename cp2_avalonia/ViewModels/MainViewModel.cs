@@ -176,7 +176,7 @@ public class MainViewModel : ObservableObject
         ExitCommand = new RelayCommand(() => _dialogHost.GetOwnerWindow().Close());
 
         // 13. CopyCommand — async, needs file open + entries selected + file list visible
-        CopyCommand = new AsyncRelayCommand(CopyToClipboard, CanCopy);
+        CopyCommand = new AsyncRelayCommand(CopyToClipboard, CanCopyFiles);
 
         // 13b. CutCommand — same prerequisites as CopyCommand; only for writable targets - CURRENTLY UNUSED
         CutCommand = new AsyncRelayCommand(CutToClipboard, CanCut);
@@ -3542,14 +3542,21 @@ public class MainViewModel : ObservableObject
     private bool CanClose() => IsFileOpen;
     private bool CanCopy() => IsFileOpen && AreFileEntriesSelected && ShowCenterFileList;
     private bool CanCut() => IsFileOpen && AreFileEntriesSelected && ShowCenterFileList && CanWrite;
-    private bool CanPaste() => IsFileOpen && CanWrite && IsMultiFileItemSelected;
+    // Copy, Paste, Select All and Delete are bound to keys that a text box also uses, and the
+    // window's key bindings (and the macOS native menu) are tried before the focused control
+    // sees the key.  So they decline while a text box has focus; the key then edits the text.
+    // (NotifyTextInputFocusChanged tells the commands when that changes.)  Extract and the
+    // others have no such key, and stay available while typing in the Find box.
+    private bool NotTyping => !_viewActions.IsTextInputFocused;
+    private bool CanCopyFiles() => CanCopy() && NotTyping;
+    private bool CanPaste() => IsFileOpen && CanWrite && IsMultiFileItemSelected && NotTyping;
     private bool CanFind() => IsFileOpen;
-    private bool CanSelectAll() => IsFileOpen;
+    private bool CanSelectAll() => IsFileOpen && NotTyping;
     private bool CanViewFiles() => CanCopy();
     private bool CanAddFiles() => IsFileOpen && CanWrite && IsMultiFileItemSelected && ShowCenterFileList;
     private bool CanExtractFiles() => CanCopy();
     private bool CanExportFiles() => CanCopy();
-    private bool CanDeleteFiles() => IsFileOpen && CanWrite && IsMultiFileItemSelected && AreFileEntriesSelected && ShowCenterFileList;
+    private bool CanDeleteFiles() => IsFileOpen && CanWrite && IsMultiFileItemSelected && AreFileEntriesSelected && ShowCenterFileList && NotTyping;
     private bool CanTestFiles() => CanCopy();
     private bool CanEditAttributes() => IsFileOpen && IsSingleEntrySelected;
     private bool CanCreateDirectory() => IsFileOpen && CanWrite && IsHierarchicalFileSystemSelected;
@@ -3772,6 +3779,18 @@ public class MainViewModel : ObservableObject
     /// Recomputes all state-dependent CanExecute properties from the VM's own state
     /// and raises change notifications so command CanExecute methods re-evaluate.
     /// </summary>
+    /// <summary>
+    /// Called by the window when keyboard focus moves into or out of a text box, so the
+    /// commands that decline while typing re-evaluate.
+    /// </summary>
+    internal void NotifyTextInputFocusChanged()
+    {
+        CopyCommand.NotifyCanExecuteChanged();
+        PasteCommand.NotifyCanExecuteChanged();
+        SelectAllCommand.NotifyCanExecuteChanged();
+        DeleteFilesCommand.NotifyCanExecuteChanged();
+    }
+
     internal void RefreshAllCommandStates()
     {
         IsFileOpen = _workspaceService.IsFileOpen;

@@ -1314,7 +1314,10 @@ C-view (Phase 2, `MainWindow.axaml.cs` drag region and `FileViewer.axaml.cs`):
     (the full tree regression). Not run on Windows/Linux; deferred.
 ### Stream F: keyboard routing (Phase 2)
 
-- [ ] **F1 (S1)** Window key bindings steal Delete, Ctrl+C, Ctrl+V, Ctrl+A from the find box,
+> **Pending (2026-11-11): the macOS smoke test for F1 has not been run.** Windows and Linux
+> are deferred.
+
+- [x] **F1 (S1)** Window key bindings steal Delete, Ctrl+C, Ctrl+V, Ctrl+A from the find box,
   and Enter in the directory tree opens the viewer. (Views#1) Move these bindings to the
   controls they belong to, or have the commands decline when a `TextBox` has focus. Check the
   macOS native menu gestures (Cmd+C etc.) too.
@@ -1322,6 +1325,26 @@ C-view (Phase 2, `MainWindow.axaml.cs` drag region and `FileViewer.axaml.cs`):
     Ctrl/Cmd+A, Ctrl/Cmd+C, Ctrl/Cmd+V → text editing only, no delete prompt, no paste into
     the archive. With focus in the file list, the same keys act on files. Enter in the directory
     tree → expands or selects, does not open the viewer.
+  - **Done (macOS build and unit tests only).** Confirmed with a headless test that an enabled
+    window-level `KeyBinding` takes Delete from a focused `TextBox` (the command runs, the text is
+    untouched), and that a command reporting CanExecute false while a text box has focus lets the
+    text box have the key. Fix: new `Views/TextInputFocus` (focused element is a `TextBox`),
+    `IViewActions.IsTextInputFocused`, and `MainViewModel` gating on it for
+    `CopyCommand`, `PasteCommand`, `SelectAllCommand` and `DeleteFilesCommand` (`NotTyping`).
+    `MainWindow` watches GotFocus/LostFocus and calls `NotifyTextInputFocusChanged()` when the state
+    flips, so menu items and the macOS native menu (Cmd+C/V/A key equivalents, which are tried
+    before the focused control) see the change. Extract, View and the other commands stay
+    available while typing in the Find box. The Enter binding moved from `Window.KeyBindings`
+    to the file list `DataGrid`, so Enter no longer opens the viewer from the directory tree (or
+    from a focused button); `DirectoryTree_PreviewKeyDown` still eats Enter there, so it does
+    nothing in that tree (it neither toggles nor opens).
+  - **Side effect:** the Edit menu's Copy, Paste and Select All, and Delete Files, show as
+    disabled while the Find box has focus (until the menu takes focus when opened).
+  - **Not confirmed:** that macOS really tries the native-menu key equivalent before the text
+    box (the reason for the menu-side gating); and the Enter behaviour in the archive tree
+    (no longer opens the viewer either; I did not check what the TreeView does with it).
+  - **Checked:** `TextInputFocusTests` (3). No Auto test for the `MainViewModel` gating (it needs
+    a full view model). **Manual steps not run.** Not run on Windows/Linux; deferred.
 
 ### Stream L: theming (Phase 2)
 

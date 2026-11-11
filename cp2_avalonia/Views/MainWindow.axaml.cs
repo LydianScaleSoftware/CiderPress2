@@ -524,6 +524,11 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
             // Dismiss the access-key menu mode that the Alt+Up sequence triggers on Alt release.
             // handledEventsToo so it runs even after AccessKeyHandler processes the Alt key-up.
             AddHandler(KeyUpEvent, Window_AltKeyUp, RoutingStrategies.Bubble, handledEventsToo: true);
+            // Track focus entering and leaving text boxes (see IsTextInputFocused).
+            AddHandler(GotFocusEvent, Window_FocusChanged, RoutingStrategies.Bubble,
+                handledEventsToo: true);
+            AddHandler(LostFocusEvent, Window_FocusChanged, RoutingStrategies.Bubble,
+                handledEventsToo: true);
             // File list panel (parent Grid) catches drops on empty space below rows.
             fileListPanel.AddHandler(DragDrop.DropEvent, FileListPanel_Drop);
             fileListPanel.AddHandler(DragDrop.DragOverEvent, FileListPanel_DragOver);
@@ -872,6 +877,22 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
         }
     }
 
+    // Last value of IsTextInputFocused that the view model was told about.
+    private bool mTextInputFocused;
+
+    public bool IsTextInputFocused => TextInputFocus.IsTextInputFocused(this);
+
+    private void Window_FocusChanged(object? sender, RoutedEventArgs e)
+    {
+        bool now = IsTextInputFocused;
+        if (now == mTextInputFocused)
+        {
+            return;
+        }
+        mTextInputFocused = now;
+        ViewModel?.NotifyTextInputFocusChanged();
+    }
+
     public void SetCursorBusy(bool busy)
     {
         Cursor = busy ? new Cursor(StandardCursorType.Wait) : null;
@@ -1063,9 +1084,9 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
         }
     }
 
-    // Eat Enter/Return in the directory tree so it neither toggles the node nor bubbles up to
-    // the window's Enter -> ViewFiles key binding.  Registered as a tunnel handler so it runs
-    // before the TreeView's own key handling and before the window key bindings.
+    // Eat Enter/Return in the directory tree so it does not toggle the node.  (It no longer
+    // reaches a view-files binding: Enter is bound on the file list only.)  Registered as a
+    // tunnel handler so it runs before the TreeView's own key handling.
     private void DirectoryTree_PreviewKeyDown(object? sender, KeyEventArgs e)
     {
         if (e.Key is Key.Enter or Key.Return) {
