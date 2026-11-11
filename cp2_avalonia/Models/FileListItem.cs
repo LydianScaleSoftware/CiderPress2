@@ -321,34 +321,6 @@ namespace cp2_avalonia.Models {
         }
 
         /// <summary>
-        /// Sets the current file list selection to the item with a matching IFileEntry.  If
-        /// no item matches, the selection is set to the first item in the list.
-        /// </summary>
-        /// <remarks>
-        /// The first-row fallback is for repopulating the list (WPF does the same).  Callers
-        /// that must not disturb the selection when the entry is absent, such as the viewer
-        /// windows, check for the entry first (MainViewModel.SyncFileListToViewerEntry).
-        /// </remarks>
-        internal static void SetSelectionFocusByEntry(ObservableCollection<FileListItem> tvRoot,
-                DataGrid dataGrid, IFileEntry selEntry) {
-            FileListItem? reselItem = null;
-            if (selEntry != IFileEntry.NO_ENTRY) {
-                reselItem = FindItemByEntry(tvRoot, selEntry);
-            }
-            if (reselItem != null) {
-                dataGrid.SelectedItem = reselItem;
-                dataGrid.ScrollIntoView(reselItem, null);
-                // TODO: Avalonia DataGrid row selection helper (WPF uses SelectRowByIndex())
-            } else {
-                // Not found (e.g. we changed directories and the selected entry is no longer
-                // part of the file list), or selEntry is NO_ENTRY.
-                if (tvRoot.Count > 0) {
-                    dataGrid.SelectedIndex = 0;
-                }
-            }
-        }
-
-        /// <summary>
         /// Column identifiers for sorting.  The names are the columns'
         /// <c>SortMemberPath</c> values in MainWindow.axaml, which is how the window tells the
         /// comparer which column was clicked.

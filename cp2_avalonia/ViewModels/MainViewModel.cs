@@ -562,8 +562,6 @@ public class MainViewModel : ObservableObject
         // settings.)
         CloseWorkFile();
         _ = _clipboardService.ClearIfPendingAsync();   // no-op unless something is pending
-        ArchiveTree.Dispose();
-        DirectoryTree.Dispose();
         _settingsService.Save();
     }
 
@@ -1326,7 +1324,7 @@ public class MainViewModel : ObservableObject
             }
         }
 
-        ArchiveTreeItem.SelectItem(_viewActions, newTreeItem);
+        _viewActions.SelectArchiveTreeItem(newTreeItem);
         if (newEntry.ContainingDir != IFileEntry.NO_ENTRY) {
             _viewActions.SelectDirectoryTreeItemByEntry(DirectoryTree.TreeRoot,
                 newEntry.ContainingDir);
@@ -2692,7 +2690,7 @@ public class MainViewModel : ObservableObject
         ArchiveTreeItem? existing =
             ArchiveTreeItem.FindItemByDAObject(ArchiveTree.TreeRoot, embeds);
         if (existing != null) {
-            ArchiveTreeItem.SelectItem(_viewActions, existing);
+            _viewActions.SelectArchiveTreeItem(existing);
             return;
         }
 
@@ -2701,7 +2699,7 @@ public class MainViewModel : ObservableObject
             _workspaceService.WorkTree!.TryCreateMultiPart(arcTreeSel.WorkTreeNode, embeds);
         if (newNode != null) {
             ArchiveTreeItem newItem = ArchiveTreeItem.ConstructTree(arcTreeSel, newNode);
-            ArchiveTreeItem.SelectItem(_viewActions, newItem);
+            _viewActions.SelectArchiveTreeItem(newItem);
         }
     }
 
@@ -4025,10 +4023,28 @@ public class MainViewModel : ObservableObject
         WorkTree.Node workNode = item.WorkTreeNode;
         ArchiveTreeItem parentItem = item.Parent;
         WorkTree.Node parentNode = item.Parent.WorkTreeNode;
+
+        // Is the selection on the node being closed, or inside it?  Decide before removing
+        // it: removing a selected node can change the selection by itself.
+        bool selectionClosed = false;
+        for (ArchiveTreeItem? cur = CachedArchiveTreeSelection; cur != null; cur = cur.Parent) {
+            if (cur == item) {
+                selectionClosed = true;
+                break;
+            }
+        }
+
         parentNode.CloseChild(workNode);
         bool ok = parentItem.RemoveChild(item);
         Debug.Assert(ok, "failed to remove child tree item");
-        parentItem.IsSelected = true;
+
+        // Move the selection to the parent.  Otherwise the TreeView and the view model keep
+        // pointing at a node that is gone, with its disposed archive still the current work
+        // object.  (Closing a node that is not selected, as Extract and Delete do for an open
+        // sub-archive, leaves the selection alone.)
+        if (selectionClosed) {
+            _viewActions.SelectArchiveTreeItem(parentItem);
+        }
     }
 
     /// <summary>
@@ -4076,7 +4092,6 @@ public class MainViewModel : ObservableObject
         if (mCurrentWorkObject is IFileSystem fs) {
             Debug.Assert(fs.GetVolDirEntry() != IFileEntry.NO_ENTRY);
             DirectoryTreeViewModel.PopulateTree(null, DirectoryTree.TreeRoot, fs.GetVolDirEntry());
-            DirectoryTree.SubscribeAllSelectionChanges();
             _viewActions.SelectDirectoryTreeItem(DirectoryTree.TreeRoot[0]);
             _viewActions.ScrollDirectoryTreeToTop();
             CenterInfo.SetNotesList(fs.Notes);
@@ -4230,7 +4245,6 @@ public class MainViewModel : ObservableObject
         DateTime startWhen = DateTime.Now;
 
         ArchiveTreeItem.ConstructTree(ArchiveTree.TreeRoot, workTree.RootNode);
-        ArchiveTree.SubscribeAllSelectionChanges();
 
         _workspaceService.AppHook.LogI("Finished archive tree construction in " +
             (DateTime.Now - startWhen).TotalMilliseconds + " ms");
@@ -4284,7 +4298,6 @@ public class MainViewModel : ObservableObject
                 Debug.WriteLine("Re-populate directory tree");
                 rootList.Clear();
                 DirectoryTreeViewModel.PopulateTree(null, rootList, volDir);
-                DirectoryTree.SubscribeAllSelectionChanges();
 
                 if (curSel == IFileEntry.NO_ENTRY ||
                         !_viewActions.SelectDirectoryTreeItemByEntry(

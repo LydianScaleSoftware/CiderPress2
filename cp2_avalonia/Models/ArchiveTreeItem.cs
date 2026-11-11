@@ -15,11 +15,8 @@
  * limitations under the License.
  */
 
-using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.ComponentModel;
 using System.Diagnostics;
-using System.Runtime.CompilerServices;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
@@ -27,31 +24,16 @@ using Avalonia.Media;
 using AppCommon;
 using DiskArc;
 using DiskArc.Arc;
-using cp2_avalonia.Views;
 
 namespace cp2_avalonia.Models {
     /// <summary>
     /// One entry in the archive tree hierarchy.
     /// </summary>
-    public class ArchiveTreeItem : INotifyPropertyChanged {
-        /// <summary>
-        /// Reference to parent node.  Will be null at root of tree.
-        /// </summary>
-        public ArchiveTreeItem? Parent { get; private set; }
-
+    public class ArchiveTreeItem : TreeItemBase<ArchiveTreeItem> {
         /// <summary>
         /// Type string to show in the GUI.
         /// </summary>
         public string TypeStr { get; set; }
-
-        /// <summary>
-        /// Name to show in the GUI.
-        /// </summary>
-        public string Name {
-            get => mName;
-            set { mName = value; OnPropertyChanged(); }
-        }
-        private string mName = string.Empty;
 
         public enum Status { None = 0, OK, Dubious, Warning, Error };
 
@@ -69,17 +51,6 @@ namespace cp2_avalonia.Models {
         /// Reference to corresponding node in the work tree.
         /// </summary>
         public WorkTree.Node WorkTreeNode { get; private set; }
-
-        /// <summary>
-        /// Children.
-        /// </summary>
-        public ObservableCollection<ArchiveTreeItem> Items { get; private set; }
-
-        // INotifyPropertyChanged
-        public event PropertyChangedEventHandler? PropertyChanged;
-        private void OnPropertyChanged([CallerMemberName] string propertyName = "") {
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-        }
 
         /// <summary>
         /// True if this item can be closed.  This will be set for disk images and file archives
@@ -105,42 +76,9 @@ namespace cp2_avalonia.Models {
         }
 
         /// <summary>
-        /// Tied to TreeViewItem.IsExpanded.
-        /// </summary>
-        public bool IsExpanded {
-            get => mIsExpanded;
-            set
-            {
-                if (value == mIsExpanded) return;
-                Debug.WriteLine("Tree: expanded '" + Name + "'=" + value);
-                mIsExpanded = value;
-                OnPropertyChanged();
-            }
-        }
-        private bool mIsExpanded = true;
-
-        /// <summary>
-        /// Tied to TreeViewItem.IsSelected.
-        /// </summary>
-        public bool IsSelected {
-            get => mIsSelected;
-            set {
-                if (value != mIsSelected) {
-                    mIsSelected = value;
-                    OnPropertyChanged();
-                }
-                if (value) {
-                    PurgeSelectionsExcept(this);
-                }
-            }
-        }
-        private bool mIsSelected;
-
-        /// <summary>
         /// Constructor.
         /// </summary>
-        public ArchiveTreeItem(ArchiveTreeItem? parent, WorkTree.Node workNode) {
-            Parent = parent;
+        public ArchiveTreeItem(ArchiveTreeItem? parent, WorkTree.Node workNode) : base(parent) {
             WorkTreeNode = workNode;
 
             TypeStr = workNode.TypeStr;
@@ -167,8 +105,6 @@ namespace cp2_avalonia.Models {
                 ReadOnlyIcon =
                     Application.Current!.FindResource("icon_StatusNoNoColor") as IImage;
             }
-
-            Items = new ObservableCollection<ArchiveTreeItem>();
         }
 
         /// <summary>
@@ -242,25 +178,12 @@ namespace cp2_avalonia.Models {
         }
 
         /// <summary>
-        /// Selects the specified item and ensures it is visible.
+        /// Finds the "best" thing to select in the specified tree: prefers filesystems and
+        /// non-disk archives over raw disk images.  Falls back to the root if nothing
+        /// interesting is found.
         /// </summary>
-        public static void SelectItem(IViewActions viewActions, ArchiveTreeItem item) {
-            viewActions.SelectArchiveTreeItem(item);
-        }
-
-        /// <summary>
-        /// Selects the "best" thing in the specified tree: prefers filesystems and non-disk
-        /// archives over raw disk images.  Falls back to root if nothing interesting is found.
-        /// </summary>
-        public static void SelectBestFrom(TreeView tv, ArchiveTreeItem root) {
-            ArchiveTreeItem? best = SelectBestFromR(root);
-            if (best == null) {
-                BringItemIntoView(tv, root);
-                tv.SelectedItem = root;
-            } else {
-                BringItemIntoView(tv, best);
-                tv.SelectedItem = best;
-            }
+        public static ArchiveTreeItem FindBest(ArchiveTreeItem root) {
+            return SelectBestFromR(root) ?? root;
         }
 
         private static ArchiveTreeItem? SelectBestFromR(ArchiveTreeItem root) {
@@ -292,57 +215,6 @@ namespace cp2_avalonia.Models {
                 }
             }
             return null;
-        }
-
-        /// <summary>
-        /// Scrolls the TreeView so that the specified item is visible.
-        /// </summary>
-        /// <remarks>
-        /// Builds a root-to-target path via Parent links, then walks down the container
-        /// hierarchy using ContainerFromItem, expanding intermediate nodes as needed,
-        /// and calls BringIntoView on the target TreeViewItem.
-        /// </remarks>
-        internal static void BringItemIntoView(TreeView treeView, ArchiveTreeItem item) {
-            // Build path from root down to target.
-            var path = new List<ArchiveTreeItem>();
-            ArchiveTreeItem? cur = item;
-            while (cur != null) {
-                path.Insert(0, cur);
-                cur = cur.Parent;
-            }
-            // Walk the container tree, expanding intermediate nodes, then scroll target.
-            ItemsControl container = treeView;
-            for (int i = 0; i < path.Count; i++) {
-                var tvi = container.ContainerFromItem(path[i]) as TreeViewItem;
-                if (tvi == null) return;    // not yet realized (should not happen without virtualization)
-                if (i < path.Count - 1) {
-                    tvi.IsExpanded = true;  // ensure children are realized before descending
-                } else {
-                    tvi.BringIntoView();
-                }
-                container = tvi;
-            }
-        }
-
-        /// <summary>
-        /// Clears the IsSelected flag from all but one item.
-        /// </summary>
-        private static void PurgeSelectionsExcept(ArchiveTreeItem keep) {
-            ArchiveTreeItem top = keep;
-            while (top.Parent != null) {
-                top = top.Parent;
-            }
-            PurgeSelections(top.Items, keep);
-        }
-        private static void PurgeSelections(ObservableCollection<ArchiveTreeItem> items,
-                ArchiveTreeItem keep) {
-            foreach (ArchiveTreeItem item in items) {
-                Debug.Assert(item != keep || item.IsSelected);
-                if (item.IsSelected && item != keep) {
-                    item.IsSelected = false;
-                }
-                PurgeSelections(item.Items, keep);
-            }
         }
 
         public override string ToString() {

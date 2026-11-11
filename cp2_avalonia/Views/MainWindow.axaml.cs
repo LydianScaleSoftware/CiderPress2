@@ -879,13 +879,15 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
 
     public void SelectArchiveTreeItem(ArchiveTreeItem item)
     {
-        ArchiveTreeItem.BringItemIntoView(archiveTree, item);
+        TreeViewHelper.BringIntoView(archiveTree, item);
         archiveTree.SelectedItem = item;
     }
 
     public void SelectBestArchiveTreeItem(ArchiveTreeItem root)
     {
-        ArchiveTreeItem.SelectBestFrom(archiveTree, root);
+        ArchiveTreeItem best = ArchiveTreeItem.FindBest(root);
+        TreeViewHelper.BringIntoView(archiveTree, best);
+        archiveTree.SelectedItem = best;
     }
 
     public void SelectDirectoryTreeItem(DirectoryTreeItem? item)
@@ -897,7 +899,14 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
         System.Collections.ObjectModel.ObservableCollection<DirectoryTreeItem> root,
         IFileEntry dirEntry)
     {
-        return DirectoryTreeItem.SelectItemByEntry(root, directoryTree, dirEntry);
+        DirectoryTreeItem? item = DirectoryTreeItem.FindItemByEntry(root, dirEntry);
+        if (item == null)
+        {
+            return false;
+        }
+        TreeViewHelper.BringIntoView(directoryTree, item);
+        directoryTree.SelectedItem = item;
+        return true;
     }
 
     public void ScrollFileListItemIntoView(FileListItem item)
@@ -907,7 +916,26 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
 
     public void SelectFileListItemByEntry(IFileEntry selEntry)
     {
-        FileListItem.SetSelectionFocusByEntry(ViewModel!.FileList.Items, fileListDataGrid, selEntry);
+        // Select the row for the entry; if there is none (we changed directories, or selEntry
+        // is NO_ENTRY), select the first row, as WPF does.  Callers that must not disturb the
+        // selection when the entry is absent check for it first
+        // (MainViewModel.SyncFileListToViewerEntry).
+        FileListItem? reselItem = null;
+        if (selEntry != IFileEntry.NO_ENTRY)
+        {
+            reselItem = FileListItem.FindItemByEntry(ViewModel!.FileList.Items, selEntry);
+        }
+        if (reselItem != null)
+        {
+            fileListDataGrid.SelectedItem = reselItem;
+            fileListDataGrid.ScrollIntoView(reselItem, null);
+            // TODO: WPF also gives the row keyboard focus (SelectRowByIndex()); here
+            // FocusFileList() does it for the callers that want it.
+        }
+        else if (ViewModel!.FileList.Items.Count > 0)
+        {
+            fileListDataGrid.SelectedIndex = 0;
+        }
     }
 
     public void PopulateRecentFilesMenu()
@@ -923,7 +951,7 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
 
     public void ScrollDirectoryTreeItemIntoView(DirectoryTreeItem item)
     {
-        DirectoryTreeItem.BringItemIntoView(directoryTree, item);
+        TreeViewHelper.BringIntoView(directoryTree, item);
     }
 
     public void FocusDirectoryTree() => directoryTree.Focus();
@@ -962,23 +990,7 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
             directoryTree.Focus();
             return;
         }
-        // Walk root -> target, resolving each level's container (matches BringItemIntoView).
-        var path = new List<DirectoryTreeItem>();
-        for (DirectoryTreeItem? cur = sel; cur != null; cur = cur.Parent) {
-            path.Insert(0, cur);
-        }
-        ItemsControl container = directoryTree;
-        TreeViewItem? tvi = null;
-        for (int i = 0; i < path.Count; i++) {
-            tvi = container.ContainerFromItem(path[i]) as TreeViewItem;
-            if (tvi == null) {
-                break;
-            }
-            if (i < path.Count - 1) {
-                tvi.IsExpanded = true;   // realize children before descending
-            }
-            container = tvi;
-        }
+        TreeViewItem? tvi = TreeViewHelper.FindContainer(directoryTree, sel);
         if (tvi != null) {
             tvi.Focus();
         } else {

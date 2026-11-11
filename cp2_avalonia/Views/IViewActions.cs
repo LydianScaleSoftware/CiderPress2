@@ -53,7 +53,7 @@ public interface IViewActions
     // --- Cursor (direct Window.Cursor manipulation) ---
     void SetCursorBusy(bool busy);
 
-    // --- Archive/Directory tree selection (needed by ArchiveTreeItem.SelectItem refactor) ---
+    // --- Archive/Directory tree selection ---
     void SelectArchiveTreeItem(ArchiveTreeItem item);
 
     /// <summary>Selects the "best" descendant of <paramref name="root"/> in the archive tree.</summary>

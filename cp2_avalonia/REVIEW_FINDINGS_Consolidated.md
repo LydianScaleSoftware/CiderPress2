@@ -1125,6 +1125,9 @@ C-view (Phase 2, `MainWindow.axaml.cs` drag region and `FileViewer.axaml.cs`):
 
 ### Stream D: file list sort, selection and grid input (Phase 2)
 
+> **Pending (2026-11-11): the macOS smoke test for D1-D6 has not been run.** Do it before
+> Phase 3; the steps are the **Manual** lines of D1-D6 below. Windows and Linux are deferred.
+
 - [x] **D1 (S2)** Comparer fixes: size columns overflow on 2 GB differences; Rsrc Len ignores
   MacZip resource lengths; text columns case-sensitive; column resolved from header text.
   (Models#3, Models#2, Models#6, Models design issue) Use `CompareTo`; keep numeric lengths in
@@ -1250,17 +1253,39 @@ C-view (Phase 2, `MainWindow.axaml.cs` drag region and `FileViewer.axaml.cs`):
     Windows/Linux; deferred.
 ### Stream E: trees (Phase 2)
 
-- [ ] **E1 (S1)** Close File Source never reselects the parent node, leaving the selection on a
+> **Pending (2026-11-11): the macOS smoke test for E1-E3 has not been run.** Steps are the
+> **Manual** lines of E1-E3 below. Windows and Linux are deferred.
+
+- [x] **E1 (S1)** Close File Source never reselects the parent node, leaving the selection on a
   disposed node. (ViewModels#4) Call `_viewActions.SelectArchiveTreeItem(parentItem)`.
   - **Manual:** open an archive containing a sub-archive, select the sub-archive, Close File
     Source → parent selected, its contents listed, commands enabled correctly; run Extract →
     works.
-- [ ] **E2 (S2, confirm first)** `BringItemIntoView` does nothing for tree items not yet
+  - **Done (macOS build only).** Confirmed by reading: the tree style binds only `IsExpanded`, so
+    the old `parentItem.IsSelected = true` never reached the `TreeView`, which kept its selection
+    on the removed node. `MainViewModel.CloseSubTree(ArchiveTreeItem)` now works out, before
+    removing, whether the selection is on the closed node or inside it, and if so calls
+    `_viewActions.SelectArchiveTreeItem(parentItem)` afterwards. Closing a node that is not
+    selected (Extract/Delete closing an open sub-archive) leaves the selection alone.
+  - No Auto test (needs a `MainViewModel` with a real work tree). **Manual steps not run.** Not
+    run on Windows/Linux; deferred.
+- [x] **E2 (S2, confirm first)** `BringItemIntoView` does nothing for tree items not yet
   realized. (Models#4) Defer the container walk until after layout (`Dispatcher.UIThread.Post`
   at a lower priority, or force layout of the expanded container).
   - **Manual:** open an image whose archive tree is taller than the panel and whose best node is
     below the fold → tree scrolls to it. Same for a deep directory tree.
-- [ ] **E3 (S3)** Consolidate tree code: one generic tree-item base (`Parent`, `Items`,
+  - **Done (macOS build and unit tests only).** Confirmed with a headless test: right after
+    items are added, `FindContainer` returns null (no containers until layout), so the old walk
+    returned silently and nothing scrolled. New `Views/TreeViewHelper.cs`:
+    `FindContainer` (root-to-item walk, expanding ancestors) and `BringIntoView`, which retries
+    up to 3 times at `DispatcherPriority.Background` (after layout) when the container does not
+    exist yet, then gives up quietly.
+  - **Checked:** `TreeViewHelperTests`: container is null before layout and found after; a 40-row
+    tree with the target below the fold scrolls (`ScrollViewer.Offset.Y > 0`) after the deferred
+    retry; a never-added item gives up without calling back. The test lays out by hand because
+    the headless platform has no render loop. **Manual steps not run.** Not run on
+    Windows/Linux; deferred.
+- [x] **E3 (S3)** Consolidate tree code: one generic tree-item base (`Parent`, `Items`,
   `IsExpanded`, `IsSelected`) and one container-walk helper in the view layer (replacing the
   copies in `ArchiveTreeItem`, `DirectoryTreeItem` and `MainWindow.FocusSelectedDirectoryTreeItem`);
   remove the unused `SelectedItem`/`CachedSelectedItem`/`ResetCache` machinery and
@@ -1270,7 +1295,23 @@ C-view (Phase 2, `MainWindow.axaml.cs` drag region and `FileViewer.axaml.cs`):
   - **Manual:** full tree regression: open nested archives, select/expand/collapse, Close File
     Source, Open sub-archive, keyboard navigation in both trees, directory double-click from the
     file list.
-
+  - **Done (macOS build and unit tests only).** New `Models/TreeItemBase<T>` (`Parent`, `Items`,
+    `Name`, `IsExpanded`, `GetPathFromRoot`, no UI types) is the base of `ArchiveTreeItem` and
+    `DirectoryTreeItem`. Removed: `IsSelected` and `PurgeSelections*` on both items, the
+    view models' `SelectedItem`/`CachedSelectedItem`/`ResetCache`, the `IsSelected` subscription
+    lists (`Subscribe*SelectionChanges`) and the `IDisposable` they needed (the three
+    `SubscribeAllSelectionChanges` calls and the two `Dispose` calls in `MainViewModel` too),
+    and `ArchiveTreeItem.SelectItem` (its three callers use `_viewActions.SelectArchiveTreeItem`).
+    The three container-walk copies (two `BringItemIntoView`, `FocusSelectedDirectoryTreeItem`)
+    now use `TreeViewHelper`. `TreeView`/`DataGrid` parameters are out of `Models`:
+    `SelectBestFrom` became `ArchiveTreeItem.FindBest` (the window selects), `SelectItemByEntry`
+    went to `MainWindow.SelectDirectoryTreeItemByEntry`, and `FileListItem.SetSelectionFocusByEntry`
+    went to `MainWindow.SelectFileListItemByEntry` (same behaviour).
+  - **Differs from the item text:** the base has no `IsSelected`. Nothing read it once the
+    view-model selection machinery was gone; the `TreeView.SelectedItem` is the only selection.
+  - **Checked:** `TreeViewHelperTests` cover the base (starts expanded, path, change
+    notification). The tree selection paths are only built, not run. **Manual steps not run**
+    (the full tree regression). Not run on Windows/Linux; deferred.
 ### Stream F: keyboard routing (Phase 2)
 
 - [ ] **F1 (S1)** Window key bindings steal Delete, Ctrl+C, Ctrl+V, Ctrl+A from the find box,
