@@ -1095,6 +1095,10 @@ C-view (Phase 2, `MainWindow.axaml.cs` drag region and `FileViewer.axaml.cs`):
   Checked: build 0 warnings, 8 new `OpenRequestPolicyTests` (path normalising, case rule,
   read-only/read-write combinations); 76 tests pass. **Manual steps NOT run** (macOS launch
   with `-r`, Open Recent during a load).
+  - **WPF parity note (audit, 2026-11-11):** WPF `OpenRecentFile`/`DropOpenWorkFile` close the
+    current file first and only then find the file missing ("File not found"), leaving nothing
+    open. G1 keeps the current file open instead. A deliberate improvement beyond WPF, accepted
+    by the user.
 - [x] **G2 (S1)** macOS file activation can close the work file under a modal dialog or during
   a worker. (Views#9; uses X1 / B0) While `IsModalActive` is set, refuse the activation with a
   message (or queue it and run it once the flag clears; pick one and note which). Every modal
@@ -1182,6 +1186,11 @@ C-view (Phase 2, `MainWindow.axaml.cs` drag region and `FileViewer.axaml.cs`):
     `ReapplyFileListSort`/`DoReapplyFileListSort`/`mSortColumn` are gone (also from `IViewActions`).
     `SetFileListSelection` suppresses the per-item handler and snapshots once.
   - Side effect: an empty directory now verifies (it used to always repopulate).
+  - **WPF parity (2026-11-11):** a header click used to clear the selection (comment claimed WPF
+    does); `cp2_wpf` `FileList_Sorting` has no such code, so `ApplySort` now puts the selection back
+    after the reset (test `ApplySort_PutsTheSelectionBack`) and the window no longer deselects. The
+    info-panel grids (`InfoDataGrid_Sorting`) still clear it; WPF has no handler there either, not
+    changed (they use the DataGrid's own sort).
   - **Checked:** `FileListViewModelTests` on a real in-memory ProDOS volume: one Reset for sort
     and for populate, sorted-list verify as a set, add/remove detected with and without a sort,
     selection restored on the sorted rows, reset-sort, `RestoreSortOrder`.
@@ -1323,8 +1332,9 @@ C-view (Phase 2, `MainWindow.axaml.cs` drag region and `FileViewer.axaml.cs`):
   macOS native menu gestures (Cmd+C etc.) too.
   - **Manual (each OS):** Ctrl/Cmd+F, type a name that matches a file, then press Delete,
     Ctrl/Cmd+A, Ctrl/Cmd+C, Ctrl/Cmd+V → text editing only, no delete prompt, no paste into
-    the archive. With focus in the file list, the same keys act on files. Enter in the directory
-    tree → expands or selects, does not open the viewer.
+    the archive. With focus in the file list, the same keys act on files. Enter in either tree
+    → opens the files selected in the list, as in WPF (the original wording, "does not open the
+    viewer" for the directory tree, was a review finding that contradicted WPF and is superseded).
   - **Done (macOS build and unit tests only).** Confirmed with a headless test that an enabled
     window-level `KeyBinding` takes Delete from a focused `TextBox` (the command runs, the text is
     untouched), and that a command reporting CanExecute false while a text box has focus lets the
@@ -1335,14 +1345,21 @@ C-view (Phase 2, `MainWindow.axaml.cs` drag region and `FileViewer.axaml.cs`):
     flips, so menu items and the macOS native menu (Cmd+C/V/A key equivalents, which are tried
     before the focused control) see the change. Extract, View and the other commands stay
     available while typing in the Find box. The Enter binding moved from `Window.KeyBindings`
-    to the file list `DataGrid`, so Enter no longer opens the viewer from the directory tree (or
-    from a focused button); `DirectoryTree_PreviewKeyDown` still eats Enter there, so it does
-    nothing in that tree (it neither toggles nor opens).
+    to the file list `DataGrid` and the archive tree, so Enter no longer opens the viewer from
+    a focused button or the directory tree. **Corrected 2026-11-11:** the first version bound
+    Enter on the file list only, which wrongly stopped it working in the archive tree; WPF
+    binds `ViewFilesCmd` to Enter at window level and its comment says the TreeView passes
+    the key along, so in WPF Enter in a tree opens the viewer. The archive tree is back to
+    that. **Corrected again, same day:** WPF parity is the rule (saved as a memory), so the
+    directory tree also binds Enter to View Files, and the item's Manual step "does not open the
+    viewer" is superseded: Enter in either tree opens the selected files, as in WPF.
+    `DirectoryTree_PreviewKeyDown` stays only to stop the TreeView toggling the node when the
+    command declines.
   - **Side effect:** the Edit menu's Copy, Paste and Select All, and Delete Files, show as
     disabled while the Find box has focus (until the menu takes focus when opened).
   - **Not confirmed:** that macOS really tries the native-menu key equivalent before the text
-    box (the reason for the menu-side gating); and the Enter behaviour in the archive tree
-    (no longer opens the viewer either; I did not check what the TreeView does with it).
+    box (the reason for the menu-side gating); and that the TreeView does nothing else with
+    Enter in the archive tree (the binding is tried first, as in the file list).
   - **Checked:** `TextInputFocusTests` (3). No Auto test for the `MainViewModel` gating (it needs
     a full view model). **Manual steps not run.** Not run on Windows/Linux; deferred.
 
@@ -1481,4 +1498,5 @@ to *confirmed* when the item is fixed.
 | K1 | `cp2_wpf/DebugMessageLog.cs` `Clear` | `mTopEntry` not reset; `GetLogs` throws after a wrapped log is cleared (latent: no caller) | confirmed by reading and by an Avalonia unit test of the same code |
 | I7 | `cp2_wpf/WPFCommon/AnimatedGifEncoder.cs` | Frame delay under 10 ms rounds to 0; viewers then use their default speed | confirmed by reading (`Math.Round(md.DelayMsec / 10.0)`) |
 | D5 | `cp2_wpf/MainWindow.xaml.cs` file-list drop handling | Dropping a directory onto itself reaches `MoveFiles` and shows "Bad Move" | confirmed by reading (`FileListDataGrid_Drop` passes the dropped-on directory to `MoveFiles` with no self filter); not run in WPF |
+| I3 | `cp2_wpf/ConfigOptCtrl.cs` `ConfigureControls` | `convOptions[optDef.OptTag]` throws `KeyNotFoundException` when an option key is missing from the converter options (e.g. a cleared option, then Back / reopen) | confirmed by reading (unguarded dictionary indexer at the start of the loop); not run in WPF |
 

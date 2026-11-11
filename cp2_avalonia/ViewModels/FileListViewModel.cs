@@ -120,7 +120,8 @@ public class FileListViewModel : ObservableObject {
 
     /// <summary>
     /// Sorts the list by a column and remembers the sort, so later repopulation keeps it.
-    /// The rows are replaced in one reset.
+    /// The rows are replaced in one reset, and the selection is put back afterwards (a reset
+    /// clears the grid's selection; WPF keeps the selected items through a sort).
     /// </summary>
     /// <param name="sortMemberPath">The column's <c>SortMemberPath</c>.</param>
     /// <param name="ascending">True for ascending order.</param>
@@ -128,7 +129,11 @@ public class FileListViewModel : ObservableObject {
         mSortPath = sortMemberPath ?? string.Empty;
         mSortAscending = ascending;
         IsResetSortEnabled = true;
+        List<FileListItem> selected = new List<FileListItem>(Selection);
         Items.ReplaceAll(Sorted(Items));
+        if (selected.Count > 0) {
+            mViewActions.SetFileListSelection(selected);
+        }
     }
 
     /// <summary>

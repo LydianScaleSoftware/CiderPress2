@@ -1084,9 +1084,11 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
         }
     }
 
-    // Eat Enter/Return in the directory tree so it does not toggle the node.  (It no longer
-    // reaches a view-files binding: Enter is bound on the file list only.)  Registered as a
-    // tunnel handler so it runs before the TreeView's own key handling.
+    // Eat Enter/Return in the directory tree so the TreeView does not toggle the node.  The
+    // directory tree's Enter -> View Files key binding (MainWindow.axaml, as in WPF) is tried
+    // before any KeyDown handler, so this only sees the key when that command declines (for
+    // instance when no file is selected).  Registered as a tunnel handler so it runs before
+    // the TreeView's own key handling.
     private void DirectoryTree_PreviewKeyDown(object? sender, KeyEventArgs e)
     {
         if (e.Key is Key.Enter or Key.Return) {
@@ -1540,10 +1542,9 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
         // The view model sorts the rows (in one reset) and remembers the sort, so that
         // repopulating the list keeps it.  The column is identified by SortMemberPath, set
         // in MainWindow.axaml, not by its header text.
+        // The selection is kept (WPF sorts through a collection view, which keeps the
+        // selected items); the view model puts it back after replacing the rows.
         ViewModel!.FileList.ApplySort(col.SortMemberPath, isAscending);
-
-        // Match WPF behavior: clicking a column header deselects all rows.
-        fileListDataGrid.SelectedIndex = -1;
     }
 
     // internal void ClearTreesAndLists()

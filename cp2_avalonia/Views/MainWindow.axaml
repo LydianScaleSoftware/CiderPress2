@@ -70,8 +70,9 @@ limitations under the License.
         <KeyBinding Gesture="Ctrl+W" Command="{Binding CloseCommand}"/>
         <!-- Delete, Ctrl+C, Ctrl+V and Ctrl+A are tried before the focused control sees the key,
              so their commands decline (CanExecute false) while a text box has focus; see
-             TextInputFocus.  Enter is bound on the file list only, so it is not taken from the
-             trees or buttons. -->
+             TextInputFocus.  Enter (View Files) is bound on the file list and the archive tree
+             rather than here, so it is not taken from a focused button.  As in WPF, Enter in
+             either tree opens the files selected in the file list. -->
         <KeyBinding Gesture="Ctrl+C" Command="{Binding CopyCommand}"/>
         <KeyBinding Gesture="Ctrl+V" Command="{Binding PasteCommand}"/>
         <KeyBinding Gesture="Ctrl+F" Command="{Binding FindCommand}"/>
@@ -462,6 +463,9 @@ limitations under the License.
                             <TextBlock Grid.Row="0" Text="Archive Contents" Margin="0,0,0,4" HorizontalAlignment="Center"/>
                             <Border Grid.Row="1" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1" CornerRadius="2">
                                 <TreeView Name="archiveTree" ItemsSource="{Binding ArchiveTree.TreeRoot}" SelectionChanged="ArchiveTree_SelectionChanged">
+                                    <TreeView.KeyBindings>
+                                        <KeyBinding Gesture="Enter" Command="{Binding ViewFilesCommand}"/>
+                                    </TreeView.KeyBindings>
                                     <TreeView.ContextMenu>
                                         <!-- Operates on the selected archive/disk/partition node.
                                              Items self-disable via each command's CanExecute. -->
@@ -507,6 +511,9 @@ limitations under the License.
                             <TextBlock Grid.Row="0" Text="Directory" Margin="0,0,0,4" HorizontalAlignment="Center"/>
                             <Border Grid.Row="1" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1" CornerRadius="2">
                                 <TreeView Name="directoryTree" DragDrop.AllowDrop="True" ItemsSource="{Binding DirectoryTree.TreeRoot}" SelectionChanged="DirectoryTree_SelectionChanged">
+                                    <TreeView.KeyBindings>
+                                        <KeyBinding Gesture="Enter" Command="{Binding ViewFilesCommand}"/>
+                                    </TreeView.KeyBindings>
                                     <TreeView.ContextMenu>
                                         <!-- Operates on the selected directory node. -->
                                         <ContextMenu>
