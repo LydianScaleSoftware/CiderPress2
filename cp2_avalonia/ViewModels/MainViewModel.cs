@@ -2051,7 +2051,7 @@ public class MainViewModel : ObservableObject
     /// <param name="Set">The entries to transfer and to extract for the file manager.</param>
     /// <param name="StripPaths">The "strip paths" extract setting.</param>
     /// <param name="ExportSpec">Export converter in use, or null for extract mode.</param>
-    private record ClipSetup(ClipFileSet Set, bool StripPaths,
+    internal record ClipSetup(ClipFileSet Set, bool StripPaths,
         ConvConfig.FileConvSpec? ExportSpec);
 
     /// <summary>
@@ -2174,11 +2174,17 @@ public class MainViewModel : ObservableObject
         string? TempDir);
 
     /// <summary>
-    /// Builds a <see cref="DragTransferData"/> for the current file selection.
-    /// Called from the view's drag initiation code to populate cross-process drag formats.
-    /// Returns null if there is nothing to drag.
+    /// The first half of a drag: what to extract, worked out on the UI thread.
     /// </summary>
-    internal DragTransferData? BuildDragData() {
+    /// <param name="Setup">The entries and extract settings.</param>
+    /// <param name="TempDir">Directory the files will be written to (not yet created).</param>
+    internal record DragPlan(ClipSetup Setup, string TempDir);
+
+    /// <summary>
+    /// Works out what the current file selection puts on a drag.  UI THREAD ONLY: it reads
+    /// the selection and the view-model state.  Returns null if there is nothing to drag.
+    /// </summary>
+    internal DragPlan? PrepareDragData() {
         if (!GetFileSelection(omitDir: false, omitOpenArc: false, closeOpenArc: false,
                 oneMeansAll: false, out object? archiveOrFileSystem,
                 out IFileEntry selectionDir, out List<IFileEntry>? entries, out int unused)) {
@@ -2193,25 +2199,67 @@ public class MainViewModel : ObservableObject
             AppLog.E("Drag/copy: building clip file set failed", ex);
             return null;
         }
-        List<ClipFileEntry> xferEntries = setup.Set.XferEntries;
+        return new DragPlan(setup, ClipTransferFiles.NewTempDirPath(
+            ClipTransferFiles.DRAG_DIR_PREFIX));
+    }
+
+    /// <summary>
+    /// The second half of a drag: writes the files.  This only uses the archive (not the
+    /// view model), so the Linux drag runs it on a thread-pool thread; see the X1 rule.
+    /// </summary>
+    /// <param name="plan">Result of <see cref="PrepareDragData"/>.</param>
+    /// <param name="isCancelled">Polled between entries; return true to stop.  May be
+    ///   null.</param>
+    /// <returns>The drag data, or null if cancelled (the temp directory has been
+    ///   deleted).</returns>
+    internal DragTransferData? ExtractDragData(DragPlan plan, Func<bool>? isCancelled = null) {
+        List<ClipFileEntry> xferEntries = plan.Setup.Set.XferEntries;
 
         // Write the transfer files and the files for the OS file manager (see
-        // ClipTransferFiles for the layout).  This is synchronous: a drag can't show a
-        // progress dialog, and the pointer button is held for the whole drag.
-        string tempDir = ClipTransferFiles.NewTempDirPath(ClipTransferFiles.DRAG_DIR_PREFIX);
-        ClipTransferFiles.Result files = ClipTransferFiles.Extract(tempDir, xferEntries,
-            setup.Set.ForeignEntries)!;
+        // ClipTransferFiles for the layout).  A drag can't show a progress dialog, and the
+        // pointer button is held for the whole drag.
+        ClipTransferFiles.Result? files;
+        try {
+            files = ClipTransferFiles.Extract(plan.TempDir, xferEntries,
+                plan.Setup.Set.ForeignEntries, isCancelled);
+        } catch (Exception) {
+            DeleteDragTempDir(plan.TempDir);
+            throw;
+        }
+        if (files == null) {
+            DeleteDragTempDir(plan.TempDir);
+            return null;
+        }
 
         ClipInfo clipInfo = new ClipInfo(xferEntries, GlobalAppVersion.AppVersion) {
-            StripPaths = setup.StripPaths,  // carry source's EXT intent so PasteOrDrop can OR with ADD
+            StripPaths = plan.Setup.StripPaths,  // carry source's EXT intent so PasteOrDrop can OR with ADD
         };
-        if (setup.ExportSpec != null) {
+        if (plan.Setup.ExportSpec != null) {
             clipInfo.IsExport = true;
         }
         string clipJsonText = Services.Cp2ClipUtil.InjectFileData(clipInfo.ToClipString(),
             files.XferPaths);
 
-        return new DragTransferData(clipJsonText, files.TopLevelForeignPaths, tempDir);
+        return new DragTransferData(clipJsonText, files.TopLevelForeignPaths, plan.TempDir);
+    }
+
+    private static void DeleteDragTempDir(string tempDir) {
+        try {
+            if (Directory.Exists(tempDir)) {
+                Directory.Delete(tempDir, true);
+            }
+        } catch (Exception ex) {
+            AppLog.W("Drag: unable to delete partial temp directory", ex);
+        }
+    }
+
+    /// <summary>
+    /// Builds a <see cref="DragTransferData"/> for the current file selection, on the
+    /// calling (UI) thread.  Returns null if there is nothing to drag.
+    /// </summary>
+    internal DragTransferData? BuildDragData() {
+        DragPlan? plan = PrepareDragData();
+        return plan == null ? null : ExtractDragData(plan);
     }
 
     /// <summary>

@@ -54,9 +54,6 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
     private AsciiChartWindow? mAsciiChartWindow;
 
     // ---- Drag-drop state for file list (internal drag-move) ----
-    private const string INTERNAL_DRAG_FORMAT = "cp2_avalonia/FileListDrag";
-    private const string INTERNAL_DRAG_SOURCE_FORMAT = "cp2_avalonia/FileListDragSource";
-    private const string INTERNAL_DRAG_WORKPATH_FORMAT = "cp2_avalonia/FileListDragWorkPath";
     private const double DRAG_THRESHOLD = 4.0;
     private bool mIsDraggingFileList;
     private readonly List<IFileEntry> mDragMoveList = new List<IFileEntry>();
@@ -1696,20 +1693,65 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
     }
 
     /// <summary>
-    /// Called by LinuxDrag when the button is released without an external XDND target
-    /// accepting the drop (internal drag — over our own window or over empty space).
-    /// Hit-tests all open CP2 windows: main window (file-list move) or a FileViewer.
+    /// Called by LinuxDrag when the button is released and no external XDND target accepted
+    /// the drop.  Works out which of our windows the pointer was over, if any, stops the
+    /// background extraction, and then moves the files or shows the entry in a viewer.
     /// </summary>
+    /// <param name="screenX">Root X of the release point.</param>
+    /// <param name="screenY">Root Y of the release point.</param>
+    /// <param name="chain">X windows under the pointer at release, outermost first.</param>
+    /// <param name="itemsToMove">Dragged entries.</param>
+    /// <param name="extraction">The extraction started for this drag.</param>
     [System.Runtime.Versioning.SupportedOSPlatform("linux")]
-    private void HandleLinuxInternalDrop(int screenX, int screenY,
-        List<IFileEntry> itemsToMove)
+    private async System.Threading.Tasks.Task HandleLinuxInternalDropAsync(int screenX,
+        int screenY, nint[] chain, List<IFileEntry> itemsToMove,
+        CancellableExtraction<MainViewModel.DragTransferData> extraction)
     {
-        if (ViewModel is not MainViewModel vm) return;
-
-        // Check main window first.
-        if (IsScreenPointInWindow(this, screenX, screenY))
+        if (ViewModel is not MainViewModel vm)
         {
-            if (itemsToMove.Count == 0) return;
+            return;
+        }
+
+        // The window under the pointer, by native handle, so that stacking order is right
+        // (a viewer over the main window) and a drop over another program's window, even
+        // one that overlaps ours, is not ours.
+        var ownWindows = new Dictionary<nint, Window>();
+        if (Application.Current?.ApplicationLifetime
+                is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime lt)
+        {
+            foreach (Window win in lt.Windows)
+            {
+                nint handle = win.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
+                if (handle != IntPtr.Zero)
+                {
+                    ownWindows[handle] = win;
+                }
+            }
+        }
+        Window? target = Platform.DropWindowPicker.Pick(chain, ownWindows);
+        object? workObject = vm.CurrentWorkObject;
+
+        // The extraction reads the same archive that the move or viewer is about to use,
+        // and DiskArc is not thread-safe: stop it and wait until it has finished.
+        await extraction.CancelAndWaitAsync();
+
+        if (target == null)
+        {
+            Debug.WriteLine("Linux drop: pointer not over one of our windows; ignored");
+            return;
+        }
+        if (!target.IsVisible || !vm.IsFileOpen || !ReferenceEquals(vm.CurrentWorkObject, workObject))
+        {
+            Debug.WriteLine("Linux drop: window or work file changed during the drop; ignored");
+            return;
+        }
+        if (itemsToMove.Count == 0)
+        {
+            return;
+        }
+
+        if (target == this)
+        {
             IFileEntry hitEntry = HitTestScreenDropTarget(screenX, screenY, out bool inDirTree);
             IFileEntry moveTarget;
             if (inDirTree || (hitEntry != IFileEntry.NO_ENTRY && hitEntry.IsDirectory))
@@ -1736,48 +1778,25 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
                 if (toMove.Count > 0)
                     _ = vm.MoveFiles(toMove, moveTarget);
             }
-            return;
         }
-
-        if (Application.Current?.ApplicationLifetime
-                is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime lt)
+        else if (target is FileViewer viewer)
         {
-            // Check FileViewer windows — single-entry drag loads the entry there.
-            if (itemsToMove.Count == 1)
+            // Single-entry drag loads the entry in the viewer.
+            if (itemsToMove.Count == 1 && workObject != null)
             {
-                object? workSource = vm.CurrentWorkObject;
-                string workPath = vm.WorkPathName;
-                if (workSource != null)
-                {
-                    foreach (var win in lt.Windows.OfType<FileViewer>())
-                    {
-                        if (IsScreenPointInWindow(win, screenX, screenY))
-                        {
-                            (win.DataContext as FileViewerViewModel)
-                                ?.LoadDroppedEntry(workSource, itemsToMove[0], workPath);
-                            return;
-                        }
-                    }
-                }
-            }
-
-            // Check DropTarget debug windows — display the dragged entries for diagnostics.
-            foreach (var win in lt.Windows.OfType<DropTarget>())
-            {
-                if (IsScreenPointInWindow(win, screenX, screenY))
-                {
-                    win.ShowLinuxInternalDrop(itemsToMove);
-                    return;
-                }
+                (viewer.DataContext as FileViewerViewModel)
+                    ?.LoadDroppedEntry(workObject, itemsToMove[0], vm.WorkPathName);
             }
         }
-    }
-
-    /// <summary>Returns true when the given screen (root) coordinate is within the window.</summary>
-    private static bool IsScreenPointInWindow(Window window, int screenX, int screenY)
-    {
-        var clientPt = window.PointToClient(new PixelPoint(screenX, screenY));
-        return new Rect(window.Bounds.Size).Contains(clientPt);
+        else if (target is DropTarget dropTarget)
+        {
+            // Debug window: display the dragged entries for diagnostics.
+            dropTarget.ShowLinuxInternalDrop(itemsToMove);
+        }
+        else
+        {
+            Debug.WriteLine("Linux drop: over " + target.GetType().Name + "; ignored");
+        }
     }
 
     /// <summary>
@@ -1949,8 +1968,26 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
         }
     }
 
+    /// <summary>
+    /// Releases whatever has captured the pointer, so Avalonia's input is back to normal.
+    /// </summary>
+    /// <remarks>
+    /// Needed after a macOS native drag session: AppKit runs the session and swallows the
+    /// mouse-up, so Avalonia never sees the button go up and keeps the pointer captured by
+    /// the element the press went to.  Row hover then stops updating, and the next press is
+    /// routed to that stale element, which re-selects the previously selected row (so the
+    /// wrong file was dragged).
+    /// </remarks>
+    private static void ReleasePointerCapture(IPointer pointer)
+    {
+        pointer.Capture(null);
+    }
+
     private void FileListDataGrid_PointerReleased(object? sender, PointerReleasedEventArgs e)
     {
+        // The press is over.  A drag needs a fresh press, so a later move with the button
+        // down can't start one from a stale position.
+        mDragStartPosn = new Point(-1, -1);
         // If a name-column resize grip was grabbed and the width actually changed, lock that
         // column so we stop pre-sizing it (the user has given it an explicit width).
         if (mPendingResizeCol != null)
@@ -1982,6 +2019,7 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
         Debug.Assert(!mIsDraggingFileList);
         mIsDraggingFileList = true;
         mDragMoveList.Clear();
+        IPointer pointer = e.Pointer;
         for (int i = 0; i < fileListDataGrid.SelectedItems.Count; i++)
         {
             if (fileListDataGrid.SelectedItems[i] is FileListItem selItem)
@@ -1995,13 +2033,18 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
         {
             DragDropEffects result = DragDropEffects.None;
             var data = new DataObject();
-            data.Set(INTERNAL_DRAG_FORMAT, mDragMoveList);
+            data.Set(FileListDrag.ENTRIES_FORMAT, mDragMoveList);
             if (DataContext is MainViewModel vm)
             {
                 if (vm.CurrentWorkObject != null)
                 {
-                    data.Set(INTERNAL_DRAG_SOURCE_FORMAT, vm.CurrentWorkObject);
-                    data.Set(INTERNAL_DRAG_WORKPATH_FORMAT, vm.WorkPathName);
+                    data.Set(FileListDrag.SOURCE_FORMAT, vm.CurrentWorkObject);
+                    data.Set(FileListDrag.WORKPATH_FORMAT, vm.WorkPathName);
+                    // For windows that can't get the entries from the data object (a
+                    // macOS native drag session has none of ours).
+                    FileListDrag.Current = new FileListDrag.State(
+                        new List<IFileEntry>(mDragMoveList), vm.CurrentWorkObject,
+                        vm.WorkPathName);
                 }
 
                 // Linux: arm the XDND drag BEFORE extraction so XdndSelection is claimed
@@ -2011,14 +2054,18 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
                 // while extraction is in progress.
                 System.Threading.Tasks.Task<DragDropEffects>? linuxDragTask = null;
                 bool linuxNativeCursor = OperatingSystem.IsLinux() && mLinuxDrag != null;
+                // The Linux extraction runs on a pool thread while the UI stays live (the
+                // one allowed exception to the X1 rule).  The internal-drop handler stops
+                // it and waits for it before touching the archive.
+                var extraction = new CancellableExtraction<MainViewModel.DragTransferData>();
 #pragma warning disable CA1416  // guarded by linuxNativeCursor
                 if (linuxNativeCursor)
                 {
                     nativeDragStarted = true;
                     var internalDragItems = new List<IFileEntry>(mDragMoveList);
                     linuxDragTask = mLinuxDrag!.BeginNativeDrag(
-                        onInternalDrop: (rx, ry) =>
-                            HandleLinuxInternalDrop(rx, ry, internalDragItems));
+                        onInternalDrop: (rx, ry, chain) => _ = HandleLinuxInternalDropAsync(
+                            rx, ry, chain, internalDragItems, extraction));
                 }
 #pragma warning restore CA1416
 
@@ -2027,9 +2074,30 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
                     : new Cursor(StandardCursorType.Wait);
                 try
                 {
-                    xferData = linuxNativeCursor
-                        ? await System.Threading.Tasks.Task.Run(() => vm.BuildDragData())
-                        : vm.BuildDragData();
+                    if (linuxNativeCursor)
+                    {
+                        // Read the selection here, on the UI thread; only the writing of
+                        // the files goes to the pool.  A failure at either step leaves
+                        // xferData null, and the drag is told below that there is nothing.
+                        try
+                        {
+                            MainViewModel.DragPlan? plan = vm.PrepareDragData();
+                            if (plan != null)
+                            {
+                                xferData = await extraction.Start(
+                                    cancelled => vm.ExtractDragData(plan, cancelled));
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            AppLog.W("File list: preparing the drag data failed", ex);
+                            xferData = null;
+                        }
+                    }
+                    else
+                    {
+                        xferData = vm.BuildDragData();
+                    }
                 }
                 finally
                 {
@@ -2061,10 +2129,20 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
                                 xferData.ClipJsonText,
                                 onDragEnd: () =>
                                 {
-                                    mIsDraggingFileList = false;
-                                    mDragMoveList.Clear();
+                                    ReleasePointerCapture(pointer);
+                                    EndFileListDragState();
                                 });
-                            if (nativeDragStarted) return;
+                            AppLog.D("File list: macOS native drag " +
+                                (nativeDragStarted ? "started" : "unavailable, using DoDragDrop"));
+                            if (nativeDragStarted)
+                            {
+                                // AppKit runs the drag session and swallows the mouse-up, so
+                                // Avalonia never sees the button go up and keeps the pointer
+                                // captured by whatever the press went to.  Hover then stops
+                                // updating and the next press is routed to the stale owner.
+                                ReleasePointerCapture(pointer);
+                                return;
+                            }
                         }
                         // Native session unavailable; fall through to DoDragDrop.
                     }
@@ -2118,17 +2196,26 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
 
             if (!nativeDragStarted)
             {
-                mIsDraggingFileList = false;
-                mDragMoveList.Clear();
+                EndFileListDragState();
             }
             else if (OperatingSystem.IsLinux())
             {
                 // Linux native drag: state cleanup is unconditional (nativeDragStarted=true
-                // is set before BuildDragData, so xferData may be null if extraction failed).
-                mIsDraggingFileList = false;
-                mDragMoveList.Clear();
+                // is set before the extraction, so xferData may be null if it failed).
+                EndFileListDragState();
             }
         }
+    }
+
+    /// <summary>
+    /// Ends the file-list drag state: the flag, the dragged entries, and the state other
+    /// windows read.
+    /// </summary>
+    private void EndFileListDragState()
+    {
+        mIsDraggingFileList = false;
+        mDragMoveList.Clear();
+        FileListDrag.Current = null;
     }
 
     /// <summary>

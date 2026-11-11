@@ -21,6 +21,17 @@
 - There is a bug report in the Avalonia GitHub issue tracker for this issue. (https://github.com/AvaloniaUI/Avalonia/issues/21073)
 - There are workarounds for this if upgrade to Avalonia 12 is needed, but they are cumbersome and not worth it for now.
  
+## macOS: file viewer flickers when the main window is clicked
+When a file viewer window is open, clicking the main window brings the main window to the
+front for a moment and then puts the viewer back on top.  The viewer is an owned window of
+the main window.  The ordering is done by Avalonia's own macOS code, not by CiderPress II:
+`windowDidBecomeKey` calls `BringToFront()`, which orders the window forward and then orders
+its owned windows forward again.  The code is the same in Avalonia 11.3.x and in the 12.x
+`main` branch (checked in the source on 2026-11-10; 12.x was not run), so upgrading is not
+expected to fix it.  No Avalonia issue about it was found.  Cosmetic only; accepted for now.
+Showing viewers without an owner would remove the flicker, but then the main window could
+cover a viewer.
+
 ## Linux Drag & Drop Known Limitations
 
 ### XWayland cursor glyph (cosmetic only — functionality unaffected)

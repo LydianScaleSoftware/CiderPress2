@@ -153,8 +153,9 @@ numeric order (`FILE2` before `FILE10`), accented letters next to their base let
 ### X5 rule (decided)
 
 - **Per-user folder** from `Environment.GetFolderPath(SpecialFolder.ApplicationData)`
-  (checked on macOS: `~/Library/Application Support`; Linux: `$XDG_CONFIG_HOME` or
-  `~/.config`; Windows: `%APPDATA%`):
+  (checked on macOS only: `~/Library/Application Support`; the Linux (`$XDG_CONFIG_HOME` or
+  `~/.config`) and Windows (`%APPDATA%`) locations are from the documentation and have **not**
+  been run):
   - Windows: `%APPDATA%\CiderPress2\`
   - macOS: `~/Library/Application Support/CiderPress2/`
   - Linux: `~/.config/ciderpress2/` (lowercase, per `~/.config` convention)
@@ -835,7 +836,7 @@ C-native (`Platform/` only):
 
 C-view (Phase 2, `MainWindow.axaml.cs` drag region and `FileViewer.axaml.cs`):
 
-- [ ] **C1 (S1)** Linux internal drop can move files while extraction still runs.
+- [x] **C1 (S1)** Linux internal drop can move files while extraction still runs.
   (Platform#1, Views#5; the X1 exception) The internal-drop handler cancels the extraction task
   and awaits it before `MoveFiles`. `BuildDragData` needs a cancellation token checked between
   entries.
@@ -844,7 +845,25 @@ C-view (Phase 2, `MainWindow.axaml.cs` drag region and `FileViewer.axaml.cs`):
   - **Manual (Linux):** select many large files in a ProDOS or HFS image, drag onto a folder in
     the same window, release immediately → files moved correctly, no errors. Then run
     Actions → Test Files (or reopen the image) → no damage.
-- [ ] **C2 (S1)** Wrong drop target: refused foreign window becomes an internal move; own
+  Done. `MainViewModel.BuildDragData` is split: `PrepareDragData()` (UI thread: reads the
+  selection, builds the `ClipFileSet`) and `ExtractDragData(plan, isCancelled)` (only writes
+  files, polls `isCancelled` between entries via `ClipTransferFiles.Extract`, deletes the temp dir
+  when cancelled or failed). `BuildDragData()` is now the two in sequence (Windows/macOS,
+  unchanged behaviour). On Linux `StartFileListDragAsync` calls `PrepareDragData` on the UI thread
+  and runs only `ExtractDragData` on the pool, through the new `Common/CancellableExtraction<T>`.
+  `HandleLinuxInternalDrop` is now `HandleLinuxInternalDropAsync`: it picks the target window
+  (before the await), calls `CancelAndWaitAsync()` (cancel, then await the extraction), then
+  re-checks that the window is still visible and the same work object is open before
+  `MoveFiles` / `LoadDroppedEntry`. Any exception while preparing or extracting leaves
+  `xferData` null, so the existing branch calls `SetNativeDragPaths(empty)` (no 10 s wait).
+  Checked: build 0 warnings; 5 `CancellableExtractionTests` (returns only after the worker has
+  stopped, completed result kept, not started, worker failure not rethrown, double start);
+  92 tests pass. **Not run on Linux; Manual step needed.** Residual: the exception to X1 assumes
+  the button is held, but after a release over an *external* target the extraction can still be
+  running for up to the 10-15 s data/finish timeouts while the UI is usable; this is not
+  changed here (the reviews do not ask for it). Candidate follow-up: disable the main window
+  until `extraction.Task` completes.
+- [x] **C2 (S1)** Wrong drop target: refused foreign window becomes an internal move; own
   secondary windows ignored; root-child-only XdndAware search; release position ignored.
   (Platform#2, Platform#10, Views#6, Platform lower "Final pointer position ignored")
   Record whether the top-level window under the pointer at release is ours (descend the window
@@ -855,11 +874,89 @@ C-view (Phase 2, `MainWindow.axaml.cs` drag region and `FileViewer.axaml.cs`):
     Release over a terminal overlapping CP2 → nothing moves. Release over a viewer overlapping
     the main window → viewer shows the file, nothing moves. Fast flick-and-release onto a file
     manager → drop goes there.
-- [ ] **C10 (S2, confirm on macOS)** macOS drag-to-viewer cannot work with the native drag;
+  Done in `Platform/LinuxDrag.cs` and `MainWindow`. (1) `FindXdndAwareWindow` now walks the
+  window chain under the pointer (`GetWindowChainUnderPointer`, repeated `XQueryPointer` down
+  from the root, max 32 levels) and takes the outermost window with `XdndAware` (still honours
+  `XdndProxy`); it returns Zero if the chain contains `_avaloniaWin` or the proxy window. On a
+  reparenting WM the root's child is the frame, so the client is found further down (item 10;
+  KWin's bridge window is still found first). (2) `ExportOnButtonRelease` first runs
+  `ExportOnMotion` at the release position, and if the (possibly new) target has not accepted it
+  pumps X events up to 300 ms (`PumpEventsUntil`) until its `XdndStatus` arrives
+  (`_exportStatusSinceLastPos`); `_isExporting` is cleared only afterwards. (3) With no accepting
+  target the callback now gets the window chain (`Action<int,int,nint[]>`); the view maps the
+  chain to its windows by native handle (`TryGetPlatformHandle`) with the pure
+  `DropWindowPicker.Pick` (innermost own window wins), so a refused or non-aware foreign window
+  is not ours and the drop is ignored, a viewer or DropTarget window over the main window gets
+  the drop (it is checked by stacking order, not by bounds), and a modal dialog is ignored.
+  `IsScreenPointInWindow` is deleted. Header invariants 6 and a new 7 updated. Checked: build
+  0 warnings, 5 `DropWindowPickerTests`. **Not run on Linux; Manual steps (Xorg with a
+  reparenting WM, KDE XWayland) are needed.** Risks to watch: a drop on a window of ours whose
+  native handle is not what `TryGetPlatformHandle` returns would now be ignored (logged as
+  "Linux drop: pointer not over one of our windows"); the main window's handle is the one
+  `LinuxDrag` is installed with, so it is safe by construction, viewers use the same API; and a
+  target that never answers `XdndStatus` now costs 300 ms before the release is decided.
+- [x] **C10 (S2, confirm on macOS)** macOS drag-to-viewer cannot work with the native drag;
   drag-format strings declared twice. (Views#8, Views cleanup) One shared constant set; let the
   viewer take the entry from the main window's drag state while `mIsDraggingFileList` is set.
   - **Manual (macOS):** drag an entry from the file list to an open viewer → the viewer shows
     it. Repeat on Windows and Linux → unchanged.
+  Done, **unconfirmed on macOS.** New `Common/FileListDrag.cs` holds the three format
+  strings (the copies in `MainWindow` and `FileViewer` are deleted; a test pins their values)
+  and `FileListDrag.Current`, the in-process file-list drag state set in `StartFileListDragAsync`
+  and cleared by the new `EndFileListDragState()` (also on the macOS `onDragEnd`). The viewer's
+  `FileViewer_DragOver` / `FileViewer_Drop` use `FileListDrag.TryGet`, which takes the entries
+  from the data object if it has them and otherwise from `Current`. Windows and Linux should
+  behave as before because their data objects carry the formats (expected from the code, **not
+  tested**). Checked: build 0 warnings, 6
+  `FileListDragTests`. **Manual (macOS) NOT run.** Assumption to confirm: Avalonia raises
+  `DragOver` / `Drop` on the viewer during the native `NSDraggingSession`; if it does not, this
+  change has no effect and the viewer needs a different hook (for example hit-testing viewer
+  windows in `MacOSDrag`'s drag-update callback).
+  **macOS result (user, 2026-11-10): dragging a selected file to an open viewer works.**
+- [x] **C12 (S2, found in the C10 macOS run)** On macOS, dragging from the file list could carry
+  the previously selected row instead of the one grabbed (worst when a viewer window was the
+  active window), and after a drag that ended with no target, row hover highlighting stayed
+  frozen until the next click. **Root cause (confirmed on macOS by the user, and by a trace of
+  presses, selections and pointer capture):** the native `NSDraggingSession` swallows the
+  mouse-up, so Avalonia never saw the button go up and kept the pointer captured by the element
+  the press had gone to; the next press was routed to that stale element, which re-selected the
+  previous row. **Fix:** `MainWindow.ReleasePointerCapture` (`pointer.Capture(null)`) is called
+  when the native session starts and from its `onDragEnd` callback. Also kept: a release clears
+  `mDragStartPosn`, so a drag always needs a fresh press. Checked on macOS by the user:
+  highlighting and dragging work. The trace showed the window is already active when the press
+  arrives and the DataGrid selects the row on the press, so the earlier theories (window
+  activation, a press arriving after the drag starts, a "missing press") were wrong, and the
+  code written for them was removed again. **Windows and Linux not tested** (the capture
+  release is macOS-only and does not run there).
+- [~] **C13 (S3, found in the C12 macOS run)** **ACCEPTED as a known issue (user, 2026-11-10); recorded in `KNOWN_ISSUES.md`. Not fixed.** Viewer window flickers, and the main window can
+  end up in front of a viewer, when the main window is activated by a click while a viewer is
+  the active window. Not diagnosed; nothing in the drag code activates or focuses a viewer
+  (the only `Activate()` calls are Enter/double-click open, file activation and Paste). Suspects:
+  macOS ordering of the viewer as an owned (child) window of the main window
+  (`MainViewModel` `window.Show(owner)`), and the viewer's `Activated` handler, which re-selects
+  the viewer's current entry in the file list. **Manual (macOS):** with a viewer open, click
+  (no drag) a row in the main window and note whether the flicker still happens; then drag.
+  If a plain click also flickers it is window ordering, not the drag.
+  **User result (macOS):** a plain click flickers too: the main window is brought to the
+  front for a moment and then put back behind the viewer. So it is window ordering, not the
+  drag, and not new. **TEMPORARY experiment:** with `CP2_VIEWER_UNOWNED=1` in the environment
+  `MainViewModel` shows viewers with `window.Show()` (no owner, centred on screen) instead of
+  `Show(owner)`. Decision for the user: keep viewers owned (always above the main window, with
+  this flicker) or unowned (normal independent windows; the main window can cover a viewer).
+  Remove the environment switch once decided.
+  **Upstream check (2026-11-10, Avalonia sources on GitHub, `release/11.3` vs `main`):** this
+  is Avalonia's own macOS window-ordering code, not CP2 code, and it is **not fixed in 12.x**.
+  Avalonia does not use `addChildWindow`; `AvnWindow windowDidBecomeKey` calls
+  `WindowImpl::BringToFront()` twice (once at once, once on `dispatch_async`), which does
+  `orderFront` on the window and then `ZOrderChildWindows()` to `orderFront` each owned
+  window. So clicking the main window raises it and then puts the viewer back on top, which is
+  the visible flicker. `windowDidBecomeKey`, `BringToFront` and `ZOrderChildWindows` are
+  identical in both branches (main only added weak-pointer safety). The related change
+  AvaloniaUI/Avalonia#22221 (merged 2026-09-14, backported to 12.1.x) only fixes window levels
+  for a Topmost owner. No open or closed issue about this flicker was found. Only the
+  source was compared; 12.x was not run.
+  **Decision:** keep viewers owned and accept the flicker. The temporary `CP2_VIEWER_UNOWNED`
+  switch in `MainViewModel` was removed again (`window.Show(owner)` as before).
 
 ### Stream B: clipboard, temp extraction, shutdown (Phase 2, first)
 
@@ -1154,6 +1251,14 @@ Tests by area:
 | Progress queries | A2, A3 | throwing dialog service → worker gets `Cancel`, no hang (headless) |
 
 ### Manual regression checklist (Phase 3, every platform available)
+
+**Test status as of 2026-11-10: only macOS has been run, and only for the items the user
+reported on (Phase 1 checks, and G). No Windows or Linux manual step has been run for any item.**
+A `[x]` in section 5 means the code change is made and builds, and its Automated tests pass on
+macOS; it does not mean any Windows or Linux Manual step passed. Treat every Manual step listed
+for those platforms as outstanding, and the Windows and Linux paths (native drag, settings
+location, file activation, window placement, key routing) as untested. Anything that says
+"checked" or "verified" without naming a platform means macOS.
 
 Run the per-item manual steps above, then this end-to-end pass:
 

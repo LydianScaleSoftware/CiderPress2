@@ -23,6 +23,7 @@ using Avalonia.Interactivity;
 using Avalonia.Threading;
 
 using FileConv;
+using cp2_avalonia.Common;
 using cp2_avalonia.Controls.FancyTextViewer;
 using cp2_avalonia.Tools;
 using static cp2_avalonia.Tools.ConfigOptCtrl;
@@ -474,32 +475,19 @@ public partial class FileViewer : Window
     // -----------------------------------------------------------------------------------------
     // Drag/drop — accept a single file entry from the main window file list
 
-    private const string DRAG_FORMAT = "cp2_avalonia/FileListDrag";
-    private const string DRAG_SOURCE_FORMAT = "cp2_avalonia/FileListDragSource";
-    private const string DRAG_WORKPATH_FORMAT = "cp2_avalonia/FileListDragWorkPath";
-
     private void FileViewer_DragOver(object? sender, DragEventArgs e)
     {
-        if (e.Data.Contains(DRAG_FORMAT) && e.Data.Contains(DRAG_SOURCE_FORMAT)) {
-            e.DragEffects = DragDropEffects.Copy;
-        } else {
-            e.DragEffects = DragDropEffects.None;
-        }
+        e.DragEffects = FileListDrag.TryGet(e.Data, out _)
+            ? DragDropEffects.Copy : DragDropEffects.None;
         e.Handled = true;
     }
 
     private void FileViewer_Drop(object? sender, DragEventArgs e)
     {
         if (VM == null) return;
-        if (!e.Data.Contains(DRAG_FORMAT) || !e.Data.Contains(DRAG_SOURCE_FORMAT)) return;
+        if (!FileListDrag.TryGet(e.Data, out FileListDrag.State state)) return;
 
-        var entries = e.Data.Get(DRAG_FORMAT) as List<DiskArc.IFileEntry>;
-        var source = e.Data.Get(DRAG_SOURCE_FORMAT);
-        var workPath = e.Data.Get(DRAG_WORKPATH_FORMAT) as string ?? string.Empty;
-
-        if (entries == null || entries.Count == 0 || source == null) return;
-
-        VM.LoadDroppedEntry(source, entries[0], workPath);
+        VM.LoadDroppedEntry(state.Source, state.Entries[0], state.WorkPath);
         e.Handled = true;
     }
 }

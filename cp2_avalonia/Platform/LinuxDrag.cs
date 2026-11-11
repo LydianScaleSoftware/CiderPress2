@@ -267,8 +267,16 @@ internal sealed class LinuxDrag : IDisposable
     //   3. XInitThreads() must be called before any display connection opens.
     //   4. All drop callbacks must be marshalled to the UI thread via Dispatcher.UIThread.Post.
     //   5. XdndPosition data.l[2] = (rootX<<16)|rootY, data.l[3] = timestamp.
-    //   6. FindXdndAwareWindow returns Zero for our own windows — that is how
-    //      internal vs. external drops are distinguished on button release.
+    //   6. FindXdndAwareWindow returns Zero for our own main window, so no XDND is sent
+    //      to ourselves.  It does NOT tell internal and external drops apart: a window that
+    //      is not XDND-aware, or that refused the drop, also gives Zero.  On release without
+    //      an accepting target, the chain of X windows under the pointer
+    //      (GetWindowChainUnderPointer) is handed to the internal-drop callback, and the
+    //      view decides whether one of ITS windows is in that chain.  A drop over another
+    //      program's window is ignored, even if that window lies over ours.
+    //   7. The release is handled at the final pointer position: ExportOnButtonRelease
+    //      re-resolves the target there and waits briefly for its XdndStatus before
+    //      choosing between XdndDrop and the internal drop.
 
     private volatile bool _isExporting;
     private string _exportUriList = string.Empty;
@@ -293,9 +301,21 @@ internal sealed class LinuxDrag : IDisposable
     // before giving up on the drag.  Targets that ignore the drop never answer.
     private const int DropTimeoutMs = 15000;
 
-    // Called on the UI thread when the button is released over our own window.
-    // Receives root-coordinate (screenX, screenY) of the drop point.
-    private Action<int, int>? _onInternalDrop;
+    // Called on the UI thread when the button is released and no external target accepted.
+    // Receives root-coordinate (screenX, screenY) of the drop point and the chain of X
+    // windows under the pointer then; see invariant 6.
+    private Action<int, int, nint[]>? _onInternalDrop;
+
+    // Chain of X windows under the pointer at the last FindXdndAwareWindow call, outermost
+    // first.  Event thread only.
+    private nint[] _lastWindowChain = Array.Empty<nint>();
+
+    // Set when an XdndStatus from the current target arrives; cleared when an XdndPosition is
+    // sent.  Lets the release wait for the answer to its final position.
+    private volatile bool _exportStatusSinceLastPos;
+
+    // How long the release waits for the target's answer to the final XdndPosition.
+    private const int StatusWaitMs = 300;
 
     // Pointer state tracking for export (background thread only).
     private int _pollRootX;
@@ -495,15 +515,19 @@ internal sealed class LinuxDrag : IDisposable
     /// drag-flicks are not lost while extraction is in progress.
     /// </summary>
     /// <param name="onInternalDrop">
-    /// Called on the UI thread when the button is released over one of our own windows
-    /// (no external XDND target accepted the drop).  Receives root-coordinates (x, y).
+    /// Called on the UI thread when the button is released and no external XDND target
+    /// accepted the drop.  Receives the root-coordinates (x, y) and the chain of X windows
+    /// under the pointer, outermost first.  The pointer may be over one of our windows, or
+    /// over another program's window that is not XDND-aware or refused the drop; the callback
+    /// tells them apart by looking for its own windows' native handles in the chain
+    /// (<see cref="DropWindowPicker"/>).
     /// </param>
     /// <returns>
     /// A <see cref="Task{T}"/> that completes when the drag ends.  The caller should
     /// follow this with a call to <see cref="SetNativeDragPaths"/> once extraction
     /// finishes.
     /// </returns>
-    public Task<DragDropEffects> BeginNativeDrag(Action<int, int>? onInternalDrop = null)
+    public Task<DragDropEffects> BeginNativeDrag(Action<int, int, nint[]>? onInternalDrop = null)
     {
         _exportGeneration++;
         _exportUriList       = string.Empty;
@@ -1191,11 +1215,23 @@ internal sealed class LinuxDrag : IDisposable
                 ExportSendXdndEnter(target);
         }
         if (target != IntPtr.Zero)
+        {
+            _exportStatusSinceLastPos = false;
             ExportSendXdndPosition(target, rootX, rootY);
+        }
     }
 
     private void ExportOnButtonRelease(int rootX, int rootY)
     {
+        // Handle the release position itself: the pointer may have moved since the last
+        // poll, and a target that has just come under it has not said yet whether it takes
+        // the drop.  Give it a moment to answer (_isExporting is still set so that the
+        // XdndStatus is accepted).
+        ExportOnMotion(rootX, rootY);
+        if (_exportCurrentTarget != IntPtr.Zero && !_exportTargetAccepts)
+        {
+            PumpEventsUntil(() => _exportStatusSinceLastPos, StatusWaitMs);
+        }
         _isExporting = false;
 
         if (_exportCurrentTarget != IntPtr.Zero && _exportTargetAccepts)
@@ -1225,16 +1261,17 @@ internal sealed class LinuxDrag : IDisposable
                 ExportSendXdndLeave(_exportCurrentTarget);
             _exportCurrentTarget = IntPtr.Zero;
 
-            // No external target accepted the drop. Invoke the internal-drop callback
-            // unconditionally — the view layer performs its own hit-test against all
-            // open CP2 windows (main window + FileViewer instances) and ignores
-            // drops outside those bounds.
+            // No external target accepted the drop.  That includes the pointer being over a
+            // window of another program that is not XDND-aware or refused the drop, so the
+            // callback gets the chain of windows under the pointer and the view checks
+            // whether one of its own windows is in it (invariant 6).
             var cb = _onInternalDrop;
             _onInternalDrop = null;
             if (cb != null)
             {
                 int snapX = rootX, snapY = rootY;
-                Dispatcher.UIThread.Post(() => cb(snapX, snapY));
+                nint[] chain = _lastWindowChain;
+                Dispatcher.UIThread.Post(() => cb(snapX, snapY, chain));
             }
 
             _exportTcs?.TrySetResult(DragDropEffects.None);
@@ -1258,6 +1295,7 @@ internal sealed class LinuxDrag : IDisposable
             return;
         }
         _exportTargetAccepts = ((long)ev.data1 & 1) != 0;
+        _exportStatusSinceLastPos = true;
     }
 
     private void ExportOnXdndFinished(ref XEvent ev)
@@ -1439,27 +1477,80 @@ internal sealed class LinuxDrag : IDisposable
 
     // ── Window tree helpers ───────────────────────────────────────────────────
 
+    /// <summary>
+    /// Returns the chain of X windows under the pointer: the root's child (usually the window
+    /// manager's frame, on a reparenting window manager) first, then each child of that
+    /// containing the pointer, down to the innermost.
+    /// </summary>
+    private List<nint> GetWindowChainUnderPointer()
+    {
+        var chain = new List<nint>();
+        nint w = _rootWindow;
+        for (int depth = 0; depth < 32; depth++)
+        {
+            XQueryPointer(_display, w,
+                out _, out nint child,
+                out _, out _, out _, out _, out _);
+            if (child == IntPtr.Zero) break;
+            chain.Add(child);
+            w = child;
+        }
+        return chain;
+    }
+
+    /// <summary>
+    /// Finds the XDND target under the pointer: the outermost window in the chain with an
+    /// <c>XdndAware</c> property (with a reparenting window manager the root's child is the
+    /// frame, which has none, and the application's window is further down).  Returns Zero
+    /// if there is none, or if the pointer is over our own main window.  Also records the
+    /// chain in <see cref="_lastWindowChain"/>.
+    /// </summary>
     private nint FindXdndAwareWindow(int xRoot, int yRoot)
     {
-        // topLevel is already the child of the root under the pointer — the same
-        // info XQueryPointer returns. Re-query here so we get the correct window
-        // even if PollPointerForExport's XQueryPointer returned stale data.
-        XQueryPointer(_display, _rootWindow,
-            out _, out nint topLevel,
-            out _, out _, out _, out _, out _);
+        // Re-query rather than using the poll's position, which can be stale.
+        List<nint> chain = GetWindowChainUnderPointer();
+        _lastWindowChain = chain.ToArray();
 
         _findAwareToplevel = IntPtr.Zero;
-        if (topLevel == IntPtr.Zero || topLevel == _avaloniaWin || topLevel == _proxyWindow)
-            return IntPtr.Zero;
+        foreach (nint w in chain)
+        {
+            if (w == _avaloniaWin || w == _proxyWindow) return IntPtr.Zero;
+        }
+        foreach (nint topLevel in chain)
+        {
+            if (!IsXdndAware(topLevel)) continue;
+            _findAwareToplevel = topLevel;
 
-        if (!IsXdndAware(topLevel)) return IntPtr.Zero;
-        _findAwareToplevel = topLevel;
+            nint proxy = ReadSingleWindowProperty(topLevel,
+                XInternAtom(_display, "XdndProxy", true));
+            if (proxy != IntPtr.Zero && proxy != topLevel && IsXdndAware(proxy))
+                return proxy;
 
-        nint proxy = ReadSingleWindowProperty(topLevel, XInternAtom(_display, "XdndProxy", true));
-        if (proxy != IntPtr.Zero && proxy != topLevel && IsXdndAware(proxy))
-            return proxy;
+            return topLevel;
+        }
+        return IntPtr.Zero;
+    }
 
-        return topLevel;
+    /// <summary>
+    /// Handles X events on the calling (event) thread until <paramref name="done"/> returns
+    /// true or the timeout expires.
+    /// </summary>
+    private void PumpEventsUntil(Func<bool> done, int timeoutMs)
+    {
+        long end = Environment.TickCount64 + timeoutMs;
+        while (!_disposed && !done() && Environment.TickCount64 < end)
+        {
+            if (XPending(_display) > 0)
+            {
+                XNextEvent(_display, out XEvent ev);
+                try { HandleEventFromDisplay(ref ev); }
+                catch (Exception ex) { AppLog.W("Linux drag: event handling error", ex); }
+            }
+            else
+            {
+                WaitForXEvents(10);
+            }
+        }
     }
 
     private bool IsXdndAware(nint window)
