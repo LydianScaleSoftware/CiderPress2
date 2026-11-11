@@ -638,7 +638,7 @@ limitations under the License.
                             </DataGrid.Styles>
                             <DataGrid.Columns>
                                 <!-- Col 0: Status icon (dubious/damaged/comment) -->
-                                <DataGridTemplateColumn Header="?" Width="Auto" CanUserResize="True" CanUserSort="True" IsVisible="True">
+                                <DataGridTemplateColumn Header="?" SortMemberPath="StatusIcon" Width="Auto" CanUserResize="True" CanUserSort="True" IsVisible="True">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
                                             <Image Source="{Binding StatusIcon}" Width="16"
@@ -651,7 +651,7 @@ limitations under the License.
                                 <!-- Note: DataGridColumn.IsVisible binding via parent DataContext
                                  does not work in Avalonia (columns are not in the visual tree).
                                  Visibility is set in code-behind via SetColumnVisible(). -->
-                                <DataGridTemplateColumn Header="Filename" Width="Auto" CanUserResize="True" CanUserSort="True">
+                                <DataGridTemplateColumn Header="Filename" SortMemberPath="FileName" Width="Auto" CanUserResize="True" CanUserSort="True">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
                                             <TextBlock Text="{Binding FileName}" TextTrimming="CharacterEllipsis"/>
@@ -659,7 +659,7 @@ limitations under the License.
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
                                 <!-- Col 2: Pathname (shown in full-list/archive mode) -->
-                                <DataGridTemplateColumn Header="Pathname" Width="Auto" CanUserResize="True" CanUserSort="True">
+                                <DataGridTemplateColumn Header="Pathname" SortMemberPath="PathName" Width="Auto" CanUserResize="True" CanUserSort="True">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
                                             <TextBlock Text="{Binding PathName}" TextTrimming="CharacterEllipsis"/>
@@ -667,23 +667,23 @@ limitations under the License.
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
                                 <!-- Col 3-5: always visible -->
-                                <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="Auto" CanUserResize="True"/>
-                                <DataGridTextColumn Header="Auxtype" Binding="{Binding AuxType}" Width="Auto" CanUserResize="True"/>
-                                <DataGridTextColumn Header="Mod Date" Binding="{Binding ModDate}" Width="Auto" CanUserResize="True"/>
+                                <DataGridTextColumn Header="Type" SortMemberPath="Type" Binding="{Binding Type}" Width="Auto" CanUserResize="True"/>
+                                <DataGridTextColumn Header="Auxtype" SortMemberPath="AuxType" Binding="{Binding AuxType}" Width="Auto" CanUserResize="True"/>
+                                <DataGridTextColumn Header="Mod Date" SortMemberPath="ModDate" Binding="{Binding ModDate}" Width="Auto" CanUserResize="True"/>
                                 <!-- Col 6: always visible -->
-                                <DataGridTextColumn Header="Data Len" Binding="{Binding DataLength}" Width="Auto" CanUserResize="True"/>
+                                <DataGridTextColumn Header="Data Len" SortMemberPath="DataLength" Binding="{Binding DataLength}" Width="Auto" CanUserResize="True"/>
                                 <!-- Col 7: conditional (DOS 3.x raw files) -->
-                                <DataGridTextColumn Header="Raw Len" Binding="{Binding RawDataLength}" Width="Auto" CanUserResize="True"/>
+                                <DataGridTextColumn Header="Raw Len" SortMemberPath="RawDataLength" Binding="{Binding RawDataLength}" Width="Auto" CanUserResize="True"/>
                                 <!-- Col 8: conditional (archive format column) -->
-                                <DataGridTextColumn Header="Data Fmt" Binding="{Binding DataFormat}" Width="Auto" CanUserResize="True"/>
+                                <DataGridTextColumn Header="Data Fmt" SortMemberPath="DataFormat" Binding="{Binding DataFormat}" Width="Auto" CanUserResize="True"/>
                                 <!-- Col 9: conditional (resource fork length) -->
-                                <DataGridTextColumn Header="Rsrc Len" Binding="{Binding RsrcLength}" Width="Auto" CanUserResize="True"/>
+                                <DataGridTextColumn Header="Rsrc Len" SortMemberPath="RsrcLength" Binding="{Binding RsrcLength}" Width="Auto" CanUserResize="True"/>
                                 <!-- Col 10: conditional (resource fork format) -->
-                                <DataGridTextColumn Header="Rsrc Fmt" Binding="{Binding RsrcFormat}" Width="Auto" CanUserResize="True"/>
+                                <DataGridTextColumn Header="Rsrc Fmt" SortMemberPath="RsrcFormat" Binding="{Binding RsrcFormat}" Width="Auto" CanUserResize="True"/>
                                 <!-- Col 11: conditional (total size for filesystems) -->
-                                <DataGridTextColumn Header="Total Size" Binding="{Binding TotalSize}" Width="Auto" CanUserResize="True"/>
+                                <DataGridTextColumn Header="Total Size" SortMemberPath="TotalSize" Binding="{Binding TotalSize}" Width="Auto" CanUserResize="True"/>
                                 <!-- Col 12: always visible -->
-                                <DataGridTextColumn Header="Access" Binding="{Binding Access}" Width="Auto" CanUserResize="True"/>
+                                <DataGridTextColumn Header="Access" SortMemberPath="Access" Binding="{Binding Access}" Width="Auto" CanUserResize="True"/>
                             </DataGrid.Columns>
                             <!-- TODO: drag &amp; drop support -->
                             <DataGrid.ContextMenu>

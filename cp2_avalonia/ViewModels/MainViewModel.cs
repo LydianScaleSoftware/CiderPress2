@@ -1203,6 +1203,25 @@ public class MainViewModel : ObservableObject
     }
 
     /// <summary>
+    /// Highlights the file list row for the entry a viewer is showing.  Viewers are modeless
+    /// and outlive the directory or archive they were opened from, so the entry may not be in
+    /// the current list; then the list is left alone.  (SelectFileListItemByEntry would fall
+    /// back to row 0 and replace the user's selection.)
+    /// </summary>
+    private void SyncFileListToViewerEntry(IFileEntry entry)
+    {
+        if (FileListItem.FindItemByEntry(FileList.Items, entry) == null) {
+            return;
+        }
+        mViewerNavigating = true;
+        try {
+            _viewActions.SelectFileListItemByEntry(entry);
+        } finally {
+            mViewerNavigating = false;
+        }
+    }
+
+    /// <summary>
     /// Creates a new FileViewerViewModel + FileViewer window and shows it.
     /// Sets mActiveViewerWindow to the new window so regular Enter retargets it.
     /// </summary>
@@ -1213,14 +1232,7 @@ public class MainViewModel : ObservableObject
             _workspaceService.WorkPathName, _workspaceService.AppHook,
             _settingsService, mFilePickerService, _clipboardService, _viewerService,
             mDialogService, prePopulateForward);
-        vm.FileNavigated += entry => {
-            mViewerNavigating = true;
-            try {
-                _viewActions.SelectFileListItemByEntry(entry);
-            } finally {
-                mViewerNavigating = false;
-            }
-        };
+        vm.FileNavigated += entry => SyncFileListToViewerEntry(entry);
         _viewerService.Register(vm);
 
         var window = new FileViewer { DataContext = vm };
@@ -1230,12 +1242,7 @@ public class MainViewModel : ObservableObject
             // Sync the file list highlight to whatever this viewer is showing.
             IFileEntry? current = vm.CurrentEntry;
             if (current != null) {
-                mViewerNavigating = true;
-                try {
-                    _viewActions.SelectFileListItemByEntry(current);
-                } finally {
-                    mViewerNavigating = false;
-                }
+                SyncFileListToViewerEntry(current);
             }
         };
         window.Closed += (_, _) => {
@@ -4297,6 +4304,8 @@ public class MainViewModel : ObservableObject
             if (item != null) {
                 FileList.SelectedItem = item;
             }
+            // Rows replaced in place (edited attributes) may no longer be in sort order.
+            FileList.RestoreSortOrder();
             Debug.WriteLine("Not repopulating file list");
         }
         if (FileList.HasFocusRequest) {

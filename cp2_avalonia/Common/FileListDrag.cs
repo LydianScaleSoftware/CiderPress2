@@ -54,6 +54,26 @@ internal static class FileListDrag
     public static State? Current { get; set; }
 
     /// <summary>
+    /// Returns the dragged entries that a move into <paramref name="target"/> would actually
+    /// change.  Entries already in the target are left out, and so is the target itself (a
+    /// directory dropped onto its own row, e.g. by click jitter), which MoveFiles would
+    /// otherwise refuse with a "Bad Move" dialog.
+    /// </summary>
+    public static List<IFileEntry> EntriesToMove(IEnumerable<IFileEntry> entries,
+        IFileEntry target)
+    {
+        List<IFileEntry> result = new List<IFileEntry>();
+        foreach (IFileEntry entry in entries)
+        {
+            if (entry != target && entry.ContainingDir != target)
+            {
+                result.Add(entry);
+            }
+        }
+        return result;
+    }
+
+    /// <summary>
     /// Gets the dragged entries from a drop's data object, or from <see cref="Current"/> if
     /// the data object does not have them.
     /// </summary>

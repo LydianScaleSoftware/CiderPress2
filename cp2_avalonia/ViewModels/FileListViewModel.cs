@@ -29,6 +29,7 @@ using static DiskArc.Defs;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
+using cp2_avalonia.Common;
 using cp2_avalonia.Models;
 using cp2_avalonia.Services;
 using cp2_avalonia.Views;
@@ -56,7 +57,11 @@ public class FileListViewModel : ObservableObject {
 
     // ---- File list collection ----
 
-    public ObservableCollection<FileListItem> Items { get; } = new();
+    /// <summary>
+    /// The rows, in display order (sorted, if a sort is active).  Change the whole contents
+    /// with <see cref="ReplaceableCollection{T}.ReplaceAll"/> so the grid sees one reset.
+    /// </summary>
+    public ReplaceableCollection<FileListItem> Items { get; } = new();
 
     private FileListItem? mSelectedItem;
     public FileListItem? SelectedItem {
@@ -82,6 +87,15 @@ public class FileListViewModel : ObservableObject {
 
     // ---- Sort state ----
 
+    // The active column sort, as the column's SortMemberPath; null when the list is unsorted
+    // (in the file system's natural order).  Kept here, not in the view, so that populating
+    // the list sorts it *before* the selection is restored.
+    private string? mSortPath;
+    private bool mSortAscending;
+
+    /// <summary>True if a column sort is active.</summary>
+    internal bool IsSortActive => mSortPath != null;
+
     private bool mIsResetSortEnabled;
     public bool IsResetSortEnabled {
         get => mIsResetSortEnabled;
@@ -98,9 +112,65 @@ public class FileListViewModel : ObservableObject {
     public event Action? SortReset;
 
     private void DoResetSort() {
+        mSortPath = null;
         mViewActions.ResetFileListSort();
         IsResetSortEnabled = false;
         SortReset?.Invoke();
+    }
+
+    /// <summary>
+    /// Sorts the list by a column and remembers the sort, so later repopulation keeps it.
+    /// The rows are replaced in one reset.
+    /// </summary>
+    /// <param name="sortMemberPath">The column's <c>SortMemberPath</c>.</param>
+    /// <param name="ascending">True for ascending order.</param>
+    public void ApplySort(string? sortMemberPath, bool ascending) {
+        mSortPath = sortMemberPath ?? string.Empty;
+        mSortAscending = ascending;
+        IsResetSortEnabled = true;
+        Items.ReplaceAll(Sorted(Items));
+    }
+
+    /// <summary>
+    /// Returns the items in the active sort order, or unchanged if no sort is active.
+    /// </summary>
+    private List<FileListItem> Sorted(IEnumerable<FileListItem> items) {
+        List<FileListItem> list = new List<FileListItem>(items);
+        if (mSortPath != null) {
+            var comparer = new FileListItem.ItemComparer(mSortPath, mSortAscending);
+            // Stable, so rows that compare equal keep their relative order.
+            list = System.Linq.Enumerable.ToList(
+                System.Linq.Enumerable.OrderBy(list, x => x, comparer));
+        }
+        return list;
+    }
+
+    /// <summary>
+    /// Re-sorts the list if a sort is active and the rows are no longer in order, e.g. after
+    /// a row was replaced in place because its attributes (the sort key) changed.  The
+    /// selection is put back afterwards.  Does nothing when the rows are already in order.
+    /// </summary>
+    public void RestoreSortOrder() {
+        if (mSortPath == null) {
+            return;
+        }
+        var comparer = new FileListItem.ItemComparer(mSortPath, mSortAscending);
+        bool ordered = true;
+        for (int i = 1; i < Items.Count; i++) {
+            if (comparer.Compare(Items[i - 1], Items[i]) > 0) {
+                ordered = false;
+                break;
+            }
+        }
+        if (ordered) {
+            return;
+        }
+        List<FileListItem> selected = new List<FileListItem>(Selection);
+        Items.ReplaceAll(Sorted(Items));
+        if (selected.Count > 0) {
+            mViewActions.SetFileListSelection(selected);
+            mViewActions.ScrollFileListItemIntoView(selected[0]);
+        }
     }
 
     // ---- Column visibility ----
@@ -201,36 +271,39 @@ public class FileListViewModel : ObservableObject {
                 " (focus=" + focusOnFileList + " mSwitch=" + mSwitchFocusToFileList + ")");
         }
 
-        DateTime clearWhen = DateTime.Now;
-        Items.Clear();
         DateTime startWhen = DateTime.Now;
 
+        // Build the new rows off to the side and hand them to the grid in one piece, sorted
+        // if a sort is active.  Sorting before the selection is restored (below) is what
+        // keeps the selection when a sort is active.
+        List<FileListItem> newItems = new List<FileListItem>();
         int dirCount = 0;
         int fileCount = 0;
         if (currentWorkObject is IArchive archive) {
-            PopulateEntriesFromArchive(archive,
+            PopulateEntriesFromArchive(archive, newItems,
                 ref dirCount, ref fileCount, formatter);
         } else if (currentWorkObject is IFileSystem system) {
             if (showSingleDir) {
                 if (dirTreeSel != null) {
-                    PopulateEntriesFromSingleDir(dirTreeSel.FileEntry,
+                    PopulateEntriesFromSingleDir(dirTreeSel.FileEntry, newItems,
                         ref dirCount, ref fileCount, formatter);
                 } else {
                     Debug.WriteLine("FileList: Can't populate, no dir tree sel");
                 }
             } else {
                 PopulateEntriesFromFullDisk(
-                    system.GetVolDirEntry(),
+                    system.GetVolDirEntry(), newItems,
                     ref dirCount, ref fileCount, formatter);
             }
         } else {
             Debug.Assert(false, "FileList: work object is " + currentWorkObject);
         }
 
+        Items.ReplaceAll(Sorted(newItems));
+
         DateTime endWhen = DateTime.Now;
         Debug.WriteLine("FileList: refresh done in " +
-            (endWhen - startWhen).TotalMilliseconds + " ms (clear took " +
-            (startWhen - clearWhen).TotalMilliseconds + " ms)");
+            (endWhen - startWhen).TotalMilliseconds + " ms");
 
         if (Items.Count != 0) {
             if (focusOnFileList || mSwitchFocusToFileList) {
@@ -248,16 +321,14 @@ public class FileListViewModel : ObservableObject {
         LastDirCount = dirCount;
         LastFileCount = fileCount;
 
-        mViewActions.ReapplyFileListSort();
-
         // Preallocate the name column to fit the widest value in the whole model, so it
         // doesn't grow row-by-row as the virtualized grid scrolls. Done here (synchronously,
         // before the grid lays out) to avoid a visible width jump.
         mViewActions.PreSizeNameColumn();
     }
 
-    private void PopulateEntriesFromArchive(IArchive arc, ref int dirCount,
-            ref int fileCount, Formatter formatter) {
+    private void PopulateEntriesFromArchive(IArchive arc, List<FileListItem> items,
+            ref int dirCount, ref int fileCount, Formatter formatter) {
         bool macZipMode = _settingsService.GetBool(AppSettings.MAC_ZIP_ENABLED, true);
         foreach (IFileEntry entry in arc) {
             IFileEntry adfEntry = IFileEntry.NO_ENTRY;
@@ -284,29 +355,30 @@ public class FileListViewModel : ObservableObject {
             } else {
                 fileCount++;
             }
-            Items.Add(new FileListItem(entry, adfEntry, adfAttrs, formatter));
+            items.Add(new FileListItem(entry, adfEntry, adfAttrs, formatter));
         }
     }
 
-    private void PopulateEntriesFromSingleDir(IFileEntry dirEntry, ref int dirCount,
-            ref int fileCount, Formatter formatter) {
+    private void PopulateEntriesFromSingleDir(IFileEntry dirEntry, List<FileListItem> items,
+            ref int dirCount, ref int fileCount, Formatter formatter) {
         foreach (IFileEntry entry in dirEntry) {
             if (entry.IsDirectory) {
                 dirCount++;
             } else {
                 fileCount++;
             }
-            Items.Add(new FileListItem(entry, formatter));
+            items.Add(new FileListItem(entry, formatter));
         }
     }
 
-    private void PopulateEntriesFromFullDisk(IFileEntry curDirEntry, ref int dirCount,
-            ref int fileCount, Formatter formatter) {
+    private void PopulateEntriesFromFullDisk(IFileEntry curDirEntry, List<FileListItem> items,
+            ref int dirCount, ref int fileCount, Formatter formatter) {
         foreach (IFileEntry entry in curDirEntry) {
-            Items.Add(new FileListItem(entry, formatter));
+            items.Add(new FileListItem(entry, formatter));
             if (entry.IsDirectory) {
                 dirCount++;
-                PopulateEntriesFromFullDisk(entry, ref dirCount, ref fileCount, formatter);
+                PopulateEntriesFromFullDisk(entry, items, ref dirCount, ref fileCount,
+                    formatter);
             } else {
                 fileCount++;
             }
@@ -347,46 +419,61 @@ public class FileListViewModel : ObservableObject {
     }
 
     private bool VerifyFileList(IArchive arc) {
-        if (Items.Count != arc.Count) {
-            return false;
-        }
-        int index = 0;
-        foreach (IFileEntry entry in arc) {
-            if (Items[index].FileEntry != entry) {
-                return false;
-            }
-            index++;
-        }
-        return true;
+        return VerifyAgainst(arc);
     }
 
     private bool VerifyFileList(IFileEntry dirEntry) {
-        int index = 0;
-        bool ok = VerifyFileListR(ref index, dirEntry, false);
-        return (ok && index == Items.Count);
+        return VerifyAgainst(EnumerateDir(dirEntry, false));
     }
 
     private bool VerifyFileList(IFileSystem fs) {
-        int index = 0;
-        bool ok = VerifyFileListR(ref index, fs.GetVolDirEntry(), true);
-        return (ok && index == Items.Count);
+        return VerifyAgainst(EnumerateDir(fs.GetVolDirEntry(), true));
     }
 
-    private bool VerifyFileListR(ref int index, IFileEntry dirEntry, bool doRecurse) {
-        if (index >= Items.Count) {
-            return false;
-        }
+    /// <summary>
+    /// Enumerates the entries of a directory in the order the list shows them when it is
+    /// unsorted: each entry, followed by its contents if it is a directory (and we recurse).
+    /// </summary>
+    private static IEnumerable<IFileEntry> EnumerateDir(IFileEntry dirEntry, bool doRecurse) {
         foreach (IFileEntry entry in dirEntry) {
-            if (index >= Items.Count || Items[index].FileEntry != entry) {
-                return false;
-            }
-            index++;
+            yield return entry;
             if (doRecurse && entry.IsDirectory) {
-                if (!VerifyFileListR(ref index, entry, doRecurse)) {
-                    return false;
+                foreach (IFileEntry child in EnumerateDir(entry, doRecurse)) {
+                    yield return child;
                 }
             }
         }
-        return true;
+    }
+
+    /// <summary>
+    /// Checks whether the list shows exactly the expected entries.  Unsorted, the order has to
+    /// match too.  With a sort active the rows are in sort order, not file system order, so
+    /// the entries are compared as a set.
+    /// </summary>
+    private bool VerifyAgainst(IEnumerable<IFileEntry> expected) {
+        if (mSortPath == null) {
+            int index = 0;
+            foreach (IFileEntry entry in expected) {
+                if (index >= Items.Count || Items[index].FileEntry != entry) {
+                    return false;
+                }
+                index++;
+            }
+            return index == Items.Count;
+        }
+
+        HashSet<IFileEntry> shown = new HashSet<IFileEntry>(Items.Count,
+            ReferenceEqualityComparer.Instance);
+        foreach (FileListItem item in Items) {
+            shown.Add(item.FileEntry);
+        }
+        int count = 0;
+        foreach (IFileEntry entry in expected) {
+            if (!shown.Contains(entry)) {
+                return false;
+            }
+            count++;
+        }
+        return count == Items.Count && shown.Count == Items.Count;
     }
 }

@@ -79,9 +79,6 @@ public interface IViewActions
     /// </summary>
     void SelectFileListItemByEntry(DiskArc.IFileEntry selEntry);
 
-    /// <summary>Re-applies the last user-chosen column sort after file-list repopulation.</summary>
-    void ReapplyFileListSort();
-
     /// <summary>
     /// Sizes the visible Filename/Pathname column to fit the widest value in the entire
     /// file-list model, so the column doesn't grow as rows scroll into view under
@@ -92,7 +89,7 @@ public interface IViewActions
     // --- Recent files menu (native platform menu construction) ---
     void PopulateRecentFilesMenu();
 
-    /// <summary>Resets file-list sort state (clears column sort tags and tracked sort column).</summary>
+    /// <summary>Clears the file-list sort indicator and column sort tags in the view.</summary>
     void ResetFileListSort();
 
     /// <summary>Scrolls a directory tree item into view without changing the selection.</summary>

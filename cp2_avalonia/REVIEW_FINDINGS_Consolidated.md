@@ -1125,7 +1125,7 @@ C-view (Phase 2, `MainWindow.axaml.cs` drag region and `FileViewer.axaml.cs`):
 
 ### Stream D: file list sort, selection and grid input (Phase 2)
 
-- [ ] **D1 (S2)** Comparer fixes: size columns overflow on 2 GB differences; Rsrc Len ignores
+- [x] **D1 (S2)** Comparer fixes: size columns overflow on 2 GB differences; Rsrc Len ignores
   MacZip resource lengths; text columns case-sensitive; column resolved from header text.
   (Models#3, Models#2, Models#6, Models design issue) Use `CompareTo`; keep numeric lengths in
   fields; map columns by `SortMemberPath` or `Tag`, assert on unknown. Text columns follow the
@@ -1140,7 +1140,28 @@ C-view (Phase 2, `MainWindow.axaml.cs` drag region and `FileViewer.axaml.cs`):
     numbered and accented names; compare with how Finder / Explorer / the Linux file manager
     orders the same names after extracting them. Sort every other column ascending/descending,
     including Rsrc Len on a MacZip archive with resource forks.
-- [ ] **D2 (S2)** Sorting rebuilds the list one item at a time; an active sort drops the
+  - **Done (macOS build and unit tests only).** New `Common/NameSort.cs`: names compare with
+    `IgnoreCase | NumericOrdering` on the current culture (probed once; hand-written natural
+    comparer when ICU numeric ordering is absent), Pathname one segment at a time using the
+    entry's separator (`NO_DIR_SEP` = no split), code columns `OrdinalIgnoreCase`.
+    `FileListItem.ItemComparer` now takes the column's `SortMemberPath` (set on all 13 columns
+    in `MainWindow.axaml`; header text is no longer used, nor for the name-column lookup and
+    auto-size). Lengths, MacZip resource length and mod date are kept in fields and compared with
+    `CompareTo`. An unknown path asserts and sorts by filename.
+  - **Differs from the X3 text:** ties are ordered shorter-first, then ordinal. ICU reads `7` and
+    `007` as the same number, so plain ordinal gave `007, 7`; the X3 list says `7, 007`. The
+    fallback uses the same rule, so both paths agree on ASCII names.
+  - **Checked:** `NameSortTests`, `FileListItemComparerTests` (3,000,000,000 vs 100 and 4 GB vs 0
+    on all four size columns, X3 list order, `DIR`, `DIR/FILE`, `DIR.BAK` with `/` and `:`, hex
+    Auxtype, fallback vs ICU on ASCII, transitivity over random names in both modes, and a test
+    that reads `MainWindow.axaml` and checks every file-list column has a known, unique
+    `SortMemberPath`). Run on macOS (ICU, en-US) only.
+  - **Not covered:** the real MacZip path (a ZIP with an AppleDouble header) only has a synthetic
+    test; the app was not run in invariant-globalization mode (the fallback is tested directly).
+    **Manual steps not run** (nothing was run in the UI). **Not run on Windows/Linux** (ICU vs
+    NLS numeric ordering is unchecked there); their steps are deferred.
+  - Section 8: D1 marked confirmed by reading `cp2_wpf/FileListItem.cs`.
+- [x] **D2 (S2)** Sorting rebuilds the list one item at a time; an active sort drops the
   selection on every refresh and makes every refresh a full repopulate; `SetFileListSelection`
   is O(n²). (Views#10, ViewModels#6) One shared sort helper that replaces contents in one
   reset; sort before restoring the selection; verify the list as a set (or against an unsorted
@@ -1148,30 +1169,85 @@ C-view (Phase 2, `MainWindow.axaml.cs` drag region and `FileViewer.axaml.cs`):
   - **Manual:** full-list mode on a large HFS or ProDOS hard-drive image: click headers → no
     stall. With a sort active, edit attributes of a row → same row stays selected; delete a row
     → neighbour selected. Select all → fast.
-- [ ] **D3 (S2)** Resize-grip detection looks for a `Thumb` that never exists. (Views#4)
+  - **Done (macOS build and unit tests only).** `FileListViewModel` now owns the sort state
+    (`ApplySort`, `RestoreSortOrder`, `IsSortActive`) and builds the rows in a local list,
+    sorts it, and hands it to `Items` (new `Common/ReplaceableCollection<T>`) with one Reset, so
+    clicking a header and every repopulate are one notification. The sort is applied *before* the
+    selection is restored. `VerifyForObject` compares as a set while a sort is active (ordered
+    otherwise). `RefreshDirAndFileList` calls `RestoreSortOrder` when it does not repopulate, so a
+    row replaced in place by an attribute edit moves to its sorted place and stays selected.
+    `ReapplyFileListSort`/`DoReapplyFileListSort`/`mSortColumn` are gone (also from `IViewActions`).
+    `SetFileListSelection` suppresses the per-item handler and snapshots once.
+  - Side effect: an empty directory now verifies (it used to always repopulate).
+  - **Checked:** `FileListViewModelTests` on a real in-memory ProDOS volume: one Reset for sort
+    and for populate, sorted-list verify as a set, add/remove detected with and without a sort,
+    selection restored on the sorted rows, reset-sort, `RestoreSortOrder`.
+  - **Not done:** `SetFileListSelection` still does one `SelectedItems.Add` per row (each is an
+    index lookup), so a very large selection is O(rows x selected) but no longer re-snapshots
+    each time. Not measured. **Manual steps not run** (large-image timing, edit-attributes and
+    delete with a sort active, select all). Not run on Windows/Linux; deferred.
+- [x] **D3 (S2)** Resize-grip detection looks for a `Thumb` that never exists. (Views#4)
   Detect resize by pointer X near header edges, or compare name-column widths at press and
   release; delete the `Thumb` code and `mSuppressSort` if no longer needed.
   - **Manual:** resize the Filename column, change directory → width kept. Double-click a
     column divider → the column to its left auto-sizes. Click a header → sorts; drag a divider
     → does not sort.
-- [ ] **D4 (S2)** File-list double-tap and drag arming are not limited to data rows.
+  - **Done (macOS build and unit tests only).** Confirmed with a headless probe that a
+    DataGrid 11.3 header contains no `Thumb` (nor any gripper element), so every `Thumb` check
+    was dead. New `Common/DataGridHeaderGrip.cs` classifies the pointer X within the header (a
+    5 DIP band at each edge; left edge resizes the nearest visible column to its left) and
+    `MainWindow.TryGetHeaderGrip` uses it in `FileListDataGrid_PointerPressed` and
+    `InfoDataGrid_PointerPressed`. Divider double-click auto-sizes on the second press; the
+    `DoubleTapped` header branches now only reset `mSuppressSort`. The name-column
+    "user resized" tracking (width at press vs release) now actually runs.
+  - **Behaviour changes to check:** double-clicking the middle of a header no longer auto-sizes
+    that column (it used to, because the grip test always failed); name columns now keep a
+    dragged width across directory changes.
+  - **Kept `mSuppressSort`:** I could not confirm whether the DataGrid would sort after a
+    divider drag, so it is still set from the pointer position. The 5 DIP band is my assumption
+    of the DataGrid's own; I did not check its source.
+  - **Checked:** `DataGridHeaderGripTests` (band geometry, target column choice, hidden columns).
+    **Manual steps not run.** Not run on Windows/Linux; deferred.
+- [x] **D4 (S2)** File-list double-tap and drag arming are not limited to data rows.
   (Views#2, Views#3) Require a `DataGridRow` ancestor in `FileListDataGrid_DoubleTapped`,
   `PartitionLayout_DoubleTapped` and `FileListDataGrid_PointerPressed`.
   - **Manual:** with a file selected, double-click the scrollbar arrow → no viewer. Press on the
     scrollbar track or blank space and drag → scrolls or nothing, no drag. Double-click a row →
     viewer opens; drag a row → drag starts. Same for the partition list.
-- [ ] **D5 (S2)** Blank-grid drop uses the tree's directory in full-list mode. (Views#7)
+  - **Done (macOS build only).** `FileListDataGrid_DoubleTapped` and
+    `PartitionLayout_DoubleTapped` return unless the source is inside a `DataGridRow`;
+    `FileListDataGrid_PointerPressed` only arms a drag (`mDragStartPosn`, single-select
+    collapse) on a press inside a row, replacing the scrollbar-`Thumb` test.
+  - No Auto test (pointer input in the live window). **Manual steps not run.** Not run on
+    Windows/Linux; deferred.
+- [x] **D5 (S2)** Blank-grid drop uses the tree's directory in full-list mode. (Views#7)
   Use `GetFileListEmptySpaceTarget()`; also filter dropping a directory onto itself.
   (Coordinate with C-view: same drop handlers.)
   - **Manual:** full-list mode, double-click a subdirectory, drag a root file to blank grid
     space → stays at root (or moves to root). Click-jitter on a directory row → no "Bad Move"
     dialog.
-- [ ] **D6 (S1)** Activating a viewer resets the main list selection to row 0. (ViewModels#9)
+  - **Done (macOS build only).** `FileListDataGrid_Drop` uses `GetFileListEmptySpaceTarget()`
+    for blank space (was `GetCurrentDirEntry()`, which in full-list mode is the subdirectory the
+    tree synced to). New `FileListDrag.EntriesToMove` drops the target itself as well as entries
+    already inside it; used by the Avalonia drop handler and the Linux internal-drop path.
+  - Section 8: D5 marked confirmed by reading `cp2_wpf/MainWindow.xaml.cs` (`FileListDataGrid_Drop`
+    passes the dropped-on directory to `MoveFiles` unfiltered).
+  - No Auto test (needs real entries and a drop event). **Manual steps not run.** The Linux
+    change is the same one-line filter in code that has never been run; not run on
+    Windows/Linux; deferred.
+- [x] **D6 (S1)** Activating a viewer resets the main list selection to row 0. (ViewModels#9)
   Viewer handlers do nothing when the entry is not in the current list; review the "select row
   0" fallback and the TODO in `SetSelectionFocusByEntry`.
   - **Manual:** view a file in directory A; go to directory B, select several files; click the
     viewer → B's selection unchanged.
-
+  - **Done (macOS build only).** The viewer `FileNavigated` and `Activated` handlers now call
+    `MainViewModel.SyncFileListToViewerEntry`, which does nothing when the entry is not in the
+    current list. `SetSelectionFocusByEntry` keeps its first-row fallback (repopulate still wants
+    it); its doc comment says so.
+  - **Not resolved:** the `TODO` about WPF's `SelectRowByIndex` (keyboard focus on the selected
+    row after a programmatic selection) is left as is; I could not check arrow-key behaviour.
+  - No Auto test (the handlers need a live viewer window). **Manual steps not run.** Not run on
+    Windows/Linux; deferred.
 ### Stream E: trees (Phase 2)
 
 - [ ] **E1 (S1)** Close File Source never reselects the parent node, leaving the selection on a
@@ -1325,8 +1401,8 @@ to *confirmed* when the item is fixed.
 | J2 | `cp2_wpf/EditSector.xaml.cs` `PrevButton_Click` (also Next, Read, sector order change) | Position moves before the "discard changes?" prompt; declining then Write puts the edited data in the new block | confirmed by reading (WPF `ReadButton_Click`, `PrevButton_Click`, `NextButton_Click` change position, then `ReadFromDisk` prompts) |
 | A5 | `cp2_wpf/Actions/EditAttributesProgress.cs` `DoUpdate` | Failed filesystem attribute edit leaves the entry half-modified in memory | confirmed by reading (same code in `cp2_wpf`; no restore on failure / `ScanDisk` result ignored) |
 | A6 | `cp2_wpf/Actions/ScanBlocksProgress.cs` `DoWork` / `ScanDisk` | `ScanDisk` failure ignored; aborted scan reported as no bad blocks | confirmed by reading (same code in `cp2_wpf`; no restore on failure / `ScanDisk` result ignored) |
-| D1 | `cp2_wpf/FileListItem.cs` `ItemComparer.Compare` | `(int)(a - b)` on lengths overflows for differences of 2 GB or more; Rsrc Len sorts on `FileEntry.RsrcLength`, which is 0 for MacZip | unconfirmed |
+| D1 | `cp2_wpf/FileListItem.cs` `ItemComparer.Compare` | `(int)(a - b)` on lengths overflows for differences of 2 GB or more; Rsrc Len sorts on `FileEntry.RsrcLength`, which is 0 for MacZip | confirmed by reading (`ItemComparer.Compare` in `cp2_wpf/FileListItem.cs` has the same `(int)(a - b)` casts and `FileEntry.RsrcLength`); Avalonia fix has unit tests |
 | K1 | `cp2_wpf/DebugMessageLog.cs` `Clear` | `mTopEntry` not reset; `GetLogs` throws after a wrapped log is cleared (latent: no caller) | confirmed by reading and by an Avalonia unit test of the same code |
 | I7 | `cp2_wpf/WPFCommon/AnimatedGifEncoder.cs` | Frame delay under 10 ms rounds to 0; viewers then use their default speed | confirmed by reading (`Math.Round(md.DelayMsec / 10.0)`) |
-| D5 | `cp2_wpf/MainWindow.xaml.cs` file-list drop handling | Dropping a directory onto itself reaches `MoveFiles` and shows "Bad Move" | unconfirmed (parity; fix optional) |
+| D5 | `cp2_wpf/MainWindow.xaml.cs` file-list drop handling | Dropping a directory onto itself reaches `MoveFiles` and shows "Bad Move" | confirmed by reading (`FileListDataGrid_Drop` passes the dropped-on directory to `MoveFiles` with no self filter); not run in WPF |
 

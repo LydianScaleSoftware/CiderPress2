@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -26,6 +27,7 @@ using Avalonia.Media;
 
 using AppCommon;
 using CommonUtil;
+using cp2_avalonia.Common;
 using DiskArc;
 using DiskArc.FS;
 using static DiskArc.Defs;
@@ -69,9 +71,47 @@ namespace cp2_avalonia.Models {
         public string RsrcFormat { get; private set; }
         public string TotalSize { get; private set; }
 
-        // Simplify sorting.
+        // Sort keys.  Numeric values are kept here (rather than parsed back from the display
+        // strings, or read from FileEntry) so the comparer sorts what the columns show, e.g.
+        // the MacZip resource length, which FileEntry reports as zero.
+        private readonly long mDataLen;
         private readonly long mRawDataLen;
+        private readonly long mRsrcLen;
         private readonly long mTotalSize;
+        private readonly DateTime mModWhen;
+        private readonly char mDirSeparator = IFileEntry.NO_DIR_SEP;
+
+        /// <summary>
+        /// Constructor for tests: an item with only the sort keys filled in.  There is no
+        /// file entry behind it.
+        /// </summary>
+        internal FileListItem(string fileName, string pathName, char dirSeparator,
+                string type = "", string auxType = "", DateTime modWhen = default,
+                long dataLen = 0, long rawDataLen = 0, string dataFormat = "",
+                long rsrcLen = 0, string rsrcFormat = "", long totalSize = 0,
+                string access = "") {
+            FileEntry = IFileEntry.NO_ENTRY;
+            FileName = fileName;
+            PathName = pathName;
+            Type = type;
+            AuxType = auxType;
+            CreateDate = ModDate = string.Empty;
+            Access = access;
+            DataLength = dataLen.ToString();
+            DataSize = string.Empty;
+            DataFormat = dataFormat;
+            RawDataLength = rawDataLen.ToString();
+            RsrcLength = rsrcLen.ToString();
+            RsrcSize = string.Empty;
+            RsrcFormat = rsrcFormat;
+            TotalSize = totalSize.ToString();
+            mDirSeparator = dirSeparator;
+            mModWhen = modWhen;
+            mDataLen = dataLen;
+            mRawDataLen = rawDataLen;
+            mRsrcLen = rsrcLen;
+            mTotalSize = totalSize;
+        }
 
 
         /// <summary>
@@ -93,6 +133,8 @@ namespace cp2_avalonia.Models {
         public FileListItem(IFileEntry entry, IFileEntry adfEntry, FileAttribs? adfAttrs,
                 Formatter fmt) {
             FileEntry = entry;
+            mModWhen = entry.ModWhen;
+            mDirSeparator = entry.DirectorySeparatorChar;
 
             // Use the entry comment, unless it's MacZip, in which case use the ADF comment.
             string comment = entry.Comment;
@@ -195,12 +237,14 @@ namespace cp2_avalonia.Models {
                     mRawDataLen = rawLength;
                 }
                 DataLength = length.ToString();
+                mDataLen = length;
                 DataSize = storageSize.ToString();
                 DataFormat = ThingString.CompressionFormat(format);
                 totalSize += storageSize;
             } else if (entry.GetPartInfo(FilePart.DiskImage, out length, out storageSize,
                         out format)) {
                 DataLength = length.ToString();
+                mDataLen = length;
                 DataSize = storageSize.ToString();
                 DataFormat = ThingString.CompressionFormat(format);
                 totalSize += storageSize;
@@ -226,6 +270,7 @@ namespace cp2_avalonia.Models {
             }
             if (hasRsrc) {
                 RsrcLength = rsrcLen.ToString();
+                mRsrcLen = rsrcLen;
                 RsrcSize = rsrcSize.ToString();
                 RsrcFormat = ThingString.CompressionFormat(rsrcFmt);
             } else {
@@ -279,6 +324,11 @@ namespace cp2_avalonia.Models {
         /// Sets the current file list selection to the item with a matching IFileEntry.  If
         /// no item matches, the selection is set to the first item in the list.
         /// </summary>
+        /// <remarks>
+        /// The first-row fallback is for repopulating the list (WPF does the same).  Callers
+        /// that must not disturb the selection when the entry is absent, such as the viewer
+        /// windows, check for the entry first (MainViewModel.SyncFileListToViewerEntry).
+        /// </remarks>
         internal static void SetSelectionFocusByEntry(ObservableCollection<FileListItem> tvRoot,
                 DataGrid dataGrid, IFileEntry selEntry) {
             FileListItem? reselItem = null;
@@ -298,47 +348,71 @@ namespace cp2_avalonia.Models {
             }
         }
 
-        internal class ItemComparer : IComparer, IComparer<FileListItem> {
-            // List of columns.  This must match the fileListDataGrid definition in
-            // MainWindow.axaml.
-            private enum ColumnId {
-                StatusIcon = 0,
-                FileName,
-                PathName,
-                Type,
-                Auxtype,
-                ModWhen,
-                DataLen,
-                RawDataLen,
-                DataFormat,
-                RsrcLen,
-                RsrcFormat,
-                TotalSize,
-                Access
+        /// <summary>
+        /// Column identifiers for sorting.  The names are the columns'
+        /// <c>SortMemberPath</c> values in MainWindow.axaml, which is how the window tells the
+        /// comparer which column was clicked.
+        /// </summary>
+        internal enum ColumnId {
+            StatusIcon = 0,
+            FileName,
+            PathName,
+            Type,
+            AuxType,
+            ModDate,
+            DataLength,
+            RawDataLength,
+            DataFormat,
+            RsrcLength,
+            RsrcFormat,
+            TotalSize,
+            Access
+        }
+
+        /// <summary>
+        /// Maps a column's <c>SortMemberPath</c> to its sort column.  Returns false if the
+        /// path is not one of ours.
+        /// </summary>
+        internal static bool TryGetColumnId(string? sortMemberPath, out ColumnId id) {
+            // The member names are the FileListItem property names, which is also what the
+            // path is for the bound columns.
+            switch (sortMemberPath) {
+                case "StatusIcon":      id = ColumnId.StatusIcon; return true;
+                case "FileName":        id = ColumnId.FileName; return true;
+                case "PathName":        id = ColumnId.PathName; return true;
+                case "Type":            id = ColumnId.Type; return true;
+                case "AuxType":         id = ColumnId.AuxType; return true;
+                case "ModDate":         id = ColumnId.ModDate; return true;
+                case "DataLength":      id = ColumnId.DataLength; return true;
+                case "RawDataLength":   id = ColumnId.RawDataLength; return true;
+                case "DataFormat":      id = ColumnId.DataFormat; return true;
+                case "RsrcLength":      id = ColumnId.RsrcLength; return true;
+                case "RsrcFormat":      id = ColumnId.RsrcFormat; return true;
+                case "TotalSize":       id = ColumnId.TotalSize; return true;
+                case "Access":          id = ColumnId.Access; return true;
+                default:                id = ColumnId.FileName; return false;
             }
+        }
+
+        /// <summary>
+        /// Orders file list items by one column.  Names sort naturally (see
+        /// <see cref="NameSort"/>); code-like text columns ignore case; sizes and dates compare
+        /// as numbers.  Equal keys fall back to the pathname order, so the result is a total
+        /// order and agrees with the Pathname column.
+        /// </summary>
+        internal class ItemComparer : IComparer, IComparer<FileListItem> {
             private readonly ColumnId mSortField;
             private readonly bool mIsAscending;
 
-            public ItemComparer(DataGridColumn col, bool isAscending) {
+            /// <param name="sortMemberPath">The clicked column's <c>SortMemberPath</c>.  An
+            ///   unknown path is a programming error (a column added to the grid without
+            ///   being added here); it sorts by filename.</param>
+            public ItemComparer(string? sortMemberPath, bool isAscending) {
                 mIsAscending = isAscending;
-                string? header = col.Header?.ToString();
-                mSortField = header switch {
-                    "?" => ColumnId.StatusIcon,
-                    "Filename" => ColumnId.FileName,
-                    "Pathname" => ColumnId.PathName,
-                    "Type" => ColumnId.Type,
-                    "Auxtype" => ColumnId.Auxtype,
-                    "Mod Date" => ColumnId.ModWhen,
-                    "Data Len" => ColumnId.DataLen,
-                    "Raw Len" => ColumnId.RawDataLen,
-                    "Data Fmt" => ColumnId.DataFormat,
-                    "Rsrc Len" => ColumnId.RsrcLen,
-                    "Rsrc Fmt" => ColumnId.RsrcFormat,
-                    "Total Size" => ColumnId.TotalSize,
-                    "Access" => ColumnId.Access,
-                    _ => ColumnId.FileName
-                };
-                Debug.WriteLine("SORT on " + mSortField + " '" + header + "'");
+                if (!TryGetColumnId(sortMemberPath, out mSortField)) {
+                    Debug.Assert(false, "No sort column for SortMemberPath '" +
+                        sortMemberPath + "'");
+                }
             }
 
             // IComparer interface
@@ -352,57 +426,52 @@ namespace cp2_avalonia.Models {
 
                 int cmp;
                 switch (mSortField) {
-                    case ColumnId.StatusIcon:       // shouldn't happen
+                    case ColumnId.StatusIcon:       // no useful order; pathname decides
                         cmp = 0;
                         break;
-                    case ColumnId.FileName:         // expected to be unique
-                        cmp = string.CompareOrdinal(item1.FileName, item2.FileName);
+                    case ColumnId.FileName:
+                        cmp = NameSort.CompareNames(item1.FileName, item2.FileName);
                         break;
                     case ColumnId.PathName:
-                        cmp = string.CompareOrdinal(item1.PathName, item2.PathName);
+                        cmp = ComparePath(item1, item2);
                         break;
                     case ColumnId.Type:
                         // Sort by string, not numeric value.
-                        cmp = string.CompareOrdinal(item1.Type, item2.Type);
+                        cmp = NameSort.CompareCodes(item1.Type, item2.Type);
                         if (cmp == 0) {
-                            cmp = string.CompareOrdinal(item1.AuxType, item2.AuxType);
+                            cmp = NameSort.CompareCodes(item1.AuxType, item2.AuxType);
                         }
                         break;
-                    case ColumnId.Auxtype:
-                        cmp = string.CompareOrdinal(item1.AuxType, item2.AuxType);
+                    case ColumnId.AuxType:
+                        // Hex text ("$1000", "$2A00"): fixed width, so text order is numeric.
+                        cmp = NameSort.CompareCodes(item1.AuxType, item2.AuxType);
                         if (cmp == 0) {
-                            cmp = string.CompareOrdinal(item1.Type, item2.Type);
+                            cmp = NameSort.CompareCodes(item1.Type, item2.Type);
                         }
                         break;
-                    case ColumnId.ModWhen:
-                        if (item1.FileEntry.ModWhen < item2.FileEntry.ModWhen) {
-                            cmp = -1;
-                        } else if (item1.FileEntry.ModWhen > item2.FileEntry.ModWhen) {
-                            cmp = 1;
-                        } else {
-                            cmp = 0;
-                        }
+                    case ColumnId.ModDate:
+                        cmp = item1.mModWhen.CompareTo(item2.mModWhen);
                         break;
-                    case ColumnId.DataLen:
-                        cmp = (int)(item1.FileEntry.DataLength - item2.FileEntry.DataLength);
+                    case ColumnId.DataLength:
+                        cmp = item1.mDataLen.CompareTo(item2.mDataLen);
                         break;
-                    case ColumnId.RawDataLen:
-                        cmp = (int)(item1.mRawDataLen - item2.mRawDataLen);
+                    case ColumnId.RawDataLength:
+                        cmp = item1.mRawDataLen.CompareTo(item2.mRawDataLen);
                         break;
                     case ColumnId.DataFormat:
-                        cmp = string.CompareOrdinal(item1.DataFormat, item2.DataFormat);
+                        cmp = NameSort.CompareCodes(item1.DataFormat, item2.DataFormat);
                         break;
-                    case ColumnId.RsrcLen:
-                        cmp = (int)(item1.FileEntry.RsrcLength - item2.FileEntry.RsrcLength);
+                    case ColumnId.RsrcLength:
+                        cmp = item1.mRsrcLen.CompareTo(item2.mRsrcLen);
                         break;
                     case ColumnId.RsrcFormat:
-                        cmp = string.CompareOrdinal(item1.RsrcFormat, item2.RsrcFormat);
+                        cmp = NameSort.CompareCodes(item1.RsrcFormat, item2.RsrcFormat);
                         break;
                     case ColumnId.TotalSize:
-                        cmp = (int)(item1.mTotalSize - item2.mTotalSize);
+                        cmp = item1.mTotalSize.CompareTo(item2.mTotalSize);
                         break;
                     case ColumnId.Access:
-                        cmp = string.CompareOrdinal(item1.Access, item2.Access);
+                        cmp = NameSort.CompareCodes(item1.Access, item2.Access);
                         break;
                     default:
                         Debug.Assert(false, "Unhandled column ID " + mSortField);
@@ -412,12 +481,17 @@ namespace cp2_avalonia.Models {
 
                 if (cmp == 0) {
                     // Primary sort is equal, resolve by path name.
-                    cmp = string.Compare(item1.PathName, item2.PathName);
+                    cmp = ComparePath(item1, item2);
                 }
                 if (!mIsAscending) {
                     cmp = -cmp;
                 }
                 return cmp;
+            }
+
+            private static int ComparePath(FileListItem item1, FileListItem item2) {
+                return NameSort.ComparePathNames(item1.PathName, item2.PathName,
+                    item1.mDirSeparator);
             }
         }
 
