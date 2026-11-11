@@ -1393,6 +1393,7 @@ Not from the reviews. Smoke tests deferred like the rest (macOS first; Windows a
   `SharedSizeGroup`. Also gave Cancel `IsCancel="True"` (WPF has it; Escape now cancels). The
   WPF dialog has the same square buttons; this look is a requested change from WPF.
   - **Manual:** extract over an existing file; both buttons readable, same width, Escape = Cancel.
+    **Passed on macOS (user, 2026-11-11).** Not run on Windows/Linux.
 - [x] **AH2** Save panels doubled the extension on macOS ("NewDisk.po.po"). Cause, from Avalonia's
   `native/.../OSX/StorageProvider.mm` (release/11.3): `SaveFileDialog` sets
   `nameFieldStringValue` and then the allowed content types from the first file type, and the
@@ -1404,16 +1405,18 @@ Not from the reviews. Smoke tests deferred like the rest (macOS first; Windows a
   Windows and Linux are unchanged. Auto: `FilePickerServiceTests`.
   - **Manual (macOS):** each of the five save dialogs shows "Name.ext" once, with the base name
     selected; the saved file has one extension. Choosing "All Files" still saves with the
-    extension. Not run.
+    extension. **Passed on macOS (user, 2026-11-11).** Not run on Windows/Linux.
 - [x] **AH3** Debug Log window: new **Clear** button (`LogViewerViewModel.ClearCommand`). It
   clears the debug log itself (`DebugMessageLog.Clear`), not just the view, so Save, Copy and a
   reopened window start empty; `DebugMessageLog.ClearedThroughIndex` lets the viewer ignore
   events for older entries still queued. An extension beyond WPF. Auto: a `DebugMessageLogTests`
   case.
   - **Manual:** open the log, Clear, new entries keep appearing; Save writes only those.
+    **Passed on macOS (user, 2026-11-11).** Not run on Windows/Linux.
 - [x] **AH4** Drop/Paste Target window: new **Clear** button (`DropTargetViewModel.ClearCommand`,
   empties the text). Extension beyond WPF. Auto: a `DebugMessageLogTests` case.
   - **Manual:** drop something, Clear, text area empty; drop again works.
+    **Passed on macOS (user, 2026-11-11).** Not run on Windows/Linux.
 
 ---
 
@@ -1461,6 +1464,12 @@ macOS; it does not mean any Windows or Linux Manual step passed. Treat every Man
 for those platforms as outstanding, and the Windows and Linux paths (native drag, settings
 location, file activation, window placement, key routing) as untested. Anything that says
 "checked" or "verified" without naming a platform means macOS.
+
+**Per-platform procedures (2026-11-11):** `SmokeTests/SMOKE_TEST_macOS.md`,
+`SmokeTests/SMOKE_TEST_Windows.md` and `SmokeTests/SMOKE_TEST_Linux.md` (one Linux list with an X11
+and a Wayland result per step, since CP2 runs as an X11 client in both sessions). They gather the
+per-item manual steps below and this end-to-end pass into checklists with test files from
+`TestData/`.
 
 Run the per-item manual steps above, then this end-to-end pass:
 
