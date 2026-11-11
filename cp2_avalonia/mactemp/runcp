@@ -1,0 +1,28 @@
+#!/bin/bash
+#
+# TEMPORARY smoke-test helper (macOS).  Launches the CiderPress II.app installed in
+# /Applications by ./setup_debug or ./setup_release.
+#
+#   ./runcp [args...]         run it in this terminal (console output shows here); any
+#                             arguments, such as files to open, are passed to the app
+#   ./runcp --finder [files]  launch it through Launch Services, as Finder does
+#
+set -euo pipefail
+
+INSTALLED="/Applications/CiderPress II.app"
+EXE="$INSTALLED/Contents/MacOS/CiderPress2"
+
+if [ ! -x "$EXE" ]; then
+    echo "Not installed: $INSTALLED.  Run ./setup_debug or ./setup_release first." >&2
+    exit 1
+fi
+
+if [ -f "$INSTALLED/Contents/Resources/cp2-build.txt" ]; then
+    echo "Launching: $(cat "$INSTALLED/Contents/Resources/cp2-build.txt")"
+fi
+
+if [ "${1:-}" = "--finder" ]; then
+    shift
+    exec open -a "$INSTALLED" "$@"
+fi
+exec "$EXE" "$@"

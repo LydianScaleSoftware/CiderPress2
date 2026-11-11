@@ -1,0 +1,56 @@
+#!/bin/bash
+#
+# TEMPORARY smoke-test helper (macOS, Intel).  Removes the installed CiderPress II.app,
+# publishes a Debug build, and installs it in /Applications.  Trimming and single-file are
+# turned off so the Debug build keeps its symbols and diagnostics (Debug menu on by default).
+# Run it from anywhere; uses sudo only if /Applications is not writable.  Launch the result
+# with ./runcp.
+#
+set -euo pipefail
+
+CONFIG=Debug
+RID=osx-x64
+EXTRA_ARGS=(-p:PublishTrimmed=false -p:PublishSingleFile=false)
+
+APP_NAME="CiderPress II.app"
+INSTALL_DIR=/Applications
+INSTALLED="$INSTALL_DIR/$APP_NAME"
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT="$SCRIPT_DIR/cp2_avalonia.csproj"
+OUT_DIR="$SCRIPT_DIR/bin/$CONFIG/net10.0/$RID"
+BUILT="$OUT_DIR/$APP_NAME"
+
+SUDO=""
+if [ ! -w "$INSTALL_DIR" ]; then
+    SUDO="sudo"
+fi
+
+if pgrep -f "$APP_NAME/Contents/MacOS/CiderPress2" >/dev/null; then
+    echo "CiderPress II is running from $INSTALL_DIR; quit it first." >&2
+    exit 1
+fi
+
+echo "### Removing $INSTALLED"
+$SUDO rm -rf "$INSTALLED"
+
+echo "### Publishing $CONFIG for $RID"
+rm -rf "$OUT_DIR/publish" "$BUILT"
+dotnet publish "$PROJECT" -c "$CONFIG" -r "$RID" ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}
+
+if [ ! -d "$BUILT" ]; then
+    echo "Publish did not produce $BUILT" >&2
+    exit 1
+fi
+
+# Record which build this is; ./runcp prints it.
+COMMIT="$(git -C "$SCRIPT_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+if [ -n "$(git -C "$SCRIPT_DIR" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
+    COMMIT="$COMMIT (plus uncommitted changes)"
+fi
+echo "$CONFIG build of $COMMIT, $RID, published $(date '+%Y-%m-%d %H:%M')" \
+    > "$BUILT/Contents/Resources/cp2-build.txt"
+
+echo "### Installing $INSTALLED"
+$SUDO ditto "$BUILT" "$INSTALLED"
+echo "Installed: $(cat "$INSTALLED/Contents/Resources/cp2-build.txt")"
