@@ -25,7 +25,9 @@ limitations under the License.
         SizeToContent="Height" Width="500" CanResize="False"
         ShowInTaskbar="False" WindowStartupLocation="CenterOwner">
 
-    <Grid Margin="8">
+    <!-- The two action buttons size to their text; the shared size group gives both the
+         width of the wider one, so they line up. -->
+    <Grid Margin="8" Grid.IsSharedSizeScope="True">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -44,14 +46,15 @@ limitations under the License.
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto" SharedSizeGroup="actionButton"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
             <TextBlock Grid.Column="0" Grid.Row="0" Grid.ColumnSpan="2" Margin="0,0,0,4"
                        Text="You can replace the existing file with the new one:"/>
-            <Button Grid.Column="0" Grid.Row="1" Grid.RowSpan="3" Width="80" Height="60"
-                    Margin="0,0,8,0" HorizontalAlignment="Left"
-                    Content="Copy and&#x0a; Replace"
+            <Button Grid.Column="0" Grid.Row="1" Grid.RowSpan="3"
+                    Margin="0,0,8,0" HorizontalAlignment="Stretch" VerticalAlignment="Top"
+                    HorizontalContentAlignment="Center"
+                    Content="Copy and Replace"
                     Command="{Binding OverwriteCommand}"/>
             <TextBlock Grid.Column="1" Grid.Row="1" Text="{Binding NewFileName, FallbackValue=NewFile}"
                        FontWeight="Bold"/>
@@ -67,13 +70,14 @@ limitations under the License.
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto" SharedSizeGroup="actionButton"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
             <TextBlock Grid.Column="0" Grid.Row="0" Grid.ColumnSpan="2" Margin="0,0,0,4"
                        Text="Or leave the existing file alone:"/>
-            <Button Grid.Column="0" Grid.Row="1" Grid.RowSpan="3" Width="80" Height="60"
-                    Margin="0,0,8,0" HorizontalAlignment="Left"
+            <Button Grid.Column="0" Grid.Row="1" Grid.RowSpan="3"
+                    Margin="0,0,8,0" HorizontalAlignment="Stretch" VerticalAlignment="Top"
+                    HorizontalContentAlignment="Center"
                     Content="Don't Copy"
                     Command="{Binding SkipCommand}"/>
             <TextBlock Grid.Column="1" Grid.Row="1" Text="{Binding ExistFileName, FallbackValue=ExistFile}"
@@ -85,7 +89,7 @@ limitations under the License.
         <DockPanel Grid.Row="3" Margin="0,16,0,0" LastChildFill="False">
             <CheckBox DockPanel.Dock="Left" Content="Do this for all conflicts"
                       IsChecked="{Binding UseForAll}"/>
-            <Button DockPanel.Dock="Right" Name="cancelButton" Content="Cancel"
+            <Button DockPanel.Dock="Right" Name="cancelButton" Content="Cancel" IsCancel="True"
                     Width="70" Margin="4,0,0,0" Command="{Binding CancelCommand}"/>
         </DockPanel>
     </Grid>

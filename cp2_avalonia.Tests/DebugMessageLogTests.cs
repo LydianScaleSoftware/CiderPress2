@@ -76,4 +76,41 @@ public class DebugMessageLogTests
         vm.HandleLogEvent(log, new DebugMessageLog.LogEventArgs(late));
         Assert.Equal(count, vm.LogEntries.Count);
     }
+
+    [Fact]
+    public void LogViewer_Clear_EmptiesTheLogAndTheView_AndIgnoresQueuedOldEntries()
+    {
+        var log = new DebugMessageLog();
+        log.LogI("one");
+        log.LogI("two");
+        var before = log.GetLogs();
+        var vm = new LogViewerViewModel(log, new FakeSettingsService());
+        Assert.Equal(before.Count, vm.LogEntries.Count);
+
+        vm.ClearCommand.Execute(null);
+
+        Assert.Empty(vm.LogEntries);
+        Assert.Empty(log.GetLogs());
+        Assert.Equal(before[^1].Index, log.ClearedThroughIndex);
+
+        // An event for an entry logged before the clear, still queued, is ignored.
+        vm.HandleLogEvent(log, new DebugMessageLog.LogEventArgs(before[^1]));
+        Assert.Empty(vm.LogEntries);
+
+        // New entries after the clear are shown.
+        log.LogI("three");
+        var after = log.GetLogs();
+        Assert.Single(after);
+        vm.HandleLogEvent(log, new DebugMessageLog.LogEventArgs(after[0]));
+        Assert.Single(vm.LogEntries);
+        Assert.Equal("three", vm.LogEntries[0].Message);
+    }
+
+    [Fact]
+    public void DropTarget_Clear_EmptiesTheText()
+    {
+        var vm = new DropTargetViewModel { TextArea = "dropped stuff" };
+        vm.ClearCommand.Execute(null);
+        Assert.Equal(string.Empty, vm.TextArea);
+    }
 }

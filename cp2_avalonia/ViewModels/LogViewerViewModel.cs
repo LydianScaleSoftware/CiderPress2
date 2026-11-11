@@ -65,6 +65,7 @@ public class LogViewerViewModel : ObservableObject
 
     public IRelayCommand SaveCommand { get; }
     public IRelayCommand CopyCommand { get; }
+    public IRelayCommand ClearCommand { get; }
     public IRelayCommand CloseCommand { get; }
 
     // ── Observable (display-filtered) log entries ─────────────────────────────
@@ -127,6 +128,7 @@ public class LogViewerViewModel : ObservableObject
 
         SaveCommand = new RelayCommand(() => SaveRequested?.Invoke());
         CopyCommand = new RelayCommand(() => CopyRequested?.Invoke());
+        ClearCommand = new RelayCommand(DoClear);
         CloseCommand = new RelayCommand(() => CloseRequested?.Invoke());
     }
 
@@ -145,6 +147,19 @@ public class LogViewerViewModel : ObservableObject
         }
         // Filter changed and the list was rebuilt: always show the latest entries.
         ScrollToEndRequested?.Invoke(true);
+    }
+
+    /// <summary>
+    /// Empties the debug log and the window.  The log itself is cleared, not just the view,
+    /// so reopening the window (or Save/Copy) does not bring the old entries back.  Entries
+    /// logged before the clear whose events are still queued are ignored.
+    /// </summary>
+    private void DoClear()
+    {
+        mLog.Clear();
+        mLastEntryIndex = Math.Max(mLastEntryIndex, mLog.ClearedThroughIndex);
+        mAllEntries.Clear();
+        LogEntries.Clear();
     }
 
     /// <summary>

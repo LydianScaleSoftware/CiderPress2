@@ -91,15 +91,63 @@ public class FilePickerService(IDialogHost host) : IFilePickerService
             IReadOnlyList<FilePickerFileType>? fileTypes = null,
             string? initialDir = null)
     {
+        string? nameForPanel = PrepareSuggestedName(suggestedName, fileTypes,
+            OperatingSystem.IsMacOS(), out string? strippedExt);
         var result = await Track(async () => await GetProvider().SaveFilePickerAsync(
             new FilePickerSaveOptions
             {
                 Title = title,
-                SuggestedFileName = suggestedName,
+                SuggestedFileName = nameForPanel,
                 FileTypeChoices = fileTypes,
                 SuggestedStartLocation = await ResolveStartDir(initialDir)
             }));
-        return result?.TryGetLocalPath();
+        string? path = result?.TryGetLocalPath();
+        return path == null ? null : FinishSavePath(path, strippedExt);
+    }
+
+    /// <summary>
+    /// Works out the name to show in the save panel.
+    /// </summary>
+    /// <remarks>
+    /// The macOS save panel (Avalonia's <c>StorageProvider.mm</c>) sets the name field first and
+    /// then the allowed content types from the first file type, and the panel then adds that
+    /// type's extension itself, so "NewDisk.po" became "NewDisk.po.po".  On macOS a suggested
+    /// name that ends with an extension of the first file type is passed without it, and the
+    /// panel puts it back.  Other platforms get the name unchanged.
+    /// </remarks>
+    /// <param name="strippedExt">The extension removed (with its dot), or null.</param>
+    internal static string? PrepareSuggestedName(string? suggestedName,
+        IReadOnlyList<FilePickerFileType>? fileTypes, bool isMacOS, out string? strippedExt)
+    {
+        strippedExt = null;
+        if (!isMacOS || string.IsNullOrEmpty(suggestedName) || fileTypes == null ||
+                fileTypes.Count == 0 || fileTypes[0].Patterns == null) {
+            return suggestedName;
+        }
+        string ext = System.IO.Path.GetExtension(suggestedName);
+        if (ext.Length < 2 || ext.Length == suggestedName.Length) {
+            return suggestedName;       // no extension, or a name that is only an extension
+        }
+        foreach (string pattern in fileTypes[0].Patterns!) {
+            if (string.Equals(pattern, "*" + ext, StringComparison.OrdinalIgnoreCase)) {
+                strippedExt = ext;
+                return suggestedName.Substring(0, suggestedName.Length - ext.Length);
+            }
+        }
+        return suggestedName;
+    }
+
+    /// <summary>
+    /// If the extension was taken off the suggested name and the chosen path came back with
+    /// no extension at all (for example the user picked "All Files"), puts it back.  A path
+    /// with any extension is returned unchanged.
+    /// </summary>
+    internal static string FinishSavePath(string path, string? strippedExt)
+    {
+        if (strippedExt != null && !System.IO.Path.HasExtension(path)) {
+            return path + strippedExt;
+        }
+        return path;
     }
 
     public async Task<string?> OpenFolderAsync(string title, string? initialDir = null)

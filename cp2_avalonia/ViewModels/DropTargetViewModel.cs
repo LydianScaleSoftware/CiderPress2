@@ -33,6 +33,7 @@ public class DropTargetViewModel : ObservableObject
 
     public IRelayCommand CloseCommand { get; }
     public IRelayCommand PasteCommand { get; }
+    public IRelayCommand ClearCommand { get; }
 
     // ── Bindable text area ────────────────────────────────────────────────────
     private string mTextArea = "Drag or paste stuff here.\n";
@@ -45,6 +46,7 @@ public class DropTargetViewModel : ObservableObject
     {
         CloseCommand = new RelayCommand(() => CloseRequested?.Invoke());
         PasteCommand = new RelayCommand(() => PasteRequested?.Invoke());
+        ClearCommand = new RelayCommand(() => TextArea = string.Empty);
     }
 
     /// <summary>

@@ -45,6 +45,7 @@ limitations under the License.
         <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center"
                     Margin="0,8,0,0" Spacing="8">
             <Button Content="Paste" Width="70" Command="{Binding PasteCommand}"/>
+            <Button Content="Clear" Width="70" Command="{Binding ClearCommand}"/>
             <Button Content="Close" Width="70" Command="{Binding CloseCommand}"/>
         </StackPanel>
     </Grid>

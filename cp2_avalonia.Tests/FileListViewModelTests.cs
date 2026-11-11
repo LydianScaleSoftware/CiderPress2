@@ -149,6 +149,30 @@ public class FileListViewModelTests
     }
 
     [AvaloniaFact]
+    public void ApplySort_PutsTheSelectionBack()
+    {
+        var (disk, fs, hook) = MakeVolume(NAMES);
+        using (disk) using (fs) {
+            var view = new FakeViewActions();
+            var vm = MakeVm(view, hook);
+            Populate(vm, fs, IFileEntry.NO_ENTRY);
+            vm.SetSelection(new List<FileListItem> { vm.Items[1], vm.Items[3] });
+            FileListItem a = vm.Items[1], b = vm.Items[3];
+
+            vm.ApplySort("FileName", true);
+
+            Assert.Single(view.SetSelections);
+            Assert.Equal(new[] { a, b }, view.SetSelections[0]);
+
+            // Nothing selected: nothing to restore.
+            view.SetSelections.Clear();
+            vm.SetSelection(new List<FileListItem>());
+            vm.ApplySort("FileName", false);
+            Assert.Empty(view.SetSelections);
+        }
+    }
+
+    [AvaloniaFact]
     public void Populate_ReplacesTheRowsInOneReset()
     {
         var (disk, fs, hook) = MakeVolume(NAMES);

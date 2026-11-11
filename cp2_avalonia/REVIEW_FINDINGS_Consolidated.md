@@ -1382,6 +1382,39 @@ C-view (Phase 2, `MainWindow.axaml.cs` drag region and `FileViewer.axaml.cs`):
     style lives in `MainWindow.axaml`). **Manual steps not run.** Not run on Windows/Linux;
     deferred.
 
+
+### Ad hoc fixes (user requests, 2026-11-11)
+
+Not from the reviews. Smoke tests deferred like the rest (macOS first; Windows and Linux later).
+
+- [x] **AH1** "Overwrite Existing File?" dialog: the two action buttons were fixed 80x60 squares
+  and "Don't Copy" was cut off. `Views/OverwriteQueryDialog.axaml`: both buttons now size to
+  their text ("Copy and Replace" on one line), top-aligned, and share one width through a
+  `SharedSizeGroup`. Also gave Cancel `IsCancel="True"` (WPF has it; Escape now cancels). The
+  WPF dialog has the same square buttons; this look is a requested change from WPF.
+  - **Manual:** extract over an existing file; both buttons readable, same width, Escape = Cancel.
+- [x] **AH2** Save panels doubled the extension on macOS ("NewDisk.po.po"). Cause, from Avalonia's
+  `native/.../OSX/StorageProvider.mm` (release/11.3): `SaveFileDialog` sets
+  `nameFieldStringValue` and then the allowed content types from the first file type, and the
+  panel adds that type's extension itself. Fix in the one shared place,
+  `FilePickerService.SaveFileAsync`: on macOS a suggested name ending in an extension of the
+  first file type is passed without it (`PrepareSuggestedName`), and if the chosen path comes
+  back with no extension at all it is put back (`FinishSavePath`). Covers every save dialog:
+  New Disk Image, Save As Disk Image, New File Archive, viewer Export, Convert ANI to GIF.
+  Windows and Linux are unchanged. Auto: `FilePickerServiceTests`.
+  - **Manual (macOS):** each of the five save dialogs shows "Name.ext" once, with the base name
+    selected; the saved file has one extension. Choosing "All Files" still saves with the
+    extension. Not run.
+- [x] **AH3** Debug Log window: new **Clear** button (`LogViewerViewModel.ClearCommand`). It
+  clears the debug log itself (`DebugMessageLog.Clear`), not just the view, so Save, Copy and a
+  reopened window start empty; `DebugMessageLog.ClearedThroughIndex` lets the viewer ignore
+  events for older entries still queued. An extension beyond WPF. Auto: a `DebugMessageLogTests`
+  case.
+  - **Manual:** open the log, Clear, new entries keep appearing; Save writes only those.
+- [x] **AH4** Drop/Paste Target window: new **Clear** button (`DropTargetViewModel.ClearCommand`,
+  empties the text). Extension beyond WPF. Auto: a `DebugMessageLogTests` case.
+  - **Manual:** drop something, Clear, text area empty; drop again works.
+
 ---
 
 ## 6. Test strategy

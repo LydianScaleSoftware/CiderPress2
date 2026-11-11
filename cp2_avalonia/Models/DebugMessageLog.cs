@@ -50,7 +50,21 @@ namespace cp2_avalonia.Models {
         private readonly List<LogEntry> mEntries = new List<LogEntry>();
         private int mTopEntry;
         private int mLastIndex;
+        private int mClearedThroughIndex;
         private const int MAX_LINES = 100000;
+
+        /// <summary>
+        /// Index of the newest entry that existed when <see cref="Clear"/> was last called
+        /// (0 if never).  Events for those entries may still be queued for delivery after the
+        /// clear; a viewer uses this to ignore them.
+        /// </summary>
+        public int ClearedThroughIndex {
+            get {
+                lock (mEntries) {
+                    return mClearedThroughIndex;
+                }
+            }
+        }
 
         // MessageLog abstract override
         public override void Clear() {
@@ -61,6 +75,7 @@ namespace cp2_avalonia.Models {
                 // would make GetLogs() skip or reorder entries added after the Clear.
                 // mLastIndex is not reset, so entry indices stay unique and increasing.
                 mTopEntry = 0;
+                mClearedThroughIndex = mLastIndex;
             }
         }
 
