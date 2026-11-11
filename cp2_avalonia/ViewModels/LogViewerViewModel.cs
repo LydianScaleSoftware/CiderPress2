@@ -39,6 +39,13 @@ public class LogViewerViewModel : ObservableObject
     // collection is the display-filtered subset.
     private readonly List<LogEntry> mAllEntries = new List<LogEntry>();
 
+    // Index of the newest entry added to mAllEntries.  Events that arrive for an entry
+    // already in the snapshot taken at construction time are dropped by comparing Index.
+    private int mLastEntryIndex;
+
+    // Set when the window has closed; late (already posted) events are then ignored.
+    private bool mIsClosed;
+
     // ── Modeless lifecycle ────────────────────────────────────────────────────
     public event Action? Closed;
 
@@ -105,15 +112,18 @@ public class LogViewerViewModel : ObservableObject
             mMinPriorityIndex = 0;
         }
 
+        // Subscribe to new log events first, then take the snapshot.  Events are delivered
+        // on the UI thread (posted), so none can run until this constructor returns; any
+        // event for an entry that is also in the snapshot is dropped by Index.
+        mLog.RaiseLogEvent += HandleLogEvent;
+
         // Populate from existing log entries.
         List<DebugMessageLog.LogEntry> existing = mLog.GetLogs();
         foreach (DebugMessageLog.LogEntry entry in existing) {
             mAllEntries.Add(new LogEntry(entry));
+            mLastEntryIndex = entry.Index;
         }
         RebuildFilteredList();
-
-        // Subscribe to new log events.
-        mLog.RaiseLogEvent += HandleLogEvent;
 
         SaveCommand = new RelayCommand(() => SaveRequested?.Invoke());
         CopyCommand = new RelayCommand(() => CopyRequested?.Invoke());
@@ -162,15 +172,20 @@ public class LogViewerViewModel : ObservableObject
 
     public void OnWindowClosed()
     {
+        mIsClosed = true;
         mLog.RaiseLogEvent -= HandleLogEvent;
         Closed?.Invoke();
     }
 
-    // NOTE: may be called on a background thread.
-    private void HandleLogEvent(object? sender, DebugMessageLog.LogEventArgs e)
+    // DebugMessageLog always posts RaiseLogEvent to the UI thread, in log order, so this
+    // runs on the UI thread and may update the bound collection directly.
+    internal void HandleLogEvent(object? sender, DebugMessageLog.LogEventArgs e)
     {
-        // ObservableCollection requires UI thread; Avalonia's dispatcher handles marshaling
-        // from code-behind's ScrollChanged handler.  Just append from whatever thread we're on.
+        if (mIsClosed || e.Entry.Index <= mLastEntryIndex) {
+            // Window closed, or entry already included in the initial snapshot.
+            return;
+        }
+        mLastEntryIndex = e.Entry.Index;
         LogEntry entry = new LogEntry(e.Entry);
         mAllEntries.Add(entry);
         if (entry.Level >= MinPriority) {

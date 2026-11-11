@@ -206,12 +206,12 @@ public class EditAppSettingsViewModel : ObservableObject
 
     private async Task OpenConvertOpts(bool isExport)
     {
-        var vm = new EditConvertOptsViewModel(isExport, _settingsService);
-        bool ok = await _dialogService.ShowDialogAsync(vm) == true;
-        if (ok) {
-            // Changes were merged into settings by the dialog; notify listeners.
-            SettingsApplied?.Invoke();
-        }
+        // Give the sub-dialog this dialog's local copy, not the global settings.  If it
+        // wrote to the global settings, pressing OK here would replace them with the stale
+        // local copy and silently revert the change.  The change now stays in the local
+        // copy until Apply or OK, and Cancel discards it.
+        var vm = new EditConvertOptsViewModel(isExport, new LocalSettingsService(mSettings));
+        await _dialogService.ShowDialogAsync(vm);
     }
 
     /// <summary>

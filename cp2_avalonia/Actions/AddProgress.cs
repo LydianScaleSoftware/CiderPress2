@@ -60,77 +60,12 @@ namespace cp2_avalonia.Actions {
                 doCompress: DoCompress, macZip: EnableMacOSZip, stripPaths: StripPaths,
                 rawMode: RawMode, appHook);
 
-            switch (archiveOrFileSystem)
-            {
-                case IArchive system:
-                {
-                    IArchive arc = system;
-                    try {
-                        arc.StartTransaction();
-                        addWorker.AddFilesToArchive(arc, out bool isCancelled);
-                        if (isCancelled) {
-                            return false;
-                        }
-                        bkWorker.ReportProgress(100, ProgressUtil.FINISHING_MSG);
-                        leafNode.SaveUpdates(DoCompress);
-                    } catch (CancelException) {
-                        Debug.Assert(bkWorker.CancellationPending);
-                        return false;
-                    } catch (ConversionException ex) {
-                        ProgressUtil.ShowMessage("Import error: " + ex.Message, true, bkWorker);
-                        return false;
-                    } catch (Exception ex) {
-                        ProgressUtil.ShowMessage("Error: " + ex.Message, true, bkWorker);
-                        return false;
-                    } finally {
-                        arc.CancelTransaction();    // no effect if transaction isn't open
-                    }
-
-                    break;
-                }
-                case IFileSystem system:
-                {
-                    IFileSystem fs = system;
-                    bool success = true;
-                    string? failMsg = null;
-                    try {
-                        addWorker.AddFilesToDisk(fs, targetDir, out bool isCancelled);
-                        if (isCancelled) {
-                            success = false;
-                        }
-                    } catch (ConversionException ex) {
-                        failMsg = "Import error: " + ex.Message;
-                        success = false;
-                    } catch (Exception ex) {
-                        failMsg = "Error: " + ex.Message;
-                        success = false;
-                    }
-                    // Finish writing changes, regardless if the operation succeeded.
-                    try {
-                        if (failMsg == null) {
-                            bkWorker.ReportProgress(100, ProgressUtil.FINISHING_MSG);
-                        }
-                        leafNode.SaveUpdates(DoCompress);
-                    } catch (Exception ex) {
-                        ProgressUtil.ShowMessage("Error: update failed: " + ex.Message, true, bkWorker);
-                        return false;
-                    }
-                    if (failMsg != null) {
-                        // Defer failure reporting until after SaveUpdates() to avoid leaving the
-                        // disk image in an inconsistent state while the dialog is displayed.
-                        ProgressUtil.ShowMessage(failMsg, true, bkWorker);
-                    }
-                    if (!success) {
-                        return false;
-                    }
-
-                    break;
-                }
-                default:
-                    Debug.Assert(false);
-                    break;
-            }
-            return true;
+            return ProgressUtil.RunAddOperation(archiveOrFileSystem, leafNode, DoCompress,
+                bkWorker,
+                (IArchive arc, out bool isCancelled) =>
+                    addWorker.AddFilesToArchive(arc, out isCancelled),
+                (IFileSystem fs, out bool isCancelled) =>
+                    addWorker.AddFilesToDisk(fs, targetDir, out isCancelled));
         }
 
         public bool RunWorkerCompleted(object? results) {

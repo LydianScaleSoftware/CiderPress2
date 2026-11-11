@@ -72,6 +72,22 @@ namespace cp2_avalonia.Common {
 
         public int Count => mFrames.Count;
 
+        /// <summary>
+        /// Smallest frame delay written to the file, in hundredths of a second.  Browsers and
+        /// most viewers treat a delay of 0 or 1 as "unspecified" and substitute a slow default
+        /// (about 100 ms), so a frame that asks for less than 20 ms would play too slowly.
+        /// </summary>
+        internal const int MIN_DELAY_HUNDREDTHS = 2;
+
+        /// <summary>
+        /// Converts a delay in milliseconds to the GIF delay field (hundredths of a second),
+        /// clamped to the range viewers handle consistently.
+        /// </summary>
+        internal static ushort ToGifDelay(int delayMsec) {
+            int hundredths = (int)Math.Round(delayMsec / 10.0);
+            return (ushort)Math.Clamp(hundredths, MIN_DELAY_HUNDREDTHS, ushort.MaxValue);
+        }
+
         public void AddFrame(Bitmap8 bitmap, int delayMsec) {
             mFrames.Add(new FrameEntry(bitmap, delayMsec));
         }
@@ -149,7 +165,7 @@ namespace cp2_avalonia.Common {
                 // Graphic Control Extension.
                 stream.Write(GraphicControlStart, 0, GraphicControlStart.Length);
                 stream.WriteByte((byte)(disposalMethod << 2));  // no transparency, no user input
-                WriteLittleUshort(stream, (ushort)Math.Round(fe.DelayMsec / 10.0));
+                WriteLittleUshort(stream, ToGifDelay(fe.DelayMsec));
                 stream.WriteByte(0);            // transparent color index (unused)
                 stream.WriteByte(0);            // end of GCE
 

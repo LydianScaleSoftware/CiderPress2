@@ -49,7 +49,10 @@ internal static class MacOSDrag
     [DllImport("/usr/lib/libobjc.dylib")]
     private static extern void objc_registerClassPair(IntPtr cls);
 
+    // Objective-C BOOL is one byte.  Without the I1 marshalling, the 4-byte bool reads
+    // undefined upper bytes of the return register on x86_64 (Intel Macs).
     [DllImport("/usr/lib/libobjc.dylib")]
+    [return: MarshalAs(UnmanagedType.I1)]
     private static extern bool class_addMethod(IntPtr cls, IntPtr sel, IntPtr imp, string types);
 
     [DllImport("/usr/lib/libobjc.dylib")]
@@ -75,9 +78,11 @@ internal static class MacOSDrag
     private static extern void SendVoid(IntPtr obj, IntPtr sel);
 
     [DllImport("/usr/lib/libobjc.dylib", EntryPoint = "objc_msgSend")]
+    [return: MarshalAs(UnmanagedType.I1)]
     private static extern bool SendBool2(IntPtr obj, IntPtr sel, IntPtr a, IntPtr b);
 
     [DllImport("/usr/lib/libobjc.dylib", EntryPoint = "objc_msgSend")]
+    [return: MarshalAs(UnmanagedType.I1)]
     private static extern bool SendBool1(IntPtr obj, IntPtr sel, IntPtr a);
 
     // objc_msgSendSuper: calls the superclass implementation of a method.
@@ -86,6 +91,11 @@ internal static class MacOSDrag
 
     [DllImport("/usr/lib/libobjc.dylib", EntryPoint = "objc_msgSendSuper")]
     private static extern nuint SendSuperUInt2(ref ObjcSuper sup, IntPtr sel, IntPtr a, IntPtr b);
+
+    // +[NSError errorWithDomain:code:userInfo:] – (id, NSInteger, id).
+    [DllImport("/usr/lib/libobjc.dylib", EntryPoint = "objc_msgSend")]
+    private static extern IntPtr SendErrorWithDomain(IntPtr obj, IntPtr sel, IntPtr domain,
+        nint code, IntPtr userInfo);
 
     // Returns NSUInteger (used for -[NSEvent type]).
     [DllImport("/usr/lib/libobjc.dylib", EntryPoint = "objc_msgSend")]
@@ -229,8 +239,22 @@ internal static class MacOSDrag
     /// </summary>
     private static bool EnsureClasses()
     {
-        if (sDelegateClass != IntPtr.Zero) return true;
+        // Registration is attempted once.  An ObjC class name can only be registered once
+        // per process, so a second attempt after a partial failure would always fail at
+        // objc_allocateClassPair.  Remember the result instead.
+        if (!sClassesAttempted)
+        {
+            sClassesAttempted = true;
+            sClassesOk = RegisterClasses();
+        }
+        return sClassesOk;
+    }
 
+    private static bool sClassesAttempted;
+    private static bool sClassesOk;
+
+    private static bool RegisterClasses()
+    {
         Debug.WriteLine("MacOSDrag: EnsureClasses – registering CP2PromiseDelegate");
 
         IntPtr nsObject = objc_getClass("NSObject");
@@ -285,7 +309,6 @@ internal static class MacOSDrag
         if (sDelegateInst == IntPtr.Zero)
         {
             Debug.WriteLine("MacOSDrag: failed to create delegate instance");
-            sDelegateClass = IntPtr.Zero; // allow retry
             return false;
         }
 
@@ -297,7 +320,6 @@ internal static class MacOSDrag
         if (sProviderClass == IntPtr.Zero)
         {
             Debug.WriteLine("MacOSDrag: failed to allocate CP2PromiseProvider");
-            sDelegateClass = IntPtr.Zero; // allow retry
             return false;
         }
 
@@ -349,23 +371,65 @@ internal static class MacOSDrag
         string? src = null;
         lock (sLock) { sProviderPaths.TryGetValue(provider, out src); }
 
-        if (src != null)
+        // Report failures to the system through the completion block's NSError argument;
+        // passing nil tells Finder the file was written.
+        string? failure = null;
+        if (src == null)
+        {
+            failure = "The dragged file is no longer available.";
+            AppLog.W("macOS drag: file promise for unknown provider");
+        }
+        else
         {
             try
             {
                 string? dest = GetUrlPath(url);
                 if (dest != null)
+                {
                     CopyItem(src, dest);
+                }
                 else
-                    Debug.WriteLine("MacOSDrag: WritePromise – could not get dest path");
+                {
+                    failure = "The destination could not be determined.";
+                    AppLog.W("macOS drag: file promise has no destination path");
+                }
             }
             catch (Exception ex)
             {
                 AppLog.W("macOS drag: file promise copy failed", ex);
+                failure = ex.Message;
             }
         }
 
-        InvokeBlock(completionBlock, IntPtr.Zero); // nil error = success
+        // This provider's promise has been answered; its path isn't needed any more.  (The
+        // entries are not cleared when the drag session ends, because AppKit may deliver
+        // writePromiseToURL: after draggingSession:endedAtPoint:operation:.)
+        lock (sLock) { sProviderPaths.Remove(provider); }
+
+        InvokeBlock(completionBlock, failure == null ? IntPtr.Zero : MakeNSError(failure));
+    }
+
+    /// <summary>
+    /// Creates an autoreleased NSError in NSCocoaErrorDomain (code 512, NSFileWriteUnknownError)
+    /// with the given localized description.
+    /// </summary>
+    private static IntPtr MakeNSError(string description)
+    {
+        const nint NSFileWriteUnknownError = 512;
+        IntPtr domain = MakeNSStr("NSCocoaErrorDomain");
+        IntPtr key = MakeNSStr("NSLocalizedDescription");
+        IntPtr value = MakeNSStr(description);
+        // The dictionary and the error retain what they are given; our +1 references are
+        // released afterwards.
+        IntPtr userInfo = Send2(objc_getClass("NSDictionary"),
+            sel_registerName("dictionaryWithObject:forKey:"), value, key);
+        IntPtr error = SendErrorWithDomain(objc_getClass("NSError"),
+            sel_registerName("errorWithDomain:code:userInfo:"),
+            domain, NSFileWriteUnknownError, userInfo);
+        CFRelease(domain);
+        CFRelease(key);
+        CFRelease(value);
+        return error;
     }
 
     /// <summary>
@@ -405,7 +469,8 @@ internal static class MacOSDrag
                                       double ptX, double ptY, nuint op)
     {
         Debug.WriteLine($"MacOSDrag: drag ended op=0x{op:x}");
-        lock (sLock) { sProviderPaths.Clear(); }
+        // sProviderPaths is deliberately not cleared here; see WritePromiseImpl.  Entries
+        // for promises that are never requested are discarded at the start of the next drag.
         Action? cb = sOnDragEnd;
         sOnDragEnd = null;
         cb?.Invoke();
@@ -539,6 +604,9 @@ internal static class MacOSDrag
         if (!EnsureClasses())
             return false;
 
+        // Discard leftovers from a previous drag (promises that were never requested).
+        lock (sLock) { sProviderPaths.Clear(); }
+
         // Get the content NSView (drag must be initiated from a view, not the window).
         IntPtr contentView = Send(nsWindow, sel_registerName("contentView"));
         Debug.WriteLine($"MacOSDrag: contentView=0x{contentView:x}");
@@ -606,7 +674,6 @@ internal static class MacOSDrag
         IntPtr utiStr = CFStringCreateWithCString(IntPtr.Zero, "public.data", kCFStringEncodingUTF8);
 
         var allItems = new List<IntPtr>();
-        IntPtr firstIcon = IntPtr.Zero;
 
         // One NSFilePromiseProvider item per extracted file.
         foreach (string src in sourcePaths)
@@ -626,7 +693,6 @@ internal static class MacOSDrag
             IntPtr icon = Send1(nsWorkspace, selIconForFile, pathStr);
             CFRelease(pathStr);
             if (icon == IntPtr.Zero) icon = fallbackIcon;
-            if (firstIcon == IntPtr.Zero) firstIcon = icon;
 
             IntPtr dragItem = Send1(Send(clsDragItem, SelAlloc), selInitPBW, provider);
             SendSetDragFrame(dragItem, selSetDragFrame, iconFrame, icon);
@@ -637,13 +703,12 @@ internal static class MacOSDrag
         CFRelease(utiStr);
 
         // The CP2 JSON (CROSS_INSTANCE_FORMAT) now rides on each file item's pasteboard
-        // via CP2PromiseProvider, so no separate dragging item is needed.  _ = firstIcon
-        // keeps the variable meaningful for future per-item image tuning.
-        _ = firstIcon;
+        // via CP2PromiseProvider, so no separate dragging item is needed.
 
         if (allItems.Count == 0)
         {
             Debug.WriteLine("MacOSDrag: no items to drag");
+            lock (sLock) { sProviderPaths.Clear(); }
             return false;
         }
 
@@ -673,6 +738,8 @@ internal static class MacOSDrag
         {
             Debug.WriteLine("MacOSDrag: beginDraggingSession returned nil");
             sOnDragEnd = null;
+            // The session never started, so no promise will be requested or ended.
+            lock (sLock) { sProviderPaths.Clear(); }
             return false;
         }
 

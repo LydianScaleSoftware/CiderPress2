@@ -47,10 +47,14 @@ namespace cp2_avalonia.Common {
             IntPtr dest = fb.Address;
 
             if (src.IsIndexed8) {
-                // Expand palette: palette entries are ARGB (A in high byte).
-                int[] palette = src.GetColors()!;
-                byte[] bgra = ExpandIndexed(srcPixels, palette, width, height);
-                CopyRowByRow(bgra, width, height, dest, rowBytes);
+                // Expand one row at a time straight into the framebuffer, instead of
+                // building a second full-size BGRA array (64 MB for a large zoomed bitmap).
+                int[] palette = BuildPalette(src.GetColors());
+                byte[] rowBgra = new byte[width * 4];
+                for (int row = 0; row < height; row++) {
+                    ExpandIndexedRow(srcPixels.AsSpan(row * width, width), palette, rowBgra);
+                    Marshal.Copy(rowBgra, 0, dest + row * rowBytes, rowBgra.Length);
+                }
             } else {
                 // Direct color: GetPixels() returns bytes in BGRA order (little-endian ARGB).
                 CopyRowByRow(srcPixels, width, height, dest, rowBytes);
@@ -60,25 +64,41 @@ namespace cp2_avalonia.Common {
         }
 
         /// <summary>
-        /// Expands an indexed-8 pixel array to 32-bit BGRA using the supplied palette.
+        /// Opaque black, ARGB.  Used for palette indices that the palette doesn't define.
         /// </summary>
-        private static byte[] ExpandIndexed(byte[] indices, int[] palette, int width, int height) {
-            var result = new byte[width * height * 4];
-            var dst = 0;
-            foreach (var t in indices)
-            {
-                var argb = palette[t];
-                var a = (byte)(argb >> 24);
-                var r = (byte)(argb >> 16);
-                var g = (byte)(argb >> 8);
-                var b = (byte)argb;
-                // BGRA order for PixelFormat.Bgra8888
-                result[dst++] = b;
-                result[dst++] = g;
-                result[dst++] = r;
-                result[dst++] = a == 0 ? (byte)255 : a;   // 0 alpha means fully opaque here
+        internal const int UNDEFINED_COLOR = unchecked((int)0xff000000);
+
+        /// <summary>
+        /// Copies the palette into a 256-entry array, so any byte value is a valid index.
+        /// Entries the source palette doesn't have are opaque black.
+        /// </summary>
+        internal static int[] BuildPalette(int[]? colors) {
+            int[] palette = new int[256];
+            Array.Fill(palette, UNDEFINED_COLOR);
+            if (colors != null) {
+                Array.Copy(colors, palette, Math.Min(colors.Length, palette.Length));
             }
-            return result;
+            return palette;
+        }
+
+        /// <summary>
+        /// Expands one row of indexed-8 pixels to 32-bit BGRA using the palette.  Alpha is
+        /// passed through unchanged, as it is for direct-color bitmaps.
+        /// </summary>
+        /// <param name="indices">Palette indices for the row.</param>
+        /// <param name="palette">256-entry ARGB palette (see <see cref="BuildPalette"/>).</param>
+        /// <param name="dstRow">Output, at least <c>indices.Length * 4</c> bytes.</param>
+        internal static void ExpandIndexedRow(ReadOnlySpan<byte> indices, int[] palette,
+                Span<byte> dstRow) {
+            int dst = 0;
+            foreach (byte index in indices) {
+                int argb = palette[index];
+                // BGRA order for PixelFormat.Bgra8888
+                dstRow[dst++] = (byte)argb;
+                dstRow[dst++] = (byte)(argb >> 8);
+                dstRow[dst++] = (byte)(argb >> 16);
+                dstRow[dst++] = (byte)(argb >> 24);
+            }
         }
 
         /// <summary>

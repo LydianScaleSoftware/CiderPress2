@@ -39,29 +39,33 @@ namespace cp2_avalonia.Common {
         }
 
         private void OnDataContextChanged(object? sender, EventArgs e) {
+            // Unsubscribe from the previous view model, so a DataContext change doesn't
+            // leave duplicate handlers.  (The overwrite and message-box prompts are handled
+            // by WorkProgressViewModel itself, through IDialogService.)
+            if (mHookedVm != null) {
+                mHookedVm.CloseRequested -= OnCloseRequested;
+                mHookedVm = null;
+            }
             if (DataContext is WorkProgressViewModel vm) {
-                vm.CloseRequested += result => Close(result);
-                vm.OverwriteQueryRequested += async oq => {
-                    var oqVm = new OverwriteQueryViewModel(oq.Facts);
-                    var view = new OverwriteQueryDialog { DataContext = oqVm };
-                    bool? result = await view.ShowDialog<bool?>(this);
-                    if (result == true) { oq.SetResult(oqVm.Result, oqVm.UseForAll); }
-                    else { oq.SetResult(CallbackFacts.Results.Cancel, false); }
-                };
-                vm.MessageBoxRequested += async mq => {
-                    await PlatformUtil.ShowMessageAsync(this, mq.Text, mq.Caption);
-                    mq.SetResult(MBResult.OK);
-                };
+                vm.CloseRequested += OnCloseRequested;
+                mHookedVm = vm;
             }
         }
 
+        private WorkProgressViewModel? mHookedVm;
+
+        private void OnCloseRequested(bool result) => Close(result);
+
         private void Window_Loaded(object? sender, RoutedEventArgs e) {
-            VM!.StartWorker();
+            VM?.StartWorker();
         }
 
         private void Window_Closing(object? sender, WindowClosingEventArgs e) {
-            if (VM!.IsBusy) {
-                VM.RequestCancel();
+            WorkProgressViewModel? vm = VM;
+            if (vm != null && vm.IsBusy) {
+                // Closing from the title bar acts like the Cancel button: ask the worker
+                // to stop, disable the button, and stay open until it has.
+                vm.RequestCancel();
                 e.Cancel = true;
             }
         }

@@ -18,9 +18,6 @@ using System;
 using System.Diagnostics;
 using System.IO;
 
-using Avalonia.Controls;
-using Avalonia.Input;
-
 using AppCommon;
 using CommonUtil;
 using DiskArc;
@@ -35,7 +32,6 @@ namespace cp2_avalonia.Actions {
     /// it on a background thread inside a WorkProgress dialog is unnecessary.
     /// </summary>
     internal class EditAttributesProgress(
-        Window parent,
         object archiveOrFileSystem,
         DiskArcNode leafNode,
         IFileEntry fileEntry,
@@ -46,21 +42,33 @@ namespace cp2_avalonia.Actions {
         public bool DoCompress { get; init; }
         public bool EnableMacOSZip { get; init; }
 
+        /// <summary>
+        /// Message describing why <see cref="DoUpdate"/> returned false, or null if it
+        /// succeeded or had nothing to report.  The caller shows it to the user.
+        /// </summary>
+        public string? ErrorMessage { get; private set; }
 
         /// <summary>
-        /// Performs the attribute update.  Errors are reported directly to the user.
+        /// Performs the attribute update.  This runs on the UI thread.  On failure the
+        /// reason is left in <see cref="ErrorMessage"/>; nothing is shown here.
         /// </summary>
         /// <param name="updateMacZip">True if we want to update a MacZip header entry.</param>
         /// <returns>True on success.</returns>
         public bool DoUpdate(bool updateMacZip) {
-            var waitCursor = new Cursor(StandardCursorType.Wait);
-            parent.Cursor = waitCursor;
+            ErrorMessage = null;
+            // For a file system the entry is changed in place, one attribute at a time.  Keep
+            // a copy of the original attributes so a failure doesn't leave the entry
+            // half-modified in memory.
+            FileAttribs? origAttribs = (archiveOrFileSystem is IArchive) ?
+                null : new FileAttribs(fileEntry);
             try {
                 if (archiveOrFileSystem is IArchive arc) {
                     if (updateMacZip) {
                         try {
                             Debug.Assert(EnableMacOSZip);
                             if (!HandleMacZip(arc, fileEntry, adfEntry, newAttribs, appHook)) {
+                                ErrorMessage = "Unable to generate a MacZip header name for '" +
+                                    newAttribs.FullPathName + "'.";
                                 return false;
                             }
                             leafNode.SaveUpdates(DoCompress);
@@ -83,40 +91,26 @@ namespace cp2_avalonia.Actions {
                 }
             } catch (Exception ex) {
                 AppLog.E("Edit attributes: update failed", ex);
-                // Show via a fire-and-forget dialog (DoUpdate is synchronous on the GUI thread).
-                var errWin = new Window {
-                    Title = "Failed",
-                    Width = 360,
-                    SizeToContent = SizeToContent.Height,
-                    CanResize = false,
-                    ShowInTaskbar = false,
-                    WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                    Content = new StackPanel {
-                        Margin = new Avalonia.Thickness(16),
-                        Spacing = 12,
-                        Children = {
-                            new TextBlock {
-                                Text = ex.Message,
-                                TextWrapping = Avalonia.Media.TextWrapping.Wrap
-                            },
-                            new Button {
-                                Content = "OK",
-                                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
-                                Width = 80
-                            }
-                        }
-                    }
-                };
-                var sp = (StackPanel)errWin.Content!;
-                var okBtn = (Button)sp.Children[1];
-                okBtn.Click += (_, _) => errWin.Close();
-                _ = errWin.ShowDialog(parent);
+                ErrorMessage = ex.Message;
+                if (origAttribs != null) {
+                    RestoreAttributes(origAttribs);
+                }
                 return false;
-            } finally {
-                parent.Cursor = null;
-                waitCursor.Dispose();
             }
             return true;
+        }
+
+        /// <summary>
+        /// Puts the original attributes back into a file system entry after a failed update,
+        /// so the file list doesn't show values that were never written.
+        /// </summary>
+        private void RestoreAttributes(FileAttribs origAttribs) {
+            try {
+                origAttribs.CopyAttrsTo(fileEntry, false);
+                fileEntry.SaveChanges();
+            } catch (Exception ex) {
+                AppLog.E("Edit attributes: unable to restore original attributes", ex);
+            }
         }
 
         /// <summary>

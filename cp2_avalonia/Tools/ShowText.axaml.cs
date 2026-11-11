@@ -14,21 +14,42 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+using System;
 using Avalonia.Controls;
 using Avalonia.Input;
 using cp2_avalonia.ViewModels;
 
 namespace cp2_avalonia.Tools {
     public partial class ShowText : Window {
+        // View model whose events we are currently subscribed to.
+        private ShowTextViewModel? mHookedVm;
+
         public ShowText() {
             InitializeComponent();
             DataContextChanged += (_, __) => {
+                // Unsubscribe from the previous view model so handlers don't accumulate.
+                if (mHookedVm != null) {
+                    mHookedVm.CloseRequested -= OnCloseRequested;
+                    mHookedVm.CloseRequested_Modeless -= OnCloseRequestedModeless;
+                    mHookedVm = null;
+                }
                 if (DataContext is ShowTextViewModel vm) {
-                    vm.CloseRequested += result => Close(result);
-                    vm.CloseRequested_Modeless += () => Close();
+                    vm.CloseRequested += OnCloseRequested;
+                    vm.CloseRequested_Modeless += OnCloseRequestedModeless;
+                    mHookedVm = vm;
+                }
+            };
+            Closed += (_, __) => {
+                if (mHookedVm != null) {
+                    mHookedVm.CloseRequested -= OnCloseRequested;
+                    mHookedVm.CloseRequested_Modeless -= OnCloseRequestedModeless;
+                    mHookedVm = null;
                 }
             };
         }
+
+        private void OnCloseRequested(bool result) => Close(result);
+        private void OnCloseRequestedModeless() => Close();
 
         private void Window_KeyDown(object? sender, KeyEventArgs e) {
             if (e.Key == Key.Escape) {

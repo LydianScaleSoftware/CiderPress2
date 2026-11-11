@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -59,7 +60,13 @@ namespace cp2_avalonia.Actions
         public object DoWork(BackgroundWorker worker) {
             List<Failure> failures = new List<Failure>();
 
-            ScanDisk(diskImage, worker, failures);
+            if (!ScanDisk(diskImage, worker, failures) && !worker.CancellationPending) {
+                // The scan could not run (or stopped early) for a reason other than the
+                // user canceling.  Report that, rather than returning an empty list, which
+                // would be shown as "no bad blocks".  The progress dialog shows the message.
+                throw new InvalidOperationException(
+                    "The disk could not be scanned, so no blocks were tested.");
+            }
             return failures;
         }
 
@@ -91,6 +98,8 @@ namespace cp2_avalonia.Actions
             checkCount = unreadCount = unwriteCount = 0;
             if (chunks.HasSectors) {
                 for (uint trk = 0; trk < chunks.NumTracks; trk++) {
+                    bkWorker.ReportProgress((int)(trk * 100L / chunks.NumTracks),
+                        "Track " + trk);
                     for (uint sct = 0; sct < chunks.NumSectorsPerTrack; sct++) {
                         if (bkWorker.CancellationPending) {
                             return false;
@@ -107,9 +116,15 @@ namespace cp2_avalonia.Actions
                 }
             } else if (chunks.HasBlocks) {
                 uint numBlocks = (uint)(chunks.FormattedLength / BLOCK_SIZE);
+                int lastPercent = -1;
                 for (uint blk = 0; blk < numBlocks; blk++) {
                     if (bkWorker.CancellationPending) {
                         return false;
+                    }
+                    int percent = (int)(blk * 100L / numBlocks);
+                    if (percent != lastPercent) {
+                        lastPercent = percent;
+                        bkWorker.ReportProgress(percent, "Block " + blk);
                     }
                     checkCount++;
                     if (!chunks.TestBlock(blk, out bool isWritable)) {

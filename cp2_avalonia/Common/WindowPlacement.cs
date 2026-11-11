@@ -21,6 +21,7 @@ using System.Text.Json.Serialization;
 
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Platform;
 
 using cp2_avalonia.Services;
 
@@ -49,6 +50,9 @@ namespace cp2_avalonia.Common {
                     sNormalBounds[w] = (w.Position, w.Width, w.Height);
                 }
             }
+            // Seed the cache, so a window that is minimized or maximized before it was ever
+            // moved or resized still has normal bounds to save.
+            window.Opened += (_, _) => UpdateCache(window);
             window.PositionChanged += (_, _) => UpdateCache(window);
             window.Resized += (_, _) => UpdateCache(window);
             window.Closed += (_, _) => sNormalBounds.Remove(window);
@@ -73,23 +77,92 @@ namespace cp2_avalonia.Common {
         /// Serializes the window's current position and state to a JSON string.
         /// </summary>
         public static string Save(Window window) {
-            double w, h;
-            int x, y;
-            if (window.WindowState == WindowState.Maximized &&
-                    sNormalBounds.TryGetValue(window, out var nb)) {
-                x = nb.Pos.X;
-                y = nb.Pos.Y;
-                w = nb.W;
-                h = nb.H;
-            } else {
-                x = window.Position.X;
-                y = window.Position.Y;
-                w = window.Width;
-                h = window.Height;
+            (PixelPoint Pos, double W, double H)? normal = null;
+            if (sNormalBounds.TryGetValue(window, out var nb)) {
+                normal = nb;
             }
-
-            SavedPos data = new SavedPos(x, y, w, h, window.WindowState.ToString());
+            SavedPos data = BuildSavedPos(window.WindowState, window.Position,
+                window.Width, window.Height, normal);
             return JsonSerializer.Serialize<SavedPos>(data, WinPosContext.Default.SavedPos);
+        }
+
+        /// <summary>
+        /// Chooses what to save.  Whenever the window is not in the Normal state its current
+        /// position and size are not the "normal" ones (a minimized window may be at
+        /// -32000,-32000, a maximized or full-screen one covers the screen), so the cached
+        /// normal bounds are saved instead.  Only Normal and Maximized are saved as states:
+        /// a window that was minimized or full screen comes back as a normal window.
+        /// </summary>
+        internal static SavedPos BuildSavedPos(WindowState state, PixelPoint position,
+                double width, double height, (PixelPoint Pos, double W, double H)? normalBounds) {
+            int x = position.X;
+            int y = position.Y;
+            double w = width;
+            double h = height;
+            if (state != WindowState.Normal && normalBounds.HasValue) {
+                x = normalBounds.Value.Pos.X;
+                y = normalBounds.Value.Pos.Y;
+                w = normalBounds.Value.W;
+                h = normalBounds.Value.H;
+            }
+            string savedState = state == WindowState.Maximized ?
+                WindowState.Maximized.ToString() : WindowState.Normal.ToString();
+            return new SavedPos(x, y, w, h, savedState);
+        }
+
+        /// <summary>
+        /// Converts a saved state string to a state to restore.  Only Normal and Maximized
+        /// are accepted; anything else (including Minimized or FullScreen written by an
+        /// older version) is treated as Normal.
+        /// </summary>
+        internal static WindowState ParseSavedState(string? state) {
+            return Enum.TryParse<WindowState>(state, out var parsed) &&
+                parsed == WindowState.Maximized ? WindowState.Maximized : WindowState.Normal;
+        }
+
+        /// <summary>
+        /// Smallest part of a window, in pixels in each direction, that must be inside a
+        /// screen's working area for the saved position to be used.
+        /// </summary>
+        internal const int MIN_VISIBLE_PIXELS = 100;
+
+        /// <summary>
+        /// Checks that a saved window rectangle can be reached on the current screens.
+        /// </summary>
+        /// <param name="x">Saved left edge, in pixels.</param>
+        /// <param name="y">Saved top edge, in pixels.</param>
+        /// <param name="widthDip">Saved width, in device-independent pixels.</param>
+        /// <param name="heightDip">Saved height, in device-independent pixels.</param>
+        /// <param name="screens">Working area (pixels) and scaling of each screen.</param>
+        /// <param name="clampedWidth">Width to use, no larger than the chosen screen.</param>
+        /// <param name="clampedHeight">Height to use, no larger than the chosen screen.</param>
+        /// <returns>True if at least <see cref="MIN_VISIBLE_PIXELS"/> pixels of the window
+        ///   (in both directions) lie inside some screen's working area.  False if the window
+        ///   is off screen, in which case the platform should place it.</returns>
+        internal static bool IsPlacementOnScreen(int x, int y, double widthDip, double heightDip,
+                IReadOnlyList<(PixelRect WorkingArea, double Scaling)> screens,
+                out double clampedWidth, out double clampedHeight) {
+            clampedWidth = widthDip;
+            clampedHeight = heightDip;
+            long bestArea = 0;
+            bool found = false;
+            foreach (var (area, scaling) in screens) {
+                double scale = scaling > 0 ? scaling : 1.0;
+                int wPx = (int)Math.Round(widthDip * scale);
+                int hPx = (int)Math.Round(heightDip * scale);
+                PixelRect inter = new PixelRect(x, y, wPx, hPx).Intersect(area);
+                if (inter.Width < MIN_VISIBLE_PIXELS || inter.Height < MIN_VISIBLE_PIXELS) {
+                    continue;
+                }
+                long interArea = (long)inter.Width * inter.Height;
+                if (interArea > bestArea) {
+                    bestArea = interArea;
+                    found = true;
+                    clampedWidth = Math.Min(widthDip, area.Width / scale);
+                    clampedHeight = Math.Min(heightDip, area.Height / scale);
+                }
+            }
+            return found;
         }
 
         /// <summary>
@@ -102,14 +175,37 @@ namespace cp2_avalonia.Common {
                     WinPosContext.Default.SavedPos);
                 if (data == null) {
                     AppLog.D("Window placement: ignoring invalid saved data '" + json + "'");
-                } else {
-                    window.Position = new PixelPoint(data.X, data.Y);
-                    window.Width = data.Width;
-                    window.Height = data.Height;
-                    if (Enum.TryParse<WindowState>(data.State, out var state)) {
-                        window.WindowState = state;
-                    }
+                    return;
                 }
+                if (data.Width <= 0 || data.Height <= 0 ||
+                        double.IsNaN(data.Width) || double.IsNaN(data.Height)) {
+                    AppLog.D("Window placement: ignoring saved data with invalid size");
+                    return;
+                }
+
+                double width = data.Width;
+                double height = data.Height;
+                var screens = new List<(PixelRect WorkingArea, double Scaling)>();
+                try {
+                    foreach (Screen screen in window.Screens.All) {
+                        screens.Add((screen.WorkingArea, screen.Scaling));
+                    }
+                } catch (Exception ex) {
+                    AppLog.D("Window placement: unable to enumerate screens", ex);
+                }
+
+                if (screens.Count > 0 && !IsPlacementOnScreen(data.X, data.Y, width, height,
+                        screens, out width, out height)) {
+                    // The saved position isn't on any connected screen (a monitor was
+                    // unplugged or the layout changed).  Keep the default position.
+                    AppLog.I("Window placement: saved position is off screen; using default");
+                    return;
+                }
+
+                window.Width = width;
+                window.Height = height;
+                window.Position = new PixelPoint(data.X, data.Y);
+                window.WindowState = ParseSavedState(data.State);
             } catch (Exception ex) {
                 // Ignore invalid or missing placement data; window stays at default position.
                 AppLog.D("Window placement: ignoring invalid saved data", ex);

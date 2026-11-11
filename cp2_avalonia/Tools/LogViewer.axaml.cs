@@ -20,6 +20,7 @@ using Avalonia.Controls;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using cp2_avalonia.Common;
 using cp2_avalonia.ViewModels;
 
 namespace cp2_avalonia.Tools {
@@ -29,22 +30,44 @@ namespace cp2_avalonia.Tools {
     public partial class LogViewer : Window {
         private LogViewerViewModel? VM => DataContext as LogViewerViewModel;
 
+        // View model whose events we are currently subscribed to.
+        private LogViewerViewModel? mHookedVm;
+
         public LogViewer() {
             InitializeComponent();
-            DataContextChanged += (_, __) => {
-                if (DataContext is LogViewerViewModel vm) {
-                    vm.CloseRequested += () => Close();
-                    vm.SaveRequested += async () => await DoSave();
-                    vm.CopyRequested += async () => await DoCopy();
-                    vm.ScrollToEndRequested += ScrollToEnd;
-                    // Start at the bottom so the latest entries are visible on open.
-                    ScrollToEnd(force: true);
-                }
-            };
+            DataContextChanged += (_, __) => HookViewModel(DataContext as LogViewerViewModel);
         }
+
+        /// <summary>
+        /// Subscribes to the view model's events, first unsubscribing from the previous view
+        /// model so a DataContext change doesn't leave duplicate handlers behind.
+        /// </summary>
+        private void HookViewModel(LogViewerViewModel? vm) {
+            if (mHookedVm != null) {
+                mHookedVm.CloseRequested -= OnCloseRequested;
+                mHookedVm.SaveRequested -= OnSaveRequested;
+                mHookedVm.CopyRequested -= OnCopyRequested;
+                mHookedVm.ScrollToEndRequested -= ScrollToEnd;
+                mHookedVm = null;
+            }
+            if (vm != null) {
+                vm.CloseRequested += OnCloseRequested;
+                vm.SaveRequested += OnSaveRequested;
+                vm.CopyRequested += OnCopyRequested;
+                vm.ScrollToEndRequested += ScrollToEnd;
+                mHookedVm = vm;
+                // Start at the bottom so the latest entries are visible on open.
+                ScrollToEnd(force: true);
+            }
+        }
+
+        private void OnCloseRequested() => Close();
+        private async void OnSaveRequested() => await DoSave();
+        private async void OnCopyRequested() => await DoCopy();
 
         private void Window_Closed(object? sender, EventArgs e) {
             VM?.OnWindowClosed();
+            HookViewModel(null);
         }
 
         // Treat the view as "at the bottom" if it's within this many pixels of the end,
@@ -88,29 +111,48 @@ namespace cp2_avalonia.Tools {
             return sv.Offset.Y >= sv.Extent.Height - sv.Viewport.Height - BottomTolerance;
         }
 
+        // Called from async-void event handlers, so every exception must be caught here;
+        // an unhandled one would end the app.
         private async System.Threading.Tasks.Task DoSave() {
-            var topLevel = GetTopLevel(this);
-            var file = await topLevel!.StorageProvider.SaveFilePickerAsync(
-                new FilePickerSaveOptions {
-                    Title = "Save Debug Log...",
-                    SuggestedFileName = "cp2-log.txt",
-                    FileTypeChoices =
-                    [
-                        new FilePickerFileType("Text Files") { Patterns = ["*.txt"] },
-                        new FilePickerFileType("All Files") { Patterns = ["*"] }
-                    ]
-                });
-            if (file == null) { return; }
-            await using var stream = await file.OpenWriteAsync();
-            using var writer = new StreamWriter(stream);
-            writer.Write(VM!.BuildLogText());
+            try {
+                var topLevel = GetTopLevel(this);
+                var file = await topLevel!.StorageProvider.SaveFilePickerAsync(
+                    new FilePickerSaveOptions {
+                        Title = "Save Debug Log...",
+                        SuggestedFileName = "cp2-log.txt",
+                        FileTypeChoices =
+                        [
+                            new FilePickerFileType("Text Files") { Patterns = ["*.txt"] },
+                            new FilePickerFileType("All Files") { Patterns = ["*"] }
+                        ]
+                    });
+                if (file == null) { return; }
+                await using var stream = await file.OpenWriteAsync();
+                using var writer = new StreamWriter(stream);
+                writer.Write(VM!.BuildLogText());
+            } catch (Exception ex) {
+                await ShowErrorAsync("Unable to save the log", ex);
+            }
         }
 
         private async System.Threading.Tasks.Task DoCopy() {
-            string text = VM!.BuildLogText();
-            var clipboard = GetTopLevel(this)?.Clipboard;
-            if (clipboard != null) {
-                await clipboard.SetTextAsync(text);
+            try {
+                string text = VM!.BuildLogText();
+                var clipboard = GetTopLevel(this)?.Clipboard;
+                if (clipboard != null) {
+                    await clipboard.SetTextAsync(text);
+                }
+            } catch (Exception ex) {
+                await ShowErrorAsync("Unable to copy the log", ex);
+            }
+        }
+
+        private async System.Threading.Tasks.Task ShowErrorAsync(string summary, Exception ex) {
+            Services.AppLog.E(summary, ex);
+            try {
+                await PlatformUtil.ShowMessageAsync(this, summary + ": " + ex.Message, "Error");
+            } catch (Exception ex2) {
+                Services.AppLog.E("Unable to show error message", ex2);
             }
         }
     }

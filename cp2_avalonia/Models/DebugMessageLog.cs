@@ -57,6 +57,10 @@ namespace cp2_avalonia.Models {
             Debug.WriteLine("CLEAR message log");
             lock (mEntries) {
                 mEntries.Clear();
+                // Reset the ring-buffer cursor too; if the buffer had wrapped, a stale cursor
+                // would make GetLogs() skip or reorder entries added after the Clear.
+                // mLastIndex is not reset, so entry indices stay unique and increasing.
+                mTopEntry = 0;
             }
         }
 
@@ -84,13 +88,13 @@ namespace cp2_avalonia.Models {
         private void OnRaiseLogEvent(LogEventArgs e) {
             EventHandler<LogEventArgs>? raiseEvent = RaiseLogEvent;
             if (raiseEvent != null) {
-                if (Dispatcher.UIThread.CheckAccess()) {
-                    raiseEvent(this, e);
-                } else {
-                    // Use Post (fire-and-forget) to avoid deadlocks when the UI thread
-                    // is blocked waiting on a worker via Monitor.Wait.
-                    Dispatcher.UIThread.Post(() => raiseEvent(this, e));
-                }
+                // Always post, even when called on the UI thread.  Invoking directly on the
+                // UI thread would let a new entry overtake earlier entries still queued from
+                // worker threads, so subscribers would see them out of order.  Post is also
+                // fire-and-forget, which avoids deadlocks when the UI thread is blocked
+                // waiting on a worker via Monitor.Wait.
+                // Subscribers are always called on the UI thread, in log order.
+                Dispatcher.UIThread.Post(() => raiseEvent(this, e));
             }
         }
 

@@ -91,9 +91,11 @@ namespace cp2_avalonia.Views {
             trackBlockNumBox.SelectAll();
         }
 
-        // Intercept Ctrl+C to copy buffer to clipboard.
+        // Intercept Ctrl+C (Cmd+C on macOS) to copy buffer to clipboard.
         private void Window_KeyDown(object? sender, KeyEventArgs e) {
-            if (e.KeyModifiers == KeyModifiers.Control && e.Key == Key.C) {
+            KeyModifiers copyMod = OperatingSystem.IsMacOS() ? KeyModifiers.Meta
+                                                              : KeyModifiers.Control;
+            if (e.KeyModifiers == copyMod && e.Key == Key.C) {
                 e.Handled = true;
                 ((ICommand)VM!.CopyToClipboardCommand).Execute(null);
             }

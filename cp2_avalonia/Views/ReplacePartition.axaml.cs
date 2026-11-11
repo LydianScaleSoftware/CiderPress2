@@ -25,11 +25,17 @@ namespace cp2_avalonia.Views {
         public ReplacePartition() {
             InitializeComponent();
         if (Design.IsDesignMode) return;
-        DataContextChanged += (_, __) => {
-            if (DataContext is ReplacePartitionViewModel vm) {
-                vm.CloseRequested += result => Close(result);
-            }
-        };
+            DataContextChanged += (_, __) => {
+                if (DataContext is ReplacePartitionViewModel vm) {
+                    vm.CloseRequested += result => Close(result);
+                }
+            };
+            Closing += (_, e) => {
+                // Don't allow the window to be closed while the copy is running.
+                if (DataContext is ReplacePartitionViewModel { IsBusy: true }) {
+                    e.Cancel = true;
+                }
+            };
         }
     }
 }

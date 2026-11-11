@@ -528,6 +528,9 @@ public class MainViewModel : ObservableObject
     /// </summary>
     public void Initialize()
     {
+        // Tell the user (once per session) if the settings file can't be saved.  Use a toast:
+        // saving happens on quit and after Apply, so a modal dialog would be wrong.
+        _settingsService.SaveFailed += message => _viewActions.ShowToast(message, false);
         _workspaceService.AppHook.LogI("--- running unit tests ---");
         Debug.Assert(RangeSet.Test());
         Debug.Assert(CommonUtil.Version.Test());
@@ -576,7 +579,14 @@ public class MainViewModel : ObservableObject
         _workspaceService.UnpackRecentFileList();
         if (_workspaceService.IsFileOpen)
         {
-            RefreshDirAndFileList(false);
+            // Settings can change how files convert (MacZip, DOS text, etc.), so open
+            // viewers must reload even if their file is unchanged.
+            mForceViewerReload = true;
+            try {
+                RefreshDirAndFileList(false);
+            } finally {
+                mForceViewerReload = false;
+            }
         }
         _workspaceService.AppHook.SetOptionEnum(DAAppHook.AUDIO_DEC_ALG,
             _settingsService.GetEnum(AppSettings.AUDIO_DECODE_ALG,
@@ -1514,13 +1524,13 @@ public class MainViewModel : ObservableObject
         Debug.WriteLine("Extract: outputDir='" + outputDir +
             "', selectionDir='" + selectionDir + "'");
 
-        var workVm = new WorkProgressViewModel(prog, false);
+        var workVm = new WorkProgressViewModel(prog, false, mDialogService);
         bool success = await mDialogService.ShowDialogAsync(workVm) == true;
         if (success) {
             _viewActions.ShowToast(exportSpec != null ? "Export successful"
                 : "Extraction successful", true);
         } else {
-            _viewActions.ShowToast("Cancelled", false);
+            _viewActions.ShowToast(workVm.WorkerError != null ? "Failed" : "Cancelled", false);
         }
     }
 
@@ -1569,12 +1579,12 @@ public class MainViewModel : ObservableObject
             EnableMacOSZip = _settingsService.GetBool(AppSettings.MAC_ZIP_ENABLED, true),
         };
 
-        var workVm = new WorkProgressViewModel(prog, false);
+        var workVm = new WorkProgressViewModel(prog, false, mDialogService);
         bool didCancel = await mDialogService.ShowDialogAsync(workVm) != true;
         if (!didCancel) {
             _viewActions.ShowToast("Deletion successful", true);
         } else {
-            _viewActions.ShowToast("Cancelled", false);
+            _viewActions.ShowToast(workVm.WorkerError != null ? "Failed" : "Cancelled", false);
         }
 
         if (!(didCancel && archiveOrFileSystem is IArchive)) {
@@ -1609,7 +1619,7 @@ public class MainViewModel : ObservableObject
         TestProgress prog = new TestProgress(archiveOrFileSystem, selected) {
             EnableMacOSZip = _settingsService.GetBool(AppSettings.MAC_ZIP_ENABLED, true),
         };
-        var workVm = new WorkProgressViewModel(prog, false);
+        var workVm = new WorkProgressViewModel(prog, false, mDialogService);
         if (await mDialogService.ShowDialogAsync(workVm) == true) {
             List<TestProgress.Failure>? results = prog.FailureResults!;
             if (results.Count != 0) {
@@ -1629,7 +1639,7 @@ public class MainViewModel : ObservableObject
                 _viewActions.ShowToast("Tests successful, no failures", true);
             }
         } else {
-            _viewActions.ShowToast("Cancelled", false);
+            _viewActions.ShowToast(workVm.WorkerError != null ? "Failed" : "Cancelled", false);
         }
     }
 
@@ -1696,13 +1706,13 @@ public class MainViewModel : ObservableObject
             DoCompress = _settingsService.GetBool(AppSettings.ADD_COMPRESS_ENABLED, true),
         };
 
-        var workVm = new WorkProgressViewModel(prog, false);
+        var workVm = new WorkProgressViewModel(prog, false, mDialogService);
         bool success = await mDialogService.ShowDialogAsync(workVm) == true;
         if (success) {
             _viewActions.ShowToast("Move successful", true);
             CaptureActiveFileViewerState();
         } else {
-            _viewActions.ShowToast("Cancelled", false);
+            _viewActions.ShowToast(workVm.WorkerError != null ? "Failed" : "Cancelled", false);
         }
 
         // Check whether any moved entry is a directory.  If so, rebuild ALL FileListItems
@@ -1912,12 +1922,12 @@ public class MainViewModel : ObservableObject
             RawMode = _settingsService.GetBool(AppSettings.ADD_RAW_ENABLED, false),
         };
 
-        var workVm = new WorkProgressViewModel(prog, false);
+        var workVm = new WorkProgressViewModel(prog, false, mDialogService);
         bool success = await mDialogService.ShowDialogAsync(workVm) == true;
         if (success) {
             _viewActions.ShowToast(importSpec == null ? "Files added" : "Files imported", true);
         } else {
-            _viewActions.ShowToast("Cancelled", false);
+            _viewActions.ShowToast(workVm.WorkerError != null ? "Failed" : "Cancelled", false);
         }
 
         // Refresh even if canceled — partial progress may have occurred.
@@ -2190,7 +2200,7 @@ public class MainViewModel : ObservableObject
             DoCompress = _settingsService.GetBool(AppSettings.ADD_COMPRESS_ENABLED, true),
             EnableMacOSZip = _settingsService.GetBool(AppSettings.MAC_ZIP_ENABLED, true),
         };
-        var workVm = new WorkProgressViewModel(delProg, false);
+        var workVm = new WorkProgressViewModel(delProg, false, mDialogService);
         bool success = await mDialogService.ShowDialogAsync(workVm) == true;
         if (success) {
             _workspaceService.AppHook.LogI("Cut source files deleted after paste");
@@ -2329,7 +2339,7 @@ public class MainViewModel : ObservableObject
                 RawMode = _settingsService.GetBool(AppSettings.ADD_RAW_ENABLED, false),
             };
 
-        var workVm = new WorkProgressViewModel(prog, false);
+        var workVm = new WorkProgressViewModel(prog, false, mDialogService);
         bool success = await mDialogService.ShowDialogAsync(workVm) == true;
         if (success) {
             _viewActions.ShowToast("Files added", true);
@@ -2339,7 +2349,7 @@ public class MainViewModel : ObservableObject
                 await DeleteCutEntries();
             }
         } else {
-            _viewActions.ShowToast("Cancelled", false);
+            _viewActions.ShowToast(workVm.WorkerError != null ? "Failed" : "Cancelled", false);
         }
 
         RefreshDirAndFileList();
@@ -2524,7 +2534,7 @@ public class MainViewModel : ObservableObject
         }
 
         ScanBlocksProgress prog = new ScanBlocksProgress(diskImage);
-        var workVm = new WorkProgressViewModel(prog, false);
+        var workVm = new WorkProgressViewModel(prog, false, mDialogService);
         if (await mDialogService.ShowDialogAsync(workVm) == true) {
             List<ScanBlocksProgress.Failure>? results = prog.FailureResults!;
             if (results.Count != 0) {
@@ -2554,7 +2564,7 @@ public class MainViewModel : ObservableObject
                 _viewActions.ShowToast("Scan successful, no errors", true);
             }
         } else {
-            _viewActions.ShowToast("Cancelled", false);
+            _viewActions.ShowToast(workVm.WorkerError != null ? "Failed" : "Cancelled", false);
         }
     }
 
@@ -2718,14 +2728,13 @@ public class MainViewModel : ObservableObject
                     }
 
                     EditAttributesProgress prog = new EditAttributesProgress(
-                            _dialogHost.GetOwnerWindow(), arc,
-                            workNode.FindDANode(), entry, adfEntry,
+                            arc, workNode.FindDANode(), entry, adfEntry,
                             vm.NewAttribs, _workspaceService.AppHook) {
                         DoCompress = _settingsService.GetBool(AppSettings.ADD_COMPRESS_ENABLED, true),
                         EnableMacOSZip = isMacZipEnabled,
                     };
 
-                    if (prog.DoUpdate(isMacZip)) {
+                    if (await RunEditAttributesAsync(prog, isMacZip)) {
                         _viewActions.ShowToast("File attributes edited", true);
                         FinishEditAttributes(entry, adfEntry, vm.NewAttribs,
                             isMacZip, fileItem, dirItem, archiveOrFileSystem);
@@ -2760,13 +2769,13 @@ public class MainViewModel : ObservableObject
         }
 
         EditAttributesProgress prog2 = new EditAttributesProgress(
-                _dialogHost.GetOwnerWindow(), workNode.DAObject, workNode.FindDANode(),
+                workNode.DAObject, workNode.FindDANode(),
                 entry, IFileEntry.NO_ENTRY, vm2.NewAttribs, _workspaceService.AppHook) {
             DoCompress = _settingsService.GetBool(AppSettings.ADD_COMPRESS_ENABLED, true),
             EnableMacOSZip = isMacZipEnabled,
         };
 
-        if (prog2.DoUpdate(false)) {
+        if (await RunEditAttributesAsync(prog2, false)) {
             _viewActions.ShowToast("File attributes edited", true);
             FinishEditAttributes(entry, IFileEntry.NO_ENTRY, vm2.NewAttribs,
                 false, fileItem, dirItem, archiveOrFileSystem);
@@ -2777,6 +2786,26 @@ public class MainViewModel : ObservableObject
         // the edited entry — otherwise a rename that moves the row (e.g. HFS re-sorts by
         // name) loses the selection entirely.
         RefreshDirAndFileList();
+    }
+
+    /// <summary>
+    /// Runs the attribute update with a busy cursor.  If it fails, shows the reason and
+    /// waits for the box to be dismissed, so the caller's list refresh happens afterward.
+    /// </summary>
+    private async Task<bool> RunEditAttributesAsync(EditAttributesProgress prog,
+            bool updateMacZip) {
+        bool success;
+        _viewActions.SetCursorBusy(true);
+        try {
+            success = prog.DoUpdate(updateMacZip);
+        } finally {
+            _viewActions.SetCursorBusy(false);
+        }
+        if (!success && prog.ErrorMessage != null) {
+            await mDialogService.ShowMessageAsync(prog.ErrorMessage, "Failed",
+                MBButton.OK, MBIcon.Error);
+        }
+        return success;
     }
 
     private void FinishEditAttributes(IFileEntry entry, IFileEntry adfEntry,
@@ -4214,12 +4243,15 @@ public class MainViewModel : ObservableObject
         }
     }
 
+    // True while RefreshDirAndFileList runs because settings were applied.
+    private bool mForceViewerReload;
+
     private void RefreshActiveFileViewer()
     {
         if (mCurrentWorkObject == null) return;
         foreach (var viewer in _viewerService.ActiveViewers.ToList()) {
             if (!viewer.IsSourceObject(mCurrentWorkObject)) continue;
-            switch (viewer.ReconcileAfterRefresh(mCurrentWorkObject)) {
+            switch (viewer.ReconcileAfterRefresh(mCurrentWorkObject, mForceViewerReload)) {
                 case FileViewerViewModel.ReconcileResult.NoChange:
                     break;
                 case FileViewerViewModel.ReconcileResult.Reverted:

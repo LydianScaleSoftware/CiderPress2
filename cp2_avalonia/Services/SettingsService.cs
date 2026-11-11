@@ -20,13 +20,13 @@
 using System;
 using System.IO;
 using CommonUtil;
-using Common;  // PlatformUtil
 
 public class SettingsService : ISettingsService {
     private readonly SettingsHolder mHolder = new SettingsHolder();
     private bool mLoaded;
 
     public event Action<string>? SettingChanged;
+    public event Action<string>? SaveFailed;
     // NOTE: SettingChanged fires the key name on every Set* call (and string.Empty for bulk
     // ReplaceSettings/MergeSettings).  No production code currently subscribes to it —
     // settings changes propagate through EditAppSettingsViewModel.SettingsApplied →
@@ -35,7 +35,6 @@ public class SettingsService : ISettingsService {
 
     public bool GetBool(string key, bool defaultValue) {
         bool value = mHolder.GetBool(key, defaultValue);
-        AppLog.D("Settings: read " + key + " = " + value);
         return value;
     }
     public void SetBool(string key, bool value) {
@@ -46,7 +45,6 @@ public class SettingsService : ISettingsService {
 
     public int GetInt(string key, int defaultValue) {
         int value = mHolder.GetInt(key, defaultValue);
-        AppLog.D("Settings: read " + key + " = " + value);
         return value;
     }
     public void SetInt(string key, int value) {
@@ -57,7 +55,6 @@ public class SettingsService : ISettingsService {
 
     public string GetString(string key, string defaultValue) {
         string value = mHolder.GetString(key, defaultValue);
-        AppLog.D("Settings: read " + key + " = " + value);
         return value;
     }
     public void SetString(string key, string? value) {
@@ -68,7 +65,6 @@ public class SettingsService : ISettingsService {
 
     public T GetEnum<T>(string key, T defaultValue) where T : struct {
         T value = mHolder.GetEnum(key, defaultValue);
-        AppLog.D("Settings: read " + key + " = " + value);
         return value;
     }
     public void SetEnum<T>(string key, T value) where T : struct {
@@ -77,11 +73,23 @@ public class SettingsService : ISettingsService {
         SettingChanged?.Invoke(key);
     }
 
+    /// <summary>
+    /// Full path of the settings file: beside the executable if one is there (portable
+    /// install), otherwise in the per-user folder.
+    /// </summary>
+    internal static string GetSettingsFilePath() {
+        return SettingsPaths.GetSettingsFilePath(AppSettings.SETTINGS_FILE_NAME,
+            SettingsPaths.CurrentOS,
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            AppContext.BaseDirectory, File.Exists);
+    }
+
+    private bool mSaveFailureReported;
+
     public void Load() {
         if (mLoaded) return;
         mLoaded = true;
-        string settingsPath = Path.Combine(
-            PlatformUtil.GetRuntimeDataDir(), AppSettings.SETTINGS_FILE_NAME);
+        string settingsPath = GetSettingsFilePath();
         if (!File.Exists(settingsPath)) {
             AppLog.D("Settings: no settings file at '" + settingsPath + "'; using defaults");
             return;
@@ -99,19 +107,24 @@ public class SettingsService : ISettingsService {
     }
 
     public void Save() {
-        string settingsPath = Path.Combine(
-            PlatformUtil.GetRuntimeDataDir(), AppSettings.SETTINGS_FILE_NAME);
+        string settingsPath = GetSettingsFilePath();
         if (!mHolder.IsDirty) {
             AppLog.D("Settings: unchanged; not saving to '" + settingsPath + "'");
             return;
         }
         try {
             string cereal = mHolder.Serialize();
-            File.WriteAllText(settingsPath, cereal);
+            SettingsPaths.WriteFileAtomic(settingsPath, cereal);
             mHolder.IsDirty = false;
             AppLog.I("Settings: saved to '" + settingsPath + "'");
         } catch (Exception ex) {
-            AppLog.E("Failed to save settings file", ex);
+            AppLog.E("Failed to save settings file '" + settingsPath + "'", ex);
+            // Tell the user once per session, not on every attempt.  Saving happens at
+            // quit and after Apply, so this must not be a modal dialog.
+            if (!mSaveFailureReported) {
+                mSaveFailureReported = true;
+                SaveFailed?.Invoke("Settings could not be saved: " + ex.Message);
+            }
         }
     }
 

@@ -371,7 +371,7 @@ dialog, debug menu windows. No behaviour change is expected.
 
 ### Stream A: progress dialogs, worker errors, message box (Phase 1)
 
-- [ ] **A1 (S1)** Worker exceptions are reported as "Cancelled" with no error.
+- [x] **A1 (S1)** Worker exceptions are reported as "Cancelled" with no error.
   (Actions#1, ViewModels "Worker exceptions are only logged")
   - In `WorkProgressViewModel.RunWorkerCompleted`, when `e.Error != null`, show the error
     (via A2's helper) before closing. In `MainViewModel`, say "Failed" rather than "Cancelled"
@@ -388,7 +388,16 @@ dialog, debug menu windows. No behaviour change is expected.
   - **Manual:** delete several files where one delete throws a non-IO exception (use a damaged
     test image from `TestData` if one triggers it; otherwise inject a throw in a debug build)
     → earlier deletions are saved, the error is shown.
-- [ ] **A2 (S2)** One message box; worker message box honours button and icon.
+  `WorkProgressViewModel.RunWorkerCompleted` now shows `e.Error` through `IDialogService` ("The
+  operation failed: ...", error icon) before closing and keeps it in `WorkerError`; the seven
+  "Cancelled" toasts in `MainViewModel` say "Failed" when `WorkerError` is set. `ExtractProgress` no
+  longer sets `Environment.CurrentDirectory`: it checks the folder exists (throws a clear error
+  otherwise) and passes it as `basePath` to `ExtractFileWorker` (which joins it in both places it
+  builds a path). `DeleteProgress`/`MoveProgress` catch any exception from the library call, still
+  call `SaveUpdates`, then rethrow so the dialog shows it. `ClipPasteProgress` null `ClipEntries` and
+  the `TestProgress` cast now throw `InvalidOperationException` with a message. Checked: build; Auto:
+  see A3. Manual not run.
+- [x] **A2 (S2)** One message box; worker message box honours button and icon.
   (Common#6, Actions "Smaller observations"; implements X2)
   - Per the X2 rule: `WorkProgressViewModel` takes `IDialogService`; it shows
     `MessageBoxQuery` via `ShowMessageAsync(text, caption, button, icon)` and `OverwriteQuery`
@@ -399,7 +408,15 @@ dialog, debug menu windows. No behaviour change is expected.
     `MessageBoxView`, returning `MBResult`, for the code-behind callers (K3).
   - **Manual:** trigger a worker error message (A1 repro) → error icon shown, Enter and Esc
     dismiss it. **Code:** a query with `OKCancel` returns the button pressed.
-- [ ] **A3 (S2)** `async void` query handlers can block the worker forever; handlers are
+  `WorkProgressViewModel(callbacks, isIndeterminate, IDialogService)` handles `MessageBoxQuery` (with
+  its button and icon, via `ShowMessageAsync`) and `OverwriteQuery` (via `ShowDialogAsync`) itself;
+  the events and the `WorkProgress` code-behind handlers are gone, and the 8 `MainViewModel` call
+  sites pass `mDialogService`. `PlatformUtil.ShowMessageAsync(owner, text, caption, MBButton = OK,
+  MBIcon = None)` now shows `MessageBoxView` and returns `MBResult`; its doc comment says view models
+  must not call it. The query events arrive on the UI thread (`BackgroundWorker.ProgressChanged` is
+  marshalled by the sync context installed by Avalonia). Auto: `WorkProgressViewModelTests` (button/icon
+  passed through; button pressed returned). Manual not run.
+- [x] **A3 (S2)** `async void` query handlers can block the worker forever; handlers are
   re-added on every `DataContextChanged`. (Common#5, Tools "Smaller observations")
   - After A2 the handlers live in `WorkProgressViewModel`. Wrap each in
     `try`/`catch`/`finally`; in `finally` call `SetResult(Cancel)` if no result was set; log
@@ -413,35 +430,59 @@ dialog, debug menu windows. No behaviour change is expected.
   - **Manual (debug build):** temporarily throw inside the overwrite-query dialog constructor;
     run an extract that hits an existing file → the worker stops as cancelled, the window
     closes, no hang. Remove the injected throw.
-- [ ] **A4 (S2)** `EditAttributesProgress` error dialog: duplicate of the message box and not
+  Both query handlers are `try`/`catch`/`finally` and the `finally` answers `Cancel` if no result was set
+  (`HasResult` added to both query classes; `Pulse` -> `PulseAll`). `WorkProgress` unsubscribes from
+  the previous view model, guards `VM`, and a title-bar close now disables Cancel the same way the
+  button does (`RequestCancel` sets `IsCancelEnabled = false`). Auto: `WorkProgressViewModelTests`
+  (throwing dialog service -> `Cancel`, no hang, with a 5 s guard; cancelled overwrite dialog ->
+  `Cancel`). Manual (injected throw in the overwrite dialog) not run.
+- [x] **A4 (S2)** `EditAttributesProgress` error dialog: duplicate of the message box and not
   awaited. (Actions#4) Make `DoUpdate` return the error (or `Task<bool>`) and show it through
   `IDialogService` in `MainViewModel`, so the list refresh happens after the dialog is closed.
   Removes the `Window` parameter. **Manual:** see A5 repro; the file list must not refresh
   until the error box is dismissed.
-- [ ] **A5 (S1)** A failed attribute edit leaves the entry half-modified in memory.
+  `EditAttributesProgress` no longer takes a `Window` or builds its own error window; `DoUpdate` keeps its
+  `bool` result and leaves the reason in `ErrorMessage`. `MainViewModel.RunEditAttributesAsync` sets
+  the busy cursor, runs it, and awaits the error box (`IDialogService`, error icon) before the list
+  refresh. Checked: build. Manual not run.
+- [x] **A5 (S1)** A failed attribute edit leaves the entry half-modified in memory.
   (Actions#2; do after A4) Snapshot `new FileAttribs(fileEntry)` before `CopyAttrsTo`; restore
   and `SaveChanges` in its own `try` in the `catch`.
   - **Manual:** on a ProDOS image, edit a file: change its type and rename it to an existing
     name in the same directory → error shown; after dismissing, the list shows the *old* type
     and name. Close and reopen the image → still the old values.
-- [ ] **A6 (S2)** An aborted bad-block scan is reported as a clean disk; the progress bar never
+  For a file system, `DoUpdate` snapshots `new FileAttribs(fileEntry)` first and, on failure, copies the
+  originals back and calls `SaveChanges` in its own try/catch. The same defect exists in
+  `cp2_wpf` (section 8). Manual (ProDOS: change type and rename to an existing name) not run.
+- [x] **A6 (S2)** An aborted bad-block scan is reported as a clean disk; the progress bar never
   moves. (Actions#3) Return `null` from `DoWork` when `ScanDisk` fails and the worker was not
   cancelled; show an error for `null`. Report progress per track, or create the dialog as
   indeterminate.
   - **Manual:** scan a nibble image → progress advances. **Code** for the failure path, or force
     `ScanDisk` to return false in a debug build → error, not "no bad blocks".
-- [ ] **A7 (S3)** Add and paste `DoWork` bodies are copies. (Actions#5) Shared helper in
+  `ScanBlocksProgress.DoWork` throws if `ScanDisk` returns false and the worker was not cancelled, so
+  the dialog shows an error (and a "Failed" toast) instead of reporting a clean disk. `ScanDisk` now
+  reports progress per track (sector media) and per percent (block media). Manual (nibble image) not
+  run.
+- [x] **A7 (S3)** Add and paste `DoWork` bodies are copies. (Actions#5) Shared helper in
   `ProgressUtil` taking the two worker delegates; keep the deferred-failure comment.
   **Manual:** add files to a disk image and to a ShrinkIt archive; paste into both; cancel
   mid-way in each.
-- [ ] **A8 (S3)** Small efficiency items: `ProgressUtil` flushes streams even when no dialog
+  New `ProgressUtil.RunAddOperation(...)` holds the archive/file-system bodies; `AddProgress` and
+  `ClipPasteProgress.DoWork` call it with their two worker delegates. The deferred-failure comment is
+  kept there. Behaviour unchanged. Manual (add to disk image and ShrinkIt; paste; cancel) not run.
+- [x] **A8 (S3)** Small efficiency items: `ProgressUtil` flushes streams even when no dialog
   will be shown; `TestProgress` allocates a `PersistentChoices` per progress callback.
   (Actions "Smaller observations") **Manual:** run Test Files on a large archive; behaviour
   unchanged.
+  `FlushStreams` in `HandleCallback` now runs only when the overwrite dialog will actually be shown (after
+  the standing "all"/"none" choices). `TestProgress` reports progress with the new
+  `ProgressUtil.ReportFileProgress` instead of allocating a `PersistentChoices` and going through
+  `HandleCallback` per fork. Manual (Test Files on a large archive) not run.
 
 ### Stream H: window placement and settings storage (Phase 1)
 
-- [ ] **H1 (S1 for packaged builds)** Settings are written beside the executable and failure
+- [x] **H1 (S1 for packaged builds)** Settings are written beside the executable and failure
   is silent. (Common#1, Services#7; implements X5)
   - Implement the X5 rule: `GetAppResourceDir()` / `GetUserSettingsDir()` split, per-OS
     folder names, portable override, no repo-root walk for settings, temp-file-and-rename
@@ -457,28 +498,54 @@ dialog, debug menu windows. No behaviour change is expected.
     executable → that file is used and the per-user one is untouched. Make the per-user folder
     read-only → one toast per session, app keeps working, quit is not blocked. About box
     still shows the legal text in a dev build and in a `MakeDist` package.
-- [ ] **H2 (S2)** Minimized and FullScreen state and bounds are saved. (Common#2)
+  Implemented X5. New `Services/SettingsPaths` (pure, tested): per-user folder (`%APPDATA%\CiderPress2`,
+  `~/Library/Application Support/CiderPress2`, `~/.config/ciderpress2` from
+  `SpecialFolder.ApplicationData`), portable override (a settings file in `AppContext.BaseDirectory`
+  only), no repo-root walk for settings, `WriteFileAtomic` (temp file in the same folder, then
+  `File.Move(..., overwrite)`; folder created on first save). `PlatformUtil.GetRuntimeDataDir` is split
+  into `GetAppResourceDir()` (LegalStuff.txt beside the exe, else walk up with no depth limit to the
+  solution file; used by `AboutBoxViewModel`) and `GetUserSettingsDir()`. `ISettingsService` gained
+  `SaveFailed`; `SettingsService` raises it once per session and `MainViewModel.Initialize` shows a
+  non-modal toast. Per-read debug logging removed. `KNOWN_ISSUES.md` entry removed. Auto:
+  `SettingsPathsTests` (per-OS folder, portable override, fallback, 8-level walk, failing writer leaves
+  the old file and no `.tmp`). Manual (each OS) not run; **note:** an existing repo-root settings file
+  is no longer read, and the toast at quit may not be visible.
+- [x] **H2 (S2)** Minimized and FullScreen state and bounds are saved. (Common#2)
   Save normal bounds for every non-`Normal` state; store `Minimized`/`FullScreen` as `Normal`;
   `Restore` accepts only `Normal` and `Maximized`.
   - **Manual:** quit while minimized (Windows taskbar / macOS Dock) → relaunch opens normal and
     on-screen. Quit in macOS full screen → relaunch windowed at the earlier size.
-- [ ] **H3 (S2)** Restore never checks that the saved position is on a screen. (Common#3)
+  `WindowPlacement.BuildSavedPos`: for any state other than Normal the cached normal bounds are saved
+  (the cache is also seeded on `Opened`), and only `Normal`/`Maximized` are stored (Minimized and
+  FullScreen become `Normal`). `ParseSavedState` accepts only those two on restore (older files with
+  Minimized/FullScreen restore as Normal). Auto: `WindowPlacementTests`. Manual not run.
+- [x] **H3 (S2)** Restore never checks that the saved position is on a screen. (Common#3)
   Require an intersection of at least ~100 px with some `Screens.All` working area; otherwise
   let the platform place the window. Clamp size to the chosen screen; mind physical pixels vs.
   DIPs (`Scaling`).
   - **Auto:** the rectangle-validation function, with screens as input.
   - **Manual:** move the window to a second monitor, quit, disconnect it (or edit the settings
     file to x = 10000), relaunch → window visible on the main screen.
-- [ ] **H4 (S2, confirm first)** Normal-bounds cache can capture maximized bounds. (Common#4)
+  `Restore` now checks `IsPlacementOnScreen` against `Screens.All` working areas (saved size is DIPs,
+  converted with each screen's `Scaling`): at least 100 px in each direction must be visible, else the
+  saved position and state are ignored and the platform places the window; size is clamped to the
+  chosen screen; non-positive or NaN sizes are ignored. If screens can't be enumerated the old
+  behaviour is kept. Auto: `WindowPlacementTests` (second monitor gone, -32000, partly visible, size
+  clamp, scaling). Manual (unplug a monitor) not run.
+- [~] **H4 (S2, confirm first)** Normal-bounds cache can capture maximized bounds. (Common#4)
   First log `WindowState`/`Position`/size in both handlers while maximizing on each OS. If the
   ordering is confirmed, update the cache via `Dispatcher.UIThread.Post` and make the tracker
   an instance owned by `MainWindow`.
   - **Manual:** size the window small, maximize, quit, relaunch, un-maximize → returns to the
     small size and position.
+  Not done: marked "confirm first" and needs a UI run on each OS (log `WindowState`/`Position`/size in
+  the handlers while maximizing). I could not run the app. One related mitigation went in with H2: the
+  normal-bounds cache is seeded on `Opened`. The `Dispatcher.Post` change and the instance-owned
+  tracker are untouched.
 
 ### Stream I: file viewer (Phase 1)
 
-- [ ] **I1 (S2)** Viewer reloads on every main-window refresh; history path lists are rebuilt
+- [x] **I1 (S2)** Viewer reloads on every main-window refresh; history path lists are rebuilt
   per entry and per selection change. (ViewModels#7, ViewModels "Navigation pool rebuilt on
   every selection change") Reload only when the resolved entry changed or became invalid;
   share one path list across history entries. Touches `MainViewModel` navigation-pool code
@@ -487,22 +554,47 @@ dialog, debug menu windows. No behaviour change is expected.
     in the main tree does not relaunch the external viewer. Delete the viewed file in the main
     window → viewer reacts (closes or shows the next file, whichever the code intends).
     Multi-select 200 files and view → selection changes in the main list stay responsive.
-- [ ] **I2 (S2)** Find Previous stays on the same match. (ViewModels#8) Start the backward
+  `ReconcileAfterRefresh` rebuilds history entries with a per-refresh cache (each path resolved once;
+  entries built from one path list share the rebuilt list), and no longer reloads the displayed file
+  when its entry is the same valid `IFileEntry` (`TryRefreshPoolKeepingDisplay` just refreshes the
+  pool). It still reloads when the entry changed or became invalid, and when settings were applied
+  (`MainViewModel.ApplySettings` sets `mForceViewerReload`; the only `MainViewModel` edits are that
+  flag and the extra argument). `UpdatePool` computes `FullPathName` once and returns early when the
+  pool is unchanged. Checked: build. **Manual not run** (external RTF/PDF viewer not relaunched on
+  directory clicks; delete the viewed file; 200-file selection). Risk to watch: any case where an
+  entry object is replaced but the old one still reports `IsValid`.
+- [x] **I2 (S2)** Find Previous stays on the same match. (ViewModels#8) Start the backward
   search before the current match; remove the unreachable branch.
   - **Auto:** extract the search-position logic into a pure function and test next/previous
     with wrap-around over a string with three hits. **Manual:** three hits, Next ×2, Previous ×3
     → 2, 1, 3 (wrap).
-- [ ] **I3 (S1)** `ConfigureControls` throws `KeyNotFoundException` when an option key is
+  Confirmed by reading: the caret was left at the end of the match, so the backward search found the
+  same match. Extracted `FileViewerViewModel.FindMatch(text, search, matchStart, matchEnd, forward)`;
+  Previous now searches before the current match start and wraps. Auto: `FindMatchTests` (Next x3
+  with wrap; from the 2nd hit, Previous gives 1st, wraps to 3rd, then 2nd). Manual not run. (The
+  plan's "2, 1, 3" sequence reads as: after Next x2 you are on hit 2; Previous x3 gives 1, 3, 2.)
+- [x] **I3 (S1)** `ConfigureControls` throws `KeyNotFoundException` when an option key is
   missing. (Tools#2) `TryGetValue(..., out v) ? v : optDef.DefaultVal`.
   - **Manual:** Random-Access Text converter, clear "Record length", view another file, press
     Back → no exception, default shown. Same in Settings → Configure export options.
-- [ ] **I4 (S3, confirm first)** `mIgnoreChange` guard never suppresses `TextChanged`.
+  `ConfigureControls` uses new `GetOptionValue(convOptions, optDef)` (`TryGetValue`, else the option's
+  default). The only other indexer on that dictionary is a write. Auto: `ConfigOptCtrlTests`. Manual not
+  run.
+- [x] **I4 (S3, confirm first)** `mIgnoreChange` guard never suppresses `TextChanged`.
   (Tools#4) Confirm Avalonia 11.3 raises `TextChanged` asynchronously (search the Avalonia API
   docs or source). Then skip `Updater` when the text equals the last value sent; remove the
   posted flags in `FileViewer.axaml.cs` and `EditConvertOpts.axaml.cs`.
   - **Manual:** in the file viewer, typing a non-digit in an integer option triggers one
     reformat (add a temporary log line to count `FormatFile` calls).
-- [ ] **I5 (S2)** Bitmap conversion: palette index unchecked; alpha 0 forced opaque; 64 MB
+  Confirmed from the Avalonia API docs: `TextBox.TextChanged` "occurs asynchronously after text changes"
+  (`TextChanging` is the synchronous one), so `mIgnoreChange` never suppressed anything. `TextBoxMapItem`
+  now remembers the last value assigned or reported and ignores `TextChanged` events that don't change
+  it. The two posted flags are gone: `FileViewer.ConfigureControls` and
+  `EditConvertOpts.ConfigureForConverter` now hold the "configuring" flag only across the synchronous
+  assignment (try/finally); check-box and radio events are synchronous. Result: typing a non-digit in
+  an integer option now causes no reformat at all (the filtered text equals the last value), where
+  the plan expected one. Manual not run.
+- [x] **I5 (S2)** Bitmap conversion: palette index unchecked; alpha 0 forced opaque; 64 MB
   temporary per zoom step; old preview bitmaps never disposed. (Common#7, Common#8, ViewModels
   "Preview bitmaps are never disposed"; X4) Copy the palette into a 256-entry array, unused
   entries opaque black (`0xff000000`); remove the "alpha 0 means opaque" rule so palette alpha
@@ -513,7 +605,12 @@ dialog, debug menu windows. No behaviour change is expected.
   - **Manual:** view a hi-res and a super-hi-res image; step zoom up and down repeatedly →
     output identical to before, memory steady (watch the process in Activity Monitor / Task
     Manager).
-- [ ] **I6 (S2)** Viewer lifecycle and export errors. (ViewModels lower items)
+  `BitmapUtil`: palette copied to a 256-entry array (`BuildPalette`, missing entries opaque black
+  `0xff000000`), alpha passed through unchanged (X4), rows expanded one at a time into the framebuffer
+  (`ExpandIndexedRow`; no second full-size array). `FileViewerViewModel.PreviewBitmap` disposes the
+  bitmap it replaces after the binding has switched. Auto: `BitmapUtilTests` (short palette, alpha 128
+  and 0 kept, row-by-row equals whole-array). Manual (hi-res/SHR zoom, memory) not run.
+- [x] **I6 (S2)** Viewer lifecycle and export errors. (ViewModels lower items)
   - Deferred `ShowFile` runs after `Dispose` and leaks fork streams → set a disposed flag and
     check it.
   - History-restore flags stick after a failed load → clear them in `finally`.
@@ -524,7 +621,13 @@ dialog, debug menu windows. No behaviour change is expected.
     handle on Windows: the archive can be closed). View a CSV-type file (e.g. AppleWorks
     spreadsheet) → Export offers and writes `.csv`. Export to a read-only folder → error shown.
     View a file that fails to convert, then a good one, then Back → history works.
-- [ ] **I8 (S1, confirm first)** Modeless viewers stay usable while a modal worker changes the
+  (a) `mIsDisposed` set in `Dispose`; deferred `ShowFile` and the stale-descriptor reload return early.
+  (b) `mPendingHistoryRestore`/`mIsRestoringHistory` cleared in `ShowFile`'s conversion-failure path and
+  if the deferred load throws. (c) the original `CellGrid` is kept in `mCurDataGrid`; Export and Copy
+  use it, so spreadsheets export as `.csv`. (d) Export and Copy failures raise `ErrorReported`; the
+  viewer window shows it with `PlatformUtil.ShowMessageAsync(this, ...)` (no `IDialogService` is
+  injected into the view model; see A2/X2). Checked: build. Manual not run.
+- [~] **I8 (S1, confirm first)** Modeless viewers stay usable while a modal worker changes the
   archive. (New; found while deciding X1, not in any source review.) `ViewerService` shows
   viewers with `Show(owner)`; `ShowDialog` disables only its owner window, so a viewer can load
   or navigate (reading the archive on the UI thread) while a `WorkProgress` worker writes it.
@@ -537,45 +640,78 @@ dialog, debug menu windows. No behaviour change is expected.
   - **Manual:** repeat the confirm steps → viewer controls are disabled during the Add and work
     again afterwards; the viewer shows correct data after the Add (including if the viewed file
     was replaced).
+  Not done. It is marked "confirm first" and needs a UI run (open a viewer, start a long Add, press
+  Next/Prev) that I cannot do here, and its fix depends on B0 (`IDialogService.IsModalActive`), which is
+  stream B. Left for the user to confirm; B0 is small and can be done on request.
 
-- [ ] **I7 (S3)** `AnimatedGifEncoder` 0-delay rounds to 0; transparency flag never set.
+- [x] **I7 (S3)** `AnimatedGifEncoder` 0-delay rounds to 0; transparency flag never set.
   (Common "Also noticed") Clamp delay to at least 2 (hundredths); leave transparency until a
   caller needs it. **Manual:** Debug → animated GIF test (already on `KNOWN_ISSUES.md` "testing
   needed"), play in a browser at the expected speed.
+  `AnimatedGifEncoder.ToGifDelay` clamps the delay to 2..65535 hundredths (transparency flag left alone).
+  Confirmed in `cp2_wpf` too (section 8). Auto: `AnimatedGifEncoderTests`. Manual (Debug GIF test in a
+  browser) not run.
 
 ### Stream J: dialog view models (Phase 1)
 
-- [ ] **J1 (S1)** Replace Partition Copy button does nothing (binds `CopyCommand`, view model
+- [x] **J1 (S1)** Replace Partition Copy button does nothing (binds `CopyCommand`, view model
   exposes `OkCommand`). (ViewModels#1) Rename to match; add `x:DataType` to the view so this
   fails at build time; run `DoCopy` off the UI thread with `try`/`catch` and an error message.
   - **Manual:** Actions → Replace Partition Contents with a compatible image → Copy works;
     progress or busy cursor shown; copying onto a write-protected target shows an error.
   - Consider adding `x:DataType` to other views that lack it (search `Views/*.axaml`); report
     any further binding mismatches the compiler finds as new items.
-- [ ] **J2 (S1)** Sector editor moves position before the "discard changes?" prompt, so Write
+  Confirmed: view bound `CopyCommand`, view model exposed `OkCommand`. Renamed to `CopyCommand` (now
+  enabled by `IsValid && !IsBusy`); the copy runs in `Task.Run` with try/catch and an error box, with an
+  indeterminate progress bar, Copy/Cancel disabled and window close refused while busy (modal dialog, so
+  the X1 rule holds; `EnableWriteFunc` stays on the UI thread). `ReplacePartition.axaml` now has
+  `x:DataType` + `x:CompileBindings="True"`, so a name mismatch fails the build. **Diagnostic:** I
+  temporarily enabled compiled bindings on every other dialog view and the build found no mismatches
+  (only `MainWindow`: tree item templates bind `IsExpanded` with no `DataType`). I kept it on
+  `ReplacePartition` only, since DataGrid column bindings can't be checked without running the UI.
+  Manual not run.
+- [x] **J2 (S1)** Sector editor moves position before the "discard changes?" prompt, so Write
   can put edited data in the wrong block. (ViewModels#2; X6) Ask first in Prev, Next, Read and
   `OnSectorOrderChangedAsync`; change nothing if the user declines.
   - **Manual:** edit a byte in block 5, Next, answer No → still on block 5 with the edit; Write
     → writes block 5. Answer Yes → block 6 loaded, edit discarded. Repeat with sector order
     change in track/sector mode.
-- [ ] **J3 (S1)** Settings OK reverts converter option changes. (ViewModels#5) Give the
+  Confirmed by reading (also in `cp2_wpf/EditSector.xaml.cs`, see section 8). Read, Prev, Next and the
+  sector-order change now ask `ConfirmDiscardChangesAsync()` **before** changing position or order; on
+  "No" nothing changes (sector-order combo is put back). `ReadFromDiskAsync` removed. Checked: build.
+  Manual not run.
+- [x] **J3 (S1)** Settings OK reverts converter option changes. (ViewModels#5) Give the
   Configure Import/Export sub-dialog the dialog's local `mSettings`.
   - **Manual:** Settings → Configure export options → change one → OK → OK → reopen → change
     kept. Same but Cancel the Settings dialog → change discarded.
-- [ ] **J4 (S1)** Create Disk Image ignores `IsValid`. (ViewModels#10) `CanExecute` on
+  Confirmed: the sub-dialog merged into the global settings and Settings OK then replaced them with
+  the stale local copy. New `Services/LocalSettingsService` (an `ISettingsService` over a
+  `SettingsHolder`) wraps `EditAppSettingsViewModel.mSettings` and is passed to
+  `EditConvertOptsViewModel`, so the change stays in the local copy until Apply/OK and is dropped on
+  Cancel. The `SettingsApplied` call after the sub-dialog was removed (global unchanged). Auto:
+  `LocalSettingsServiceTests`. Manual not run.
+- [x] **J4 (S1)** Create Disk Image ignores `IsValid`. (ViewModels#10) `CanExecute` on
   `IsValid`, notified from the setter. Optionally merge the duplicate image-creation switches
   with `SaveAsDiskViewModel` (ViewModels cleanup); test both dialogs if so.
   - **Manual:** volume number `abc`, invalid volume name, invalid custom size → Create disabled.
     Valid input → Create enabled and works for each filesystem type.
-- [ ] **J5 (S3)** `EditSector.Window_KeyDown` handles Ctrl+C only; add Cmd+C on macOS. (Views
+  `CreateDiskImageViewModel.OkCommand` now has `CanExecute = IsValid`, notified from the `IsValid` setter;
+  `ExecuteOkAsync` also returns early when invalid. Merging the duplicate image-creation switches with
+  `SaveAsDiskViewModel` (optional) was **not** done. Checked: build. Manual not run.
+- [x] **J5 (S3)** `EditSector.Window_KeyDown` handles Ctrl+C only; add Cmd+C on macOS. (Views
   cleanup) **Manual (macOS):** Cmd+C copies the sector text.
+  `EditSector.Window_KeyDown` accepts Cmd+C on macOS (`KeyModifiers.Meta`), Ctrl+C elsewhere. Checked:
+  build. Manual (macOS) not run.
 
 ### Stream K: debug log and tool windows (Phase 1)
 
-- [ ] **K1 (S3)** `DebugMessageLog.Clear()` leaves a stale ring-buffer cursor. (Models#5)
+- [x] **K1 (S3)** `DebugMessageLog.Clear()` leaves a stale ring-buffer cursor. (Models#5)
   Reset `mTopEntry` in the lock. **Auto:** log 100,001 lines, `Clear()`, log 3, `GetLogs()`
   returns those 3 in order.
-- [ ] **K2 (S3)** Log events: order and missed entries in the viewer. (Models#7; also resolves
+  `DebugMessageLog.Clear()` now resets `mTopEntry` inside the lock (`mLastIndex` is kept so indices
+  stay unique). Auto: `DebugMessageLogTests.Clear_AfterWrap_ReturnsNewEntriesInOrder` (100,001 lines,
+  Clear, 3 lines -> 3 in order). `dotnet test`: pass.
+- [x] **K2 (S3)** Log events: order and missed entries in the viewer. (Models#7; also resolves
   Tools#1 and ViewModels "Log viewer adds to a bound collection from worker threads")
   - **Probable false positive for Tools#1 / ViewModels:** `DebugMessageLog.OnRaiseLogEvent`
     already invokes subscribers directly only on the UI thread and posts otherwise, and
@@ -587,11 +723,23 @@ dialog, debug menu windows. No behaviour change is expected.
     taking the `GetLogs()` snapshot and drop duplicates by `Index`; ignore events after close.
   - **Manual:** open Debug → Show Debug Log, open a large archive and run an extract → entries
     in index order, no gaps (check `Index` continuity), no exceptions.
-- [ ] **K3 (S1)** Log viewer Save/Copy errors are unhandled and end the app. (Tools#3; uses X2)
+  Tools#1 / ViewModels "adds from worker threads": **not reproduced** by reading: `HandleLogEvent` is
+  subscribed only to `RaiseLogEvent`, which `DebugMessageLog` already marshalled to the UI thread. Only
+  the misleading comments were wrong; fixed. Real fix (Models#7): `OnRaiseLogEvent` now always
+  `Post`s (order matches log order); `LogViewerViewModel` subscribes before taking the `GetLogs()`
+  snapshot, drops events with `Index <= last seen`, and ignores events after `OnWindowClosed`.
+  `HandleLogEvent` is now `internal` for tests. Auto: `LogViewer_DropsDuplicatesAndKeepsOrder`,
+  `LogViewer_IgnoresEventsAfterClose`. Manual (large open + extract with the log window up) not run.
+- [x] **K3 (S1)** Log viewer Save/Copy errors are unhandled and end the app. (Tools#3; uses X2)
   `try`/`catch` in `DoSave`, `DoCopy` and `DropTarget.DoPasteAsync`; show the error.
   - **Manual:** Save to a read-only file → error box, app keeps running.
-- [ ] **K4 (S3)** Tools windows subscribe in `DataContextChanged` without unsubscribing.
+  `LogViewer.DoSave`/`DoCopy` and `DropTarget.DoPasteAsync` now catch exceptions, log them and show
+  them with `PlatformUtil.ShowMessageAsync(owner, ...)` (the code-behind helper that A2 rewrites;
+  signature stays compatible). Checked: build. Manual (save to read-only file) not run.
+- [x] **K4 (S3)** Tools windows subscribe in `DataContextChanged` without unsubscribing.
   (Tools "Smaller observations"; same fix pattern as A3) **Code**.
+  `LogViewer`, `DropTarget` and `ShowText` keep the hooked view model, unsubscribe the previous one on
+  `DataContextChanged` and on close; lambdas replaced by named handlers. Checked: build.
 
 ### Stream C: native drag and drop (C-native in Phase 1, C-view in Phase 2)
 
@@ -600,17 +748,26 @@ KDE Plasma (XWayland). macOS items need both Apple Silicon and, for C9, an Intel
 
 C-native (`Platform/` only):
 
-- [ ] **C3 (S2)** `ReadAtomList` reads 8-byte format-32 atoms as 4-byte. (Platform#3) Read
+- [x] **C3 (S2)** `ReadAtomList` reads 8-byte format-32 atoms as 4-byte. (Platform#3) Read
   `IntPtr.Size` per item. **Manual:** drag a file from a file manager that offers many types
   (Dolphin, Nautilus) onto CP2 → accepted. Check with `xprop`/debug log that the type list is
   complete.
-- [ ] **C4 (S1)** `Dispose` closes the X display while the event thread may be in Xlib.
+  Confirmed by reading: `fmt / 8` is 4 for format 32 while Xlib returns `long` (8 bytes). `ReadAtomList` now
+  reads `IntPtr.Size` per item for format 32 (other formats return nothing). **Not run on Linux;
+  needs the Manual check (Dolphin/Nautilus drop, many types).**
+- [x] **C4 (S1)** `Dispose` closes the X display while the event thread may be in Xlib.
   (Platform#4, Platform "Unhook re-adds a handler for a destroyed window") Join the thread with
   a timeout before closing; make the selection spin-wait check `_disposed`; dispose
   `DropTarget`'s instance on `Closing` or skip restoring the handler if the window is gone.
   - **Manual:** close the main window during an export drag; open and close the DropTarget
     window 20 times → no crash.
-- [ ] **C5 (S1)** Export drag never completes if the target ignores the drop; late callbacks
+  `Dispose` is idempotent, clears `_isExporting`, completes pending TCS objects, joins the event thread
+  (2 s) before `XDestroyWindow`/`XCloseDisplay` (and leaks the connection with a log line if the thread
+  does not stop); the selection spin-wait checks `_disposed`; the event loop wakes at least every
+  50 ms. `TryUnhookAvaloniaDnD` only writes the original handler back if Avalonia still has the window
+  registered (so the closed `DropTarget` window is not kept alive). `DropTarget` itself is unchanged.
+  **Not run on Linux; needs the Manual check (close during export drag; open/close DropTarget x20).**
+- [x] **C5 (S1)** Export drag never completes if the target ignores the drop; late callbacks
   complete the next drag; empty URI list served as success after 10 s. (Platform#5, Platform
   lower items "Late callbacks..." and "Empty file list...", Views#5 second paragraph)
   Validate the `XdndStatus` sender; timeout after `XdndDrop`; capture the
@@ -620,28 +777,56 @@ C-native (`Platform/` only):
   - **Manual:** drag from CP2 over an accepting file manager, quickly onto a terminal, release
     → drag ends within the timeout and a second drag works. Drag a file large enough that
     extraction exceeds 10 s → the target gets nothing and CP2 shows a failure, not success.
-- [ ] **C6 (S2)** Linux clipboard read timeout throws `TimeoutException`. (Platform#6) Catch
+  `XdndStatus` and `XdndFinished` are ignored unless the sender is the current target or its aware
+  top-level window (new `IsCurrentExportTarget`); `XdndFinished` also needs a drop in flight. After
+  `XdndDrop` a 15 s timeout ends the drag with `None`. Delayed callbacks capture their own TCS /
+  generation (`_exportGeneration`). An empty URI list (extraction failed, via
+  `SetNativeDragPaths(empty)`, or the 10 s wait expired) is now refused instead of served, and the drag
+  ends with `None`. The view-side failure report is C1. **Not run on Linux; needs the Manual check.
+  Risk to watch:** if a target answers `XdndStatus` with a window other than the one we sent to, its
+  status is now ignored and the drop will not be sent.
+- [x] **C6 (S2)** Linux clipboard read timeout throws `TimeoutException`. (Platform#6) Catch
   it, return null; ignore a late `SelectionNotify` for an older request.
   **Manual:** make another X client own the clipboard without answering (e.g. a stopped
   `xclip -i` process via `kill -STOP`), paste in CP2 → falls back, no exception.
-- [ ] **C7 (S1)** `ReadStringProperty` truncates at 256 KB and ignores INCR. (Platform#9)
+  `ReadClipboardTextAsync` catches `TimeoutException` (returns null, logs). Reads alternate between
+  two property atoms (`CP2_CLIPBOARD_READ_0/1`), and a `SelectionNotify` for the other property is
+  discarded as stale after its data is read and deleted. **Not run on Linux.**
+- [x] **C7 (S1)** `ReadStringProperty` truncates at 256 KB and ignores INCR. (Platform#9)
   Loop on `bytesAfter`; on `INCR`, implement it or return null so Avalonia's clipboard is
   used; fix the format-32 byte count.
   - **Manual:** copy several hundred entries in one CP2 instance (clipboard JSON > 256 KB),
     paste in a second instance → all entries pasted.
-- [ ] **C8 (S1)** macOS file promise reports success when nothing was copied; stale
+  `ReadStringProperty` probes size/type first, reads the whole property in one request (capped at
+  64 MB), returns null for `INCR` (so `GetRawClipTextAsync` falls back to Avalonia's clipboard, which
+  implements INCR), and counts format-32 data as `IntPtr.Size` per item. INCR itself is not
+  implemented. **Not run on Linux; needs the >256 KB two-instance paste check.**
+- [x] **C8 (S1)** macOS file promise reports success when nothing was copied; stale
   `sProviderPaths`; copy on the main thread. (Platform#7, Platform lower "Stale entries...",
   "Promise copy runs on the main thread") Pass an `NSError` on failure; remove each provider
   entry when its promise is written; clean up when the drag fails to start; optionally
   implement `operationQueueForFilePromiseProvider:`.
   - **Manual:** drag a file to a full or read-only volume in Finder → Finder reports an error.
     Drag several large files → UI stays responsive (if the queue is implemented).
-- [ ] **C9 (S1 on Intel)** Objective-C `BOOL` returns marshalled as 4-byte `bool`.
+  `WritePromiseImpl` now passes an `NSError` (NSCocoaErrorDomain 512 with a localized description) to
+  the completion block when the provider is missing or the copy/destination fails, and removes the
+  provider's path entry once answered. `DragEndedImpl` no longer clears `sProviderPaths` (AppKit may
+  deliver the promise after the end callback); stale entries are cleared at the start of the next drag
+  and when the session fails to start. `operationQueueForFilePromiseProvider:` (background copy) is
+  **not** implemented. **Not run; needs the Finder full/read-only volume check.**
+- [x] **C9 (S1 on Intel)** Objective-C `BOOL` returns marshalled as 4-byte `bool`.
   (Platform#8) `[return: MarshalAs(UnmanagedType.I1)]` on `SendBool1`, `SendBool2`,
   `class_addMethod`. **Code** plus **Manual** on Intel or Rosetta: drag to Finder works.
-- [ ] **C11 (S3)** Linux idle wakeups (125/s), `EnsureClasses` retry cannot work, unused fields
+  `[return: MarshalAs(UnmanagedType.I1)]` on `class_addMethod`, `SendBool1`, `SendBool2`. Checked: build.
+  **Needs a drag-to-Finder check on an Intel Mac or Rosetta.**
+- [x] **C11 (S3)** Linux idle wakeups (125/s), `EnsureClasses` retry cannot work, unused fields
   (`_exportPaths`, `_exportTempDir`, `firstIcon`), and the `tempDir` doc comment. (Platform
   lower items) **Manual:** idle CPU of CP2 on Linux drops; drag still works.
+  Linux idle loop now blocks in `poll()` on the X connection (50 ms timeout; falls back to the old
+  8 ms sleep if `libc`/`poll` can't be loaded); removed unused `_exportPaths`/`_exportTempDir` and
+  fixed the `SetNativeDragPaths` `tempDir` doc (parameter kept, ignored). macOS: `EnsureClasses`
+  registers once and remembers the result (the retry could never work), unused `firstIcon` removed.
+  **Linux idle CPU not measured.**
 
 C-view (Phase 2, `MainWindow.axaml.cs` drag region and `FileViewer.axaml.cs`):
 
@@ -948,11 +1133,11 @@ to *confirmed* when the item is fixed.
 
 | Item | WPF location | Bug | Status |
 |------|--------------|-----|--------|
-| J2 | `cp2_wpf/EditSector.xaml.cs` `PrevButton_Click` (also Next, Read, sector order change) | Position moves before the "discard changes?" prompt; declining then Write puts the edited data in the new block | unconfirmed |
-| A5 | `cp2_wpf/Actions/EditAttributesProgress.cs` `DoUpdate` | Failed filesystem attribute edit leaves the entry half-modified in memory | unconfirmed |
-| A6 | `cp2_wpf/Actions/ScanBlocksProgress.cs` `DoWork` / `ScanDisk` | `ScanDisk` failure ignored; aborted scan reported as no bad blocks | unconfirmed |
+| J2 | `cp2_wpf/EditSector.xaml.cs` `PrevButton_Click` (also Next, Read, sector order change) | Position moves before the "discard changes?" prompt; declining then Write puts the edited data in the new block | confirmed by reading (WPF `ReadButton_Click`, `PrevButton_Click`, `NextButton_Click` change position, then `ReadFromDisk` prompts) |
+| A5 | `cp2_wpf/Actions/EditAttributesProgress.cs` `DoUpdate` | Failed filesystem attribute edit leaves the entry half-modified in memory | confirmed by reading (same code in `cp2_wpf`; no restore on failure / `ScanDisk` result ignored) |
+| A6 | `cp2_wpf/Actions/ScanBlocksProgress.cs` `DoWork` / `ScanDisk` | `ScanDisk` failure ignored; aborted scan reported as no bad blocks | confirmed by reading (same code in `cp2_wpf`; no restore on failure / `ScanDisk` result ignored) |
 | D1 | `cp2_wpf/FileListItem.cs` `ItemComparer.Compare` | `(int)(a - b)` on lengths overflows for differences of 2 GB or more; Rsrc Len sorts on `FileEntry.RsrcLength`, which is 0 for MacZip | unconfirmed |
-| K1 | `cp2_wpf/DebugMessageLog.cs` `Clear` | `mTopEntry` not reset; `GetLogs` throws after a wrapped log is cleared (latent: no caller) | unconfirmed |
-| I7 | `cp2_wpf/WPFCommon/AnimatedGifEncoder.cs` | Frame delay under 10 ms rounds to 0; viewers then use their default speed | unconfirmed |
+| K1 | `cp2_wpf/DebugMessageLog.cs` `Clear` | `mTopEntry` not reset; `GetLogs` throws after a wrapped log is cleared (latent: no caller) | confirmed by reading and by an Avalonia unit test of the same code |
+| I7 | `cp2_wpf/WPFCommon/AnimatedGifEncoder.cs` | Frame delay under 10 ms rounds to 0; viewers then use their default speed | confirmed by reading (`Math.Round(md.DelayMsec / 10.0)`) |
 | D5 | `cp2_wpf/MainWindow.xaml.cs` file-list drop handling | Dropping a directory onto itself reaches `MoveFiles` and shows "Bad Move" | unconfirmed (parity; fix optional) |
 

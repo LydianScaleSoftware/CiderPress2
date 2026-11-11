@@ -25,6 +25,12 @@ public interface ISettingsService
     /// <summary>Fires the key name every time a setting is changed through this service.</summary>
     event Action<string>? SettingChanged;
 
+    /// <summary>
+    /// Fires with a user-readable message the first time in a session that <see cref="Save"/>
+    /// fails.  Later failures are only logged.
+    /// </summary>
+    event Action<string>? SaveFailed;
+
     bool GetBool(string key, bool defaultValue);
     void SetBool(string key, bool value);
 

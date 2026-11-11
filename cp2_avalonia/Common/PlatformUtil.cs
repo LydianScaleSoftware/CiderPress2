@@ -19,6 +19,10 @@ using System.IO;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 
+using cp2_avalonia.Services;
+using cp2_avalonia.ViewModels;
+using cp2_avalonia.Views;
+
 namespace cp2_avalonia.Common {
     /// <summary>
     /// Cross-platform utility functions that replace WPF-/Windows-specific helpers
@@ -26,58 +30,48 @@ namespace cp2_avalonia.Common {
     /// </summary>
     public static class PlatformUtil {
         /// <summary>
-        /// Finds the runtime data directory.  During development, this is the repository root
-        /// (where CiderPress2.sln lives).  In production, the executable and settings live in
-        /// the same directory.
+        /// Finds the directory holding read-only files shipped with the app, such as
+        /// LegalStuff.txt.  In a distribution these sit beside the executable.  During
+        /// development, this is the repository root (where CiderPress2.sln lives).
         /// </summary>
-        public static string GetRuntimeDataDir() {
-            string baseDir = AppContext.BaseDirectory;
-            DirectoryInfo? dir = new DirectoryInfo(baseDir);
-            int maxDepth = 6;
-            while (dir != null && maxDepth-- > 0) {
-                if (File.Exists(Path.Combine(dir.FullName, "CiderPress2-settings.json")) ||
-                    File.Exists(Path.Combine(dir.FullName, "CiderPress2.sln"))) {
-                    return dir.FullName;
-                }
-                dir = dir.Parent;
-            }
-            return baseDir;
+        public static string GetAppResourceDir() {
+            return SettingsPaths.FindAppResourceDir(AppContext.BaseDirectory,
+                "LegalStuff.txt", "CiderPress2.sln", File.Exists);
         }
 
         /// <summary>
-        /// Shows a simple modal message box with an OK button.
+        /// Gets the per-user folder for settings: <c>%APPDATA%\CiderPress2</c> on Windows,
+        /// <c>~/Library/Application Support/CiderPress2</c> on macOS, and
+        /// <c>~/.config/ciderpress2</c> on Linux.  The folder may not exist yet.  Returns null
+        /// if the system has no application-data folder.
         /// </summary>
+        public static string? GetUserSettingsDir() {
+            return SettingsPaths.GetUserSettingsDir(SettingsPaths.CurrentOS,
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData));
+        }
+
+        /// <summary>
+        /// Shows a modal message box owned by a specific window, using the same
+        /// <see cref="MessageBoxView"/> as <see cref="IDialogService.ShowMessageAsync"/>.
+        /// </summary>
+        /// <remarks>
+        /// For code-behind of windows that need to own the box themselves (the log viewer,
+        /// the drop-target tool, file viewers).  View models must not call this; they use
+        /// <see cref="IDialogService"/>.  A box shown here does not count as a modal dialog
+        /// for <see cref="IDialogService"/>, which is fine because these windows don't touch
+        /// the open archive.
+        /// </remarks>
         /// <param name="owner">Parent window.</param>
         /// <param name="message">Text to display.</param>
         /// <param name="title">Window title.</param>
-        public static async Task ShowMessageAsync(Window owner, string message, string title) {
-            var dlg = new Window {
-                Title = title,
-                Width = 380,
-                SizeToContent = SizeToContent.Height,
-                CanResize = false,
-                ShowInTaskbar = false,
-                WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                Content = new StackPanel {
-                    Margin = new Avalonia.Thickness(16),
-                    Spacing = 12,
-                    Children = {
-                        new TextBlock {
-                            Text = message,
-                            TextWrapping = Avalonia.Media.TextWrapping.Wrap
-                        },
-                        new Button {
-                            Content = "OK",
-                            Width = 80,
-                            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center
-                        }
-                    }
-                }
-            };
-            var sp = (StackPanel)dlg.Content!;
-            var btn = (Button)sp.Children[1];
-            btn.Click += (_, _) => dlg.Close();
-            await dlg.ShowDialog(owner);
-        }
-    }
+        /// <param name="buttons">Buttons to show.</param>
+        /// <param name="icon">Icon to show.</param>
+        /// <returns>The button that was pressed.</returns>
+        public static async Task<MBResult> ShowMessageAsync(Window owner, string message,
+                string title, MBButton buttons = MBButton.OK, MBIcon icon = MBIcon.None) {
+            var vm = new MessageBoxViewModel(message, title, buttons, icon);
+            var view = new MessageBoxView { DataContext = vm };
+            await view.ShowDialog<bool?>(owner);
+            return vm.Result;
+        }    }
 }

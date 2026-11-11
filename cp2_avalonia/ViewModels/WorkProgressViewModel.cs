@@ -18,6 +18,7 @@ using System;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Threading;
+using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -58,6 +59,12 @@ public class WorkProgressViewModel : ObservableObject
         private MBResult mResult = RESULT_UNSET;
         private readonly object mLockObj = new object();
 
+        /// <summary>True once <see cref="SetResult"/> has been called.</summary>
+        public bool HasResult
+        {
+            get { lock (mLockObj) { return mResult != RESULT_UNSET; } }
+        }
+
         public MBResult WaitForResult()
         {
             lock (mLockObj) {
@@ -70,7 +77,7 @@ public class WorkProgressViewModel : ObservableObject
         {
             lock (mLockObj) {
                 mResult = value;
-                Monitor.Pulse(mLockObj);
+                Monitor.PulseAll(mLockObj);
             }
         }
     }
@@ -86,6 +93,12 @@ public class WorkProgressViewModel : ObservableObject
 
         public CallbackFacts Facts { get; } = what;
 
+        /// <summary>True once <see cref="SetResult"/> has been called.</summary>
+        public bool HasResult
+        {
+            get { lock (mLockObj) { return mResult != CallbackFacts.Results.Unknown; } }
+        }
+
         public CallbackFacts.Results WaitForResult(out bool useForAll)
         {
             lock (mLockObj) {
@@ -100,19 +113,14 @@ public class WorkProgressViewModel : ObservableObject
             lock (mLockObj) {
                 mResult = value;
                 mUseForAll = useForAll;
-                Monitor.Pulse(mLockObj);
+                Monitor.PulseAll(mLockObj);
             }
         }
     }
 
-    // ── Events for sub-dialogs (wired by code-behind) ─────────────────────────
-    /// <summary>Fires when the worker needs an overwrite decision from the user.</summary>
-    public event Action<OverwriteQuery>? OverwriteQueryRequested;
-    /// <summary>Fires when the worker needs to show an informational message box.</summary>
-    public event Action<MessageBoxQuery>? MessageBoxRequested;
-
     // ── BackgroundWorker and callback ─────────────────────────────────────────
     private readonly IWorker mCallbacks;
+    private readonly IDialogService mDialogService;
     private BackgroundWorker? mWorker;
     private readonly bool mIsIndeterminate;
 
@@ -144,13 +152,26 @@ public class WorkProgressViewModel : ObservableObject
     /// <summary>Result read by caller after ShowDialogAsync returns.</summary>
     public bool DialogResult { get; private set; }
 
+    /// <summary>
+    /// The exception that stopped the worker, or null.  When set, an error message has
+    /// already been shown to the user, so callers should say "Failed", not "Cancelled".
+    /// </summary>
+    public Exception? WorkerError { get; private set; }
+
     /// <summary>True while the background worker is running.</summary>
     public bool IsBusy => mWorker?.IsBusy ?? false;
 
-    public WorkProgressViewModel(IWorker callbacks, bool isIndeterminate)
+    /// <param name="callbacks">Work to do.</param>
+    /// <param name="isIndeterminate">True to show an indeterminate progress bar.</param>
+    /// <param name="dialogService">Used for the overwrite and message-box prompts the worker
+    ///   can raise.  When this view model is shown through the same service, the prompts are
+    ///   owned by the progress window.</param>
+    public WorkProgressViewModel(IWorker callbacks, bool isIndeterminate,
+            IDialogService dialogService)
     {
         mCallbacks = callbacks;
         mIsIndeterminate = isIndeterminate;
+        mDialogService = dialogService;
 
         CancelCommand = new RelayCommand(() => {
             mWorker?.CancelAsync();
@@ -181,6 +202,7 @@ public class WorkProgressViewModel : ObservableObject
     public void RequestCancel()
     {
         mWorker?.CancelAsync();
+        IsCancelEnabled = false;
     }
 
     // ── BackgroundWorker handlers ─────────────────────────────────────────────
@@ -200,15 +222,15 @@ public class WorkProgressViewModel : ObservableObject
     // Executes on the UI thread each time the worker calls ReportProgress().
     private void ProgressChanged(object? sender, ProgressChangedEventArgs e)
     {
+        // These arrive on the UI thread (BackgroundWorker marshals ProgressChanged).  The
+        // worker thread is blocked in WaitForResult until the query is answered.
         if (e.UserState is OverwriteQuery oq) {
-            OverwriteQueryRequested?.Invoke(oq);
-            // oq.SetResult is called by the code-behind event handler
+            _ = HandleOverwriteQueryAsync(oq);
             return;
         }
 
         if (e.UserState is MessageBoxQuery qq) {
-            MessageBoxRequested?.Invoke(qq);
-            // qq.SetResult is called by the code-behind event handler
+            _ = HandleMessageBoxQueryAsync(qq);
             return;
         }
 
@@ -221,17 +243,79 @@ public class WorkProgressViewModel : ObservableObject
         }
     }
 
-    // Executes on the UI thread after the worker finishes.
-    private void RunWorkerCompleted(object? sender, RunWorkerCompletedEventArgs e)
+    /// <summary>
+    /// Asks the user how to handle an existing file and hands the answer to the waiting
+    /// worker.  The worker must always get an answer, or it blocks forever, so any failure
+    /// to show the dialog answers Cancel.
+    /// </summary>
+    internal async Task HandleOverwriteQueryAsync(OverwriteQuery oq)
     {
-        if (e.Cancelled || e.Error != null) {
-            if (e.Error != null) {
-                AppLog.E("Background operation failed", e.Error);
+        try {
+            var oqVm = new OverwriteQueryViewModel(oq.Facts);
+            bool? result = await mDialogService.ShowDialogAsync(oqVm);
+            if (result == true) {
+                oq.SetResult(oqVm.Result, oqVm.UseForAll);
+            } else {
+                oq.SetResult(CallbackFacts.Results.Cancel, false);
             }
+        } catch (Exception ex) {
+            AppLog.E("Overwrite query failed", ex);
+        } finally {
+            if (!oq.HasResult) {
+                oq.SetResult(CallbackFacts.Results.Cancel, false);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Shows a message box for the worker, with the requested buttons and icon, and hands
+    /// the button pressed to the waiting worker.  As with overwrite queries, the worker
+    /// always gets an answer.
+    /// </summary>
+    internal async Task HandleMessageBoxQueryAsync(MessageBoxQuery mq)
+    {
+        try {
+            MBResult result = await mDialogService.ShowMessageAsync(mq.Text, mq.Caption,
+                mq.Button, mq.Image);
+            mq.SetResult(result);
+        } catch (Exception ex) {
+            AppLog.E("Message box query failed", ex);
+        } finally {
+            if (!mq.HasResult) {
+                mq.SetResult(MBResult.Cancel);
+            }
+        }
+    }
+
+    // Executes on the UI thread after the worker finishes.
+    private async void RunWorkerCompleted(object? sender, RunWorkerCompletedEventArgs e)
+    {
+        try {
+            if (e.Cancelled) {
+                DialogResult = false;
+            } else if (e.Error != null) {
+                AppLog.E("Background operation failed", e.Error);
+                WorkerError = e.Error;
+                DialogResult = false;
+                // Tell the user why; the callers only know "not completed".
+                await ShowWorkerErrorAsync(e.Error);
+            } else {
+                DialogResult = mCallbacks.RunWorkerCompleted(e.Result);
+            }
+        } catch (Exception ex) {
+            AppLog.E("Completing background operation failed", ex);
             DialogResult = false;
-        } else {
-            DialogResult = mCallbacks.RunWorkerCompleted(e.Result);
         }
         CloseRequested?.Invoke(DialogResult);
+    }
+
+    private async Task ShowWorkerErrorAsync(Exception error)
+    {
+        try {
+            await mDialogService.ShowMessageAsync("The operation failed: " + error.Message,
+                "Failed", MBButton.OK, MBIcon.Error);
+        } catch (Exception ex) {
+            AppLog.E("Unable to show worker error", ex);
+        }
     }
 }

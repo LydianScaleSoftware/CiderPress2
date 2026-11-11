@@ -117,6 +117,24 @@ internal sealed class LinuxDrag : IDisposable
     private static extern int XFlush(nint display);
 
     [DllImport("libX11.so.6")]
+    private static extern int XConnectionNumber(nint display);
+
+    // poll(2), used to sleep until the X connection has data instead of waking up every
+    // few milliseconds when idle.  nfds_t is unsigned long.
+    [StructLayout(LayoutKind.Sequential)]
+    private struct PollFd
+    {
+        public int fd;
+        public short events;
+        public short revents;
+    }
+
+    [DllImport("libc", EntryPoint = "poll")]
+    private static extern int PollNative(ref PollFd fds, nuint nfds, int timeoutMs);
+
+    private const short POLLIN = 1;
+
+    [DllImport("libX11.so.6")]
     private static extern int XSendEvent(nint display, nint window, bool propagate,
         nint eventMask, ref XEvent ev);
 
@@ -220,6 +238,9 @@ internal sealed class LinuxDrag : IDisposable
     private readonly Action<string, int, int>? _onImportCp2Drop;
     private readonly Thread _eventThread;
     private volatile bool _disposed;
+    // Set if poll() can't be called (no libc entry point); the event loop then falls back
+    // to sleeping a few milliseconds between checks.
+    private bool _pollUnavailable;
 
     // ── Import state (written from Avalonia hook thread, read by _display thread) ──
     //
@@ -250,17 +271,27 @@ internal sealed class LinuxDrag : IDisposable
     //      internal vs. external drops are distinguished on button release.
 
     private volatile bool _isExporting;
-    private string[] _exportPaths = Array.Empty<string>();
     private string _exportUriList = string.Empty;
     private string _exportClipJson = string.Empty;
-    private string? _exportTempDir;
     // Set to true once SetNativeDragPaths has been called; SelectionRequest handler
     // spin-waits on this so it always has valid data even for fast drags.
     private volatile bool _exportPathsReady;
     private TaskCompletionSource<DragDropEffects>? _exportTcs;
     private nint _exportCurrentTarget;
+    // The XDND-aware top-level window behind _exportCurrentTarget.  Differs from
+    // _exportCurrentTarget when the target's XdndProxy window is used.  XdndStatus and
+    // XdndFinished name the real target window, so either value is a valid sender.
+    private nint _exportTargetToplevel;
+    private nint _findAwareToplevel;        // out-value of the last FindXdndAwareWindow call
     private bool _exportTargetAccepts;
     private bool _exportDropSent;
+    // Incremented by every BeginNativeDrag.  Delayed callbacks capture the value (and the
+    // drag's TaskCompletionSource) so a late callback can't touch the next drag's state.
+    private int _exportGeneration;
+
+    // How long to wait for XdndFinished (or the data request) after XdndDrop was sent
+    // before giving up on the drag.  Targets that ignore the drop never answer.
+    private const int DropTimeoutMs = 15000;
 
     // Called on the UI thread when the button is released over our own window.
     // Receives root-coordinate (screenX, screenY) of the drop point.
@@ -282,6 +313,12 @@ internal sealed class LinuxDrag : IDisposable
     private nint _atomClipboard;
     private nint _atomUtf8String;
     private TaskCompletionSource<string?>? _clipReadTcs;
+    // Two alternating property names for clipboard reads.  A SelectionNotify that arrives
+    // late (after its read timed out) names the other property and is recognised as stale.
+    private nint _atomClipReadProp0;
+    private nint _atomClipReadProp1;
+    private int _clipReadCounter;
+    private volatile nint _clipReadProperty;
 
     // Static reference so ClipboardService can reach us without a DI dependency.
     private static volatile LinuxDrag? s_mainInstance;
@@ -307,13 +344,20 @@ internal sealed class LinuxDrag : IDisposable
         if (Interlocked.CompareExchange(ref _clipReadTcs, tcs, null) != null)
             return null; // another read already in flight
 
+        _clipReadProperty = (Interlocked.Increment(ref _clipReadCounter) & 1) == 0
+            ? _atomClipReadProp0 : _atomClipReadProp1;
         XConvertSelection(_display, _atomClipboard, _atomUtf8String,
-            _atomUtf8String, _proxyWindow, CurrentTime);
+            _clipReadProperty, _proxyWindow, CurrentTime);
         XFlush(_display);
 
         try {
             return await tcs.Task.WaitAsync(TimeSpan.FromSeconds(2));
         } catch (OperationCanceledException) {
+            return null;
+        } catch (TimeoutException) {
+            // WaitAsync(TimeSpan) throws TimeoutException, not OperationCanceledException.
+            // The caller falls back to Avalonia's clipboard when we return null.
+            AppLog.W("Linux drag: clipboard read timed out");
             return null;
         } finally {
             Interlocked.CompareExchange(ref _clipReadTcs, null, tcs);
@@ -324,6 +368,13 @@ internal sealed class LinuxDrag : IDisposable
     {
         nint property = ev.data0;
         string? text = property != IntPtr.Zero ? ReadStringProperty(_proxyWindow, property) : null;
+        if (property != IntPtr.Zero && property != _clipReadProperty)
+        {
+            // Answer to an earlier read that already timed out.  The property has been
+            // read (and deleted) above; don't hand its data to the current read.
+            Debug.WriteLine("LinuxDrag: ignoring stale clipboard SelectionNotify");
+            return;
+        }
         var tcs = Interlocked.Exchange(ref _clipReadTcs, null);
         tcs?.TrySetResult(text);
     }
@@ -400,11 +451,27 @@ internal sealed class LinuxDrag : IDisposable
 
     public void Dispose()
     {
+        if (_disposed) return;
         _disposed = true;
+        _isExporting = false;
         _exportTcs?.TrySetResult(DragDropEffects.None);
+        Interlocked.Exchange(ref _clipReadTcs, null)?.TrySetResult(null);
 
         // Restore Avalonia's original event handler before closing.
         TryUnhookAvaloniaDnD();
+
+        // Wait for the event thread to leave Xlib before destroying the window and closing
+        // the display it uses.  The loop checks _disposed at least every ~50 ms.  If the
+        // thread doesn't stop (stuck in a native call), leak the connection rather than
+        // free it under the thread.
+        if (_eventThread.IsAlive && Thread.CurrentThread != _eventThread)
+        {
+            if (!_eventThread.Join(TimeSpan.FromSeconds(2)))
+            {
+                AppLog.W("Linux drag: event thread did not stop; leaving X display open");
+                return;
+            }
+        }
 
         if (_proxyWindow != IntPtr.Zero) XDestroyWindow(_display, _proxyWindow);
         if (_display != IntPtr.Zero)    XCloseDisplay(_display);
@@ -438,12 +505,12 @@ internal sealed class LinuxDrag : IDisposable
     /// </returns>
     public Task<DragDropEffects> BeginNativeDrag(Action<int, int>? onInternalDrop = null)
     {
-        _exportPaths         = Array.Empty<string>();
+        _exportGeneration++;
         _exportUriList       = string.Empty;
         _exportClipJson      = string.Empty;
-        _exportTempDir       = null;
         _exportPathsReady    = false;
         _exportCurrentTarget = IntPtr.Zero;
+        _exportTargetToplevel = IntPtr.Zero;
         _exportTargetAccepts = false;
         _exportDropSent      = false;
         _onInternalDrop      = onInternalDrop;
@@ -478,7 +545,15 @@ internal sealed class LinuxDrag : IDisposable
     /// </summary>
     /// <param name="localPaths">Absolute local paths of files to offer.</param>
     /// <param name="clipJson">CP2 JSON payload for cross-instance rich drag (may be empty).</param>
-    /// <param name="tempDir">Temp directory to delete on <c>XdndFinished</c> (or null).</param>
+    /// <param name="tempDir">
+    /// Ignored.  The caller owns the temp directory and deletes it later (most file managers
+    /// send <c>XdndFinished</c> before their asynchronous copy is done, so it can't be
+    /// deleted here).
+    /// </param>
+    /// <remarks>
+    /// Passing an empty <paramref name="localPaths"/> reports a failed extraction: the data
+    /// request is refused and the drag ends with <see cref="DragDropEffects.None"/>.
+    /// </remarks>
     public void SetNativeDragPaths(string[] localPaths, string clipJson, string? tempDir = null)
     {
         if (localPaths.Length > 0)
@@ -489,11 +564,9 @@ internal sealed class LinuxDrag : IDisposable
                 string abs = System.IO.Path.GetFullPath(p);
                 sb.Append(new Uri(abs).AbsoluteUri).Append("\r\n");
             }
-            _exportPaths   = localPaths;
             _exportUriList = sb.ToString();
         }
         _exportClipJson   = clipJson;
-        _exportTempDir    = tempDir;
         _exportPathsReady = true;   // signal ExportOnSelectionRequest
     }
 
@@ -518,6 +591,8 @@ internal sealed class LinuxDrag : IDisposable
         // cross-instance drags are routed through the rich CP2 paste path.
         _atomCP2DndData    = XInternAtom(_display, "com.faddensoft.ciderpress2.clip", false);
         _atomClipboard     = XInternAtom(_display, "CLIPBOARD",    false);
+        _atomClipReadProp0 = XInternAtom(_display, "CP2_CLIPBOARD_READ_0", false);
+        _atomClipReadProp1 = XInternAtom(_display, "CP2_CLIPBOARD_READ_1", false);
         _atomUtf8String    = XInternAtom(_display, "UTF8_STRING",  false);
     }
 
@@ -763,7 +838,12 @@ internal sealed class LinuxDrag : IDisposable
             var windows = windowsProp?.GetValue(platform) as IDictionary;
             if (windows == null) return;
 
-            windows[(object)(IntPtr)_avaloniaWin] = orig;
+            // Only restore the handler if Avalonia still has this window registered.  A window
+            // that has already been closed is gone from the dictionary, and re-adding its
+            // handler would keep the closed window object alive.
+            object key = (object)(IntPtr)_avaloniaWin;
+            if (windows.Contains(key))
+                windows[key] = orig;
         }
         catch (Exception ex)
         {
@@ -826,11 +906,37 @@ internal sealed class LinuxDrag : IDisposable
                 continue;
             }
 
-            if (XPending(_display) == 0) { Thread.Sleep(8); continue; }
+            if (XPending(_display) == 0) { WaitForXEvents(50); continue; }
             XNextEvent(_display, out XEvent nev);
             try { HandleEventFromDisplay(ref nev); }
             catch (Exception ex) { AppLog.W("Linux drag: event handling error", ex); }
         }
+    }
+
+    /// <summary>
+    /// Sleeps until the X connection has data or the timeout expires.  Idle, this replaces
+    /// polling every 8 ms with at most one wake-up per timeout.  The timeout also bounds how
+    /// long <see cref="Dispose"/> waits for the thread, and covers events another thread
+    /// already read into Xlib's queue.
+    /// </summary>
+    private void WaitForXEvents(int timeoutMs)
+    {
+        if (!_pollUnavailable)
+        {
+            try
+            {
+                var pfd = new PollFd { fd = XConnectionNumber(_display), events = POLLIN };
+                PollNative(ref pfd, 1, timeoutMs);
+                return;
+            }
+            catch (Exception ex) when (ex is DllNotFoundException ||
+                                       ex is EntryPointNotFoundException)
+            {
+                _pollUnavailable = true;
+                AppLog.W("Linux drag: poll() unavailable; using timed sleep", ex);
+            }
+        }
+        Thread.Sleep(8);
     }
 
     /// <summary>
@@ -876,7 +982,7 @@ internal sealed class LinuxDrag : IDisposable
             case ClientMessage:
                 nint mt = ev.msgOrSel;
                 if      (mt == _atomXdndStatus)   ExportOnXdndStatus(ref ev);
-                else if (mt == _atomXdndFinished) ExportOnXdndFinished();
+                else if (mt == _atomXdndFinished) ExportOnXdndFinished(ref ev);
                 break;
             case SelectionNotify:
                 if (ev.msgOrSel == _atomClipboard)
@@ -1079,6 +1185,7 @@ internal sealed class LinuxDrag : IDisposable
             if (_exportCurrentTarget != IntPtr.Zero)
                 ExportSendXdndLeave(_exportCurrentTarget);
             _exportCurrentTarget = target;
+            _exportTargetToplevel = target != IntPtr.Zero ? _findAwareToplevel : IntPtr.Zero;
             _exportTargetAccepts = false;
             if (target != IntPtr.Zero)
                 ExportSendXdndEnter(target);
@@ -1095,6 +1202,22 @@ internal sealed class LinuxDrag : IDisposable
         {
             _exportDropSent = true;
             ExportSendXdndDrop(_exportCurrentTarget);
+
+            // A target that ignores the drop (or dies) never sends XdndFinished or asks
+            // for the data.  End the drag after a timeout so the next one can start.
+            TaskCompletionSource<DragDropEffects>? tcs = _exportTcs;
+            int gen = _exportGeneration;
+            _ = Task.Delay(DropTimeoutMs).ContinueWith(_ =>
+            {
+                if (tcs == null || tcs.Task.IsCompleted) return;
+                if (gen == _exportGeneration)
+                {
+                    _exportDropSent = false;
+                    _exportCurrentTarget = IntPtr.Zero;
+                }
+                AppLog.W("Linux drag: no response to XdndDrop; ending drag");
+                tcs.TrySetResult(DragDropEffects.None);
+            });
         }
         else
         {
@@ -1119,14 +1242,31 @@ internal sealed class LinuxDrag : IDisposable
         XFlush(_display);
     }
 
+    // True if the XDND message sender (data.l[0]) is the target we are currently talking to.
+    // Messages from an earlier target (a late XdndStatus after the pointer moved on, or a
+    // leftover XdndFinished from the previous drag) must not change the current state.
+    private bool IsCurrentExportTarget(nint sender) =>
+        sender != IntPtr.Zero &&
+        (sender == _exportCurrentTarget || sender == _exportTargetToplevel);
+
     private void ExportOnXdndStatus(ref XEvent ev)
     {
         if (!_isExporting && !_exportDropSent) return;
+        if (!IsCurrentExportTarget(ev.data0))
+        {
+            Debug.WriteLine($"LinuxDrag: ignoring XdndStatus from 0x{ev.data0:x}");
+            return;
+        }
         _exportTargetAccepts = ((long)ev.data1 & 1) != 0;
     }
 
-    private void ExportOnXdndFinished()
+    private void ExportOnXdndFinished(ref XEvent ev)
     {
+        if (!_exportDropSent || !IsCurrentExportTarget(ev.data0))
+        {
+            Debug.WriteLine($"LinuxDrag: ignoring XdndFinished from 0x{ev.data0:x}");
+            return;
+        }
         Debug.WriteLine("LinuxDrag: XdndFinished received");
         // Temp dir cleanup is intentionally NOT done here.  Most file managers send
         // XdndFinished before their async file-copy completes, so deleting the temp dir
@@ -1153,9 +1293,14 @@ internal sealed class LinuxDrag : IDisposable
         if (!_exportPathsReady && (targetAtom == _atomTextUriList || targetAtom == _atomCP2DndData))
         {
             var deadline = DateTime.UtcNow.AddSeconds(10);
-            while (!_exportPathsReady && DateTime.UtcNow < deadline)
+            while (!_exportPathsReady && !_disposed && DateTime.UtcNow < deadline)
                 Thread.Sleep(20);
         }
+
+        // Set when we have to refuse the file list because there is nothing to give (the
+        // extraction failed, or didn't finish in time).  Serving an empty list would look
+        // like a successful copy of zero files to the target.
+        bool exportFailed = false;
 
         if (targetAtom == _atomTargets)
         {
@@ -1165,9 +1310,18 @@ internal sealed class LinuxDrag : IDisposable
         }
         else if (targetAtom == _atomTextUriList)
         {
-            byte[] bytes = Encoding.UTF8.GetBytes(_exportUriList);
-            XChangeProperty(_display, requestor, property, _atomTextUriList, 8,
-                PropModeReplace, bytes, bytes.Length);
+            if (_exportUriList.Length == 0)
+            {
+                AppLog.W("Linux drag: no files to offer (extraction failed or timed out)");
+                property = IntPtr.Zero;
+                exportFailed = true;
+            }
+            else
+            {
+                byte[] bytes = Encoding.UTF8.GetBytes(_exportUriList);
+                XChangeProperty(_display, requestor, property, _atomTextUriList, 8,
+                    PropModeReplace, bytes, bytes.Length);
+            }
         }
         else if (targetAtom == _atomCP2DndData && !string.IsNullOrEmpty(_exportClipJson))
         {
@@ -1192,10 +1346,22 @@ internal sealed class LinuxDrag : IDisposable
         XSendEvent(_display, requestor, false, 0, ref notify);
         XFlush(_display);
 
-        if (targetAtom == _atomTextUriList && _exportDropSent)
+        // Capture this drag's completion source now: the delayed callback must not complete
+        // a later drag's task.
+        TaskCompletionSource<DragDropEffects>? dragTcs = _exportTcs;
+        if (exportFailed)
+        {
+            if (_exportDropSent)
+            {
+                _exportDropSent = false;
+                _exportCurrentTarget = IntPtr.Zero;
+                dragTcs?.TrySetResult(DragDropEffects.None);
+            }
+        }
+        else if (targetAtom == _atomTextUriList && _exportDropSent)
         {
             _ = Task.Delay(500).ContinueWith(_ =>
-                _exportTcs?.TrySetResult(DragDropEffects.Copy));
+                dragTcs?.TrySetResult(DragDropEffects.Copy));
         }
     }
 
@@ -1282,10 +1448,12 @@ internal sealed class LinuxDrag : IDisposable
             out _, out nint topLevel,
             out _, out _, out _, out _, out _);
 
+        _findAwareToplevel = IntPtr.Zero;
         if (topLevel == IntPtr.Zero || topLevel == _avaloniaWin || topLevel == _proxyWindow)
             return IntPtr.Zero;
 
         if (!IsXdndAware(topLevel)) return IntPtr.Zero;
+        _findAwareToplevel = topLevel;
 
         nint proxy = ReadSingleWindowProperty(topLevel, XInternAtom(_display, "XdndProxy", true));
         if (proxy != IntPtr.Zero && proxy != topLevel && IsXdndAware(proxy))
@@ -1318,17 +1486,45 @@ internal sealed class LinuxDrag : IDisposable
 
     // ── X11 property helpers ──────────────────────────────────────────────────
 
+    // Largest property we will read, to bound memory if a source misbehaves.
+    private const long MaxPropertyBytes = 64L * 1024 * 1024;
+
     private string? ReadStringProperty(nint window, nint property)
     {
+        // Ask for zero data first (without deleting) to learn the type, format and total
+        // size, then read the whole property in one request.
         int rc = XGetWindowProperty(_display, window, property,
-            0, 65536, delete: true, reqType: IntPtr.Zero,
+            0, 0, delete: false, reqType: IntPtr.Zero,
+            out nint actualType, out _, out _, out nint bytesAfter, out nint probeReturn);
+        if (rc != 0) return null;
+        if (probeReturn != IntPtr.Zero) XFree(probeReturn);
+
+        if (actualType == IntPtr.Zero) return null;     // property doesn't exist
+
+        // INCR means the owner will send the data in pieces as we delete each one.  That
+        // protocol isn't implemented here; report "no data" so callers fall back (the
+        // clipboard path then uses Avalonia's own clipboard, which does handle INCR).
+        if (actualType == XInternAtom(_display, "INCR", true))
+        {
+            Debug.WriteLine("LinuxDrag: property uses INCR; not supported");
+            return null;
+        }
+        if (bytesAfter == 0 || (long)bytesAfter > MaxPropertyBytes) return null;
+
+        // long_length is in 32-bit units.
+        nint longLength = (nint)(((long)bytesAfter + 3) / 4);
+        rc = XGetWindowProperty(_display, window, property,
+            0, longLength, delete: true, reqType: IntPtr.Zero,
             out _, out int fmt, out nint nItems, out _, out nint propReturn);
         if (rc != 0 || propReturn == IntPtr.Zero || nItems == 0) return null;
         try
         {
-            int byteLen = fmt == 16 ? (int)nItems * 2 : (int)nItems;
+            // Xlib hands back format-32 data as an array of C long (8 bytes on 64-bit).
+            int unit = fmt == 32 ? IntPtr.Size : fmt / 8;
+            long byteLen = (long)nItems * unit;
+            if (byteLen > MaxPropertyBytes) return null;
             byte[] bytes = new byte[byteLen];
-            Marshal.Copy(propReturn, bytes, 0, byteLen);
+            Marshal.Copy(propReturn, bytes, 0, (int)byteLen);
             return Encoding.UTF8.GetString(bytes);
         }
         finally { XFree(propReturn); }
@@ -1345,11 +1541,12 @@ internal sealed class LinuxDrag : IDisposable
         if (rc != 0 || propReturn == IntPtr.Zero || nItems == 0) return result;
         try
         {
-            int sz = fmt / 8;
+            // Xlib returns format-32 data as an array of C long, which is IntPtr.Size bytes
+            // per item (8 on 64-bit Linux), not 4.
+            if (fmt != 32) return result;
             for (int i = 0; i < (int)nItems; i++)
             {
-                nint a = sz == 8 ? Marshal.ReadIntPtr(propReturn, i * 8)
-                                 : (nint)Marshal.ReadInt32(propReturn, i * 4);
+                nint a = Marshal.ReadIntPtr(propReturn, i * IntPtr.Size);
                 if (a != IntPtr.Zero) result.Add(a);
             }
         }

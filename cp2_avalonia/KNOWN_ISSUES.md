@@ -8,7 +8,6 @@
  - Create a desktop file for Linux (?)
  - Make sure build scripts properly build the Avalonia port
  - Review/Rework avalonia_docs. Possibly add real screenshots.
- - The Ciderpress2-settings.json file lives alongside the executable as it did previously.  This should probably be relocated to a user-specific location ($Home dir/dotfile/AppSettings/etc.)
  
 ## Research Needed
  - Open physical volumes (General research, platform‑specific APIs, permissions, device enumeration)

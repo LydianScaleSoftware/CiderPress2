@@ -106,6 +106,13 @@ public class FileViewerViewModel : ObservableObject, IDisposable
     private Stream? mDataFork;
     private Stream? mRsrcFork;
     private IConvOutput? mCurDataOutput;
+    // The unmodified CellGrid output, when the data fork converted to one.  mCurDataOutput
+    // is replaced with SimpleText (CSV text) for display, so Export and Copy use this to
+    // write a real .csv.
+    private CellGrid? mCurDataGrid;
+    // Set by Dispose.  Deferred loads queued before the window closed check it, so they
+    // don't reopen the fork streams after they have been closed.
+    private bool mIsDisposed;
     private IConvOutput? mCurRsrcOutput;
     private string mNoteTextStr = string.Empty;
     private DisplayItemType mDataDisplayType = DisplayItemType.Unknown;
@@ -113,7 +120,10 @@ public class FileViewerViewModel : ObservableObject, IDisposable
     private readonly List<string> mTmpFiles = new();
     private string mDataForkText = string.Empty;
     private string mRsrcForkText = string.Empty;
+    // Position of the current find match: [mFindMatchStart, mFindCaretOffset).  Both are 0
+    // when there is no current match.
     private int mFindCaretOffset;
+    private int mFindMatchStart;
     private bool mIsConfiguring;
     private int mHistoryIndex = -1;
     private bool mIsRestoringHistory;
@@ -124,6 +134,12 @@ public class FileViewerViewModel : ObservableObject, IDisposable
     // Find result event (pushes (offset, length) to code-behind)
 
     public event Action<(int offset, int length)>? FindResultFound;
+
+    /// <summary>
+    /// Raised when an action the user asked for (Export, Copy) fails.  The argument is the
+    /// message to show.  The viewer window shows it, so the box is owned by that window.
+    /// </summary>
+    public event Action<string>? ErrorReported;
 
     // -----------------------------------------------------------------------------------------
     // Close interaction
@@ -195,7 +211,17 @@ public class FileViewerViewModel : ObservableObject, IDisposable
     public Bitmap? PreviewBitmap
     {
         get => mPreviewBitmap;
-        set => SetProperty(ref mPreviewBitmap, value);
+        set
+        {
+            // Dispose the bitmap being replaced, after the binding has switched the Image
+            // to the new one.  Each zoom step or file change otherwise leaves a full-size
+            // bitmap for the finalizer.
+            Bitmap? old = mPreviewBitmap;
+            if (SetProperty(ref mPreviewBitmap, value))
+            {
+                old?.Dispose();
+            }
+        }
     }
 
     private bool mIsOptionsBoxEnabled;
@@ -335,6 +361,7 @@ public class FileViewerViewModel : ObservableObject, IDisposable
         {
             SetProperty(ref mSearchString, value);
             mFindCaretOffset = 0;
+            mFindMatchStart = 0;
             UpdateFindControls();
         }
     }
@@ -372,6 +399,7 @@ public class FileViewerViewModel : ObservableObject, IDisposable
             SetProperty(ref mSelectedForkTab, value);
             IsOptionsBoxEnabled = (value == Tab.Data);
             mFindCaretOffset = 0;
+            mFindMatchStart = 0;
             UpdateCurrentHistoryEntrySnapshot();
         }
     }
@@ -588,10 +616,20 @@ public class FileViewerViewModel : ObservableObject, IDisposable
             newIdx = 0;
         }
 
+        if (newIdx == mCurIndex && newPaths.SequenceEqual(mSelectedPaths)) {
+            // Same pool as before (e.g. the main window re-reported an unchanged
+            // selection): nothing to update, and no history snapshot to rebuild.
+            mSelected.Clear();
+            mSelected.AddRange(newEntries);
+            return;
+        }
+
         mSelected.Clear();
         mSelected.AddRange(newEntries);
         mCurIndex = newIdx;
-        CaptureSelectionPaths();
+        // newPaths already holds each entry's path; don't compute FullPathName again.
+        mSelectedPaths.Clear();
+        mSelectedPaths.AddRange(newPaths);
 
         // Keep the current history entry consistent with the new pool.
         UpdateCurrentHistoryEntrySnapshot();
@@ -627,7 +665,15 @@ public class FileViewerViewModel : ObservableObject, IDisposable
         UpdateNavigationControls();
     }
 
-    public ReconcileResult ReconcileAfterRefresh(object archiveOrFileSystem)
+    /// <summary>
+    /// Called after the main window refreshed its lists.  Drops history entries whose files
+    /// are gone, and reloads the displayed file only if it changed or was replaced.
+    /// </summary>
+    /// <param name="archiveOrFileSystem">The archive or file system now shown.</param>
+    /// <param name="forceReload">If true, reload even if the file is unchanged (used when
+    /// settings that affect conversion were changed).</param>
+    public ReconcileResult ReconcileAfterRefresh(object archiveOrFileSystem,
+            bool forceReload = false)
     {
         if (!ReferenceEquals(mArchiveOrFileSystem, archiveOrFileSystem)) {
             return ReconcileResult.Close;
@@ -636,9 +682,15 @@ public class FileViewerViewModel : ObservableObject, IDisposable
             return ReconcileResult.Close;
         }
 
+        IFileEntry? displayedEntry = (mCurIndex >= 0 && mCurIndex < mSelected.Count)
+            ? mSelected[mCurIndex] : null;
+
+        // Each path is looked up once per refresh, and history entries that shared a path
+        // list (the forward stubs from a multi-file selection) share the rebuilt list.
+        RebuildCache cache = new RebuildCache();
         int currentIndex = mHistoryIndex;
         for (int i = mHistory.Count - 1; i >= 0; i--) {
-            if (!TryRebuildHistoryEntry(mHistory[i], out HistoryEntry rebuilt)) {
+            if (!TryRebuildHistoryEntry(mHistory[i], cache, out HistoryEntry rebuilt)) {
                 mHistory.RemoveAt(i);
                 if (i < currentIndex) {
                     currentIndex--;
@@ -665,6 +717,10 @@ public class FileViewerViewModel : ObservableObject, IDisposable
         }
 
         mHistoryIndex = currentIndex;
+        if (!forceReload && displayedEntry != null &&
+                TryRefreshPoolKeepingDisplay(mHistory[mHistoryIndex], displayedEntry)) {
+            return ReconcileResult.NoChange;
+        }
         if (!RestoreHistoryEntry(mHistoryIndex)) {
             int fallbackIndex = FindFallbackHistoryIndex(currentIndex - 1);
             if (fallbackIndex < 0 || !RestoreHistoryEntry(fallbackIndex)) {
@@ -907,19 +963,33 @@ public class FileViewerViewModel : ObservableObject, IDisposable
             mShowFilePending = false;
             bool changed = mPendingFileChanged;
             mPendingFileChanged = false;
+            if (mIsDisposed)
+            {
+                return;     // window closed while the load was queued
+            }
+            bool completed = false;
             try
             {
                 ShowFile(changed);
+                completed = true;
             }
             finally
             {
                 IsLoading = false;
+                if (!completed)
+                {
+                    // The load threw before a converter was selected, so
+                    // OnConverterSelected will not clear these.
+                    mPendingHistoryRestore = null;
+                    mIsRestoringHistory = false;
+                }
             }
         }, DispatcherPriority.Background);
     }
 
     private void ShowFile(bool fileChanged)
     {
+        if (mIsDisposed) return;
         IsDOSRawEnabled = (mArchiveOrFileSystem is DOS);
         CloseStreams();
         IsExportEnabled = IsFindEnabled = false;
@@ -954,6 +1024,9 @@ public class FileViewerViewModel : ObservableObject, IDisposable
             RsrcTextViewModel.SetFromConvOutput(null);
             NoteText = string.Empty;
             SelectedForkTab = Tab.Data;
+            // No converter will be selected, so OnConverterSelected won't clear these.
+            mPendingHistoryRestore = null;
+            mIsRestoringHistory = false;
         }
 
         if (applicableConverters != null)
@@ -1031,6 +1104,7 @@ public class FileViewerViewModel : ObservableObject, IDisposable
             // The lambda is fully guarded: FileAttribs(entry) in ShowFile runs before that
             // method's own try-catch, so any exception there would otherwise crash the app.
             Dispatcher.UIThread.Post(() => {
+                if (mIsDisposed) return;
                 try {
                     // Replace the stale IFileEntry so FileAttribs() doesn't throw on it.
                     string path = (mCurIndex >= 0 && mCurIndex < mSelectedPaths.Count)
@@ -1083,6 +1157,7 @@ public class FileViewerViewModel : ObservableObject, IDisposable
         }
 
         IsFindEnabled = IsExportEnabled = false;
+        mCurDataGrid = null;
         mDataDisplayType = DisplayItemType.Unknown;
         mDataForkText = string.Empty;
         mRsrcForkText = string.Empty;
@@ -1134,7 +1209,9 @@ public class FileViewerViewModel : ObservableObject, IDisposable
                 sb.Append(oldLen);
                 sb.Append(") ]");
             }
-            // Replace the output with SimpleText so code-behind uses DataForkText
+            // Replace the output with SimpleText so code-behind uses DataForkText, but keep
+            // the grid for Export and Copy.
+            mCurDataGrid = cellGrid;
             mDataForkText = sb.ToString();
             mCurDataOutput = new SimpleText(mDataForkText);
             mDataDisplayType = DisplayItemType.SimpleText;
@@ -1229,6 +1306,7 @@ public class FileViewerViewModel : ObservableObject, IDisposable
 
         SelectEnabledTab();
         mFindCaretOffset = 0;
+        mFindMatchStart = 0;
         UpdateFindControls();
     }
 
@@ -1440,7 +1518,7 @@ public class FileViewerViewModel : ObservableObject, IDisposable
         }
         else
         {
-            convOut = mCurDataOutput;
+            convOut = (IConvOutput?)mCurDataGrid ?? mCurDataOutput;
             prefix = "";
         }
         if (convOut == null) return;
@@ -1506,6 +1584,7 @@ public class FileViewerViewModel : ObservableObject, IDisposable
         catch (Exception ex)
         {
             AppLog.E("File viewer: export failed", ex);
+            ErrorReported?.Invoke("Unable to export the file: " + ex.Message);
         }
     }
 
@@ -1546,7 +1625,7 @@ public class FileViewerViewModel : ObservableObject, IDisposable
             return;
         }
         IConvOutput? convOut = (mCurRsrcOutput != null && SelectedForkTab == Tab.Rsrc)
-            ? mCurRsrcOutput : mCurDataOutput;
+            ? mCurRsrcOutput : ((IConvOutput?)mCurDataGrid ?? mCurDataOutput);
         if (convOut == null) return;
 
         try
@@ -1574,6 +1653,7 @@ public class FileViewerViewModel : ObservableObject, IDisposable
         catch (Exception ex)
         {
             AppLog.E("File viewer: copy failed", ex);
+            ErrorReported?.Invoke("Unable to copy to the clipboard: " + ex.Message);
         }
     }
 
@@ -1597,33 +1677,60 @@ public class FileViewerViewModel : ObservableObject, IDisposable
         };
         if (string.IsNullOrEmpty(text)) return;
 
-        int startPos = forward ? mFindCaretOffset : Math.Max(0, mFindCaretOffset - 1);
+        int index = FindMatch(text, SearchString, mFindMatchStart, mFindCaretOffset, forward);
+        if (index >= 0)
+        {
+            mFindMatchStart = index;
+            mFindCaretOffset = index + SearchString.Length;
+            FindResultFound?.Invoke((index, SearchString.Length));
+        }
+    }
+
+    /// <summary>
+    /// Finds the next or previous occurrence of <paramref name="search"/> (case-insensitive),
+    /// wrapping around at the ends of the text.
+    /// </summary>
+    /// <param name="text">Text to search.</param>
+    /// <param name="search">Text to find.  Must not be empty.</param>
+    /// <param name="matchStart">Start of the current match (equal to
+    ///   <paramref name="matchEnd"/> if there is none).</param>
+    /// <param name="matchEnd">End of the current match (exclusive).</param>
+    /// <param name="forward">True to search forward, false for backward.</param>
+    /// <returns>Index of the match, or -1 if there is none.</returns>
+    internal static int FindMatch(string text, string search, int matchStart, int matchEnd,
+        bool forward)
+    {
+        if (text.Length == 0 || search.Length == 0) return -1;
+        matchStart = Math.Clamp(matchStart, 0, text.Length);
+        matchEnd = Math.Clamp(matchEnd, 0, text.Length);
 
         int index;
         if (forward)
         {
-            index = text.IndexOf(SearchString, startPos, StringComparison.OrdinalIgnoreCase);
+            // Start after the current match, then wrap to the beginning.
+            index = text.IndexOf(search, matchEnd, StringComparison.OrdinalIgnoreCase);
             if (index < 0)
             {
-                index = text.IndexOf(SearchString, 0, StringComparison.OrdinalIgnoreCase);
+                index = text.IndexOf(search, 0, StringComparison.OrdinalIgnoreCase);
             }
         }
         else
         {
-            if (startPos < 0) startPos = text.Length - 1;
-            index = text.LastIndexOf(SearchString, startPos, StringComparison.OrdinalIgnoreCase);
-            if (index < 0 && text.Length > 0)
+            // The match must end before the current match starts.  Searching back from
+            // the current match's own end would find that same match again.
+            index = -1;
+            if (matchStart > 0)
             {
-                index = text.LastIndexOf(SearchString, text.Length - 1,
+                index = text.LastIndexOf(search, matchStart - 1,
+                    StringComparison.OrdinalIgnoreCase);
+            }
+            if (index < 0)
+            {
+                index = text.LastIndexOf(search, text.Length - 1,
                     StringComparison.OrdinalIgnoreCase);
             }
         }
-
-        if (index >= 0)
-        {
-            mFindCaretOffset = index + SearchString.Length;
-            FindResultFound?.Invoke((index, SearchString.Length));
-        }
+        return index;
     }
 
     // -----------------------------------------------------------------------------------------
@@ -1812,12 +1919,80 @@ public class FileViewerViewModel : ObservableObject, IDisposable
         return true;
     }
 
-    private bool TryRebuildHistoryEntry(HistoryEntry entry, out HistoryEntry rebuilt)
+    /// <summary>
+    /// Per-refresh memory for <see cref="TryRebuildHistoryEntry"/>.
+    /// </summary>
+    private sealed class RebuildCache
     {
-        if (entry.SourceWorkPathName != SourceWorkPathName ||
-                !TryResolveSelectedPaths(entry.SelectedPaths, entry.CurrentPath,
-                    out List<IFileEntry> _, out List<string> paths, out int currentIndex)) {
-            rebuilt = null!;
+        // Original path -> full path of the entry it resolved to (null if not found).
+        public readonly Dictionary<string, string?> Resolved = new();
+        // Original path list (by reference) -> resolved list, shared by all entries
+        // that were built from the same list.
+        public readonly Dictionary<List<string>, List<string>> Lists =
+            new(ReferenceEqualityComparer.Instance);
+    }
+
+    private string? ResolveFullPath(string path, RebuildCache cache)
+    {
+        if (!cache.Resolved.TryGetValue(path, out string? full)) {
+            full = TryResolveEntry(mArchiveOrFileSystem, path, out IFileEntry entry)
+                ? entry.FullPathName : null;
+            cache.Resolved[path] = full;
+        }
+        return full;
+    }
+
+    /// <summary>
+    /// Re-resolves the pool of the current history entry without reloading the file, if the
+    /// displayed entry is still the same, valid entry.  Returns false if the displayed file
+    /// changed (replaced or invalid), in which case the caller reloads it.
+    /// </summary>
+    private bool TryRefreshPoolKeepingDisplay(HistoryEntry histEntry, IFileEntry displayedEntry)
+    {
+        if (!TryResolveSelectedPaths(histEntry.SelectedPaths, histEntry.CurrentPath,
+                out List<IFileEntry> entries, out List<string> paths, out int currentIndex)) {
+            return false;
+        }
+        bool unchanged;
+        try {
+            unchanged = ReferenceEquals(entries[currentIndex], displayedEntry) &&
+                displayedEntry.IsValid;
+        } catch (Exception) {
+            unchanged = false;
+        }
+        if (!unchanged) {
+            return false;
+        }
+
+        mSelected.Clear();
+        mSelected.AddRange(entries);
+        mSelectedPaths.Clear();
+        mSelectedPaths.AddRange(paths);
+        mCurIndex = currentIndex;
+        UpdateNavigationControls();
+        return true;
+    }
+
+    private bool TryRebuildHistoryEntry(HistoryEntry entry, RebuildCache cache,
+            out HistoryEntry rebuilt)
+    {
+        rebuilt = null!;
+        if (entry.SourceWorkPathName != SourceWorkPathName) {
+            return false;
+        }
+        if (!cache.Lists.TryGetValue(entry.SelectedPaths, out List<string>? paths)) {
+            paths = new List<string>();
+            foreach (string p in entry.SelectedPaths) {
+                string? full = ResolveFullPath(p, cache);
+                if (full != null) {
+                    paths.Add(full);
+                }
+            }
+            cache.Lists[entry.SelectedPaths] = paths;
+        }
+        string? currentFull = ResolveFullPath(entry.CurrentPath, cache);
+        int currentIndex = currentFull == null ? -1 : paths.IndexOf(currentFull);
+        if (currentIndex < 0) {
             return false;
         }
 
@@ -1905,6 +2080,7 @@ public class FileViewerViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        mIsDisposed = true;
         _viewerService.Unregister(this);
         CloseStreams();
         DeleteTempFiles();

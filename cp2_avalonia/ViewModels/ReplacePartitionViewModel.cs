@@ -44,7 +44,7 @@ public class ReplacePartitionViewModel : ObservableObject
 
     public event Action<bool>? CloseRequested;
 
-    public IRelayCommand OkCommand { get; }
+    public IRelayCommand CopyCommand { get; }
     public IRelayCommand CancelCommand { get; }
 
     // ── Display properties ────────────────────────────────────────────────────
@@ -74,6 +74,18 @@ public class ReplacePartitionViewModel : ObservableObject
     public bool IsValid {
         get => mIsValid;
         private set => SetProperty(ref mIsValid, value);
+    }
+
+    /// <summary>True while the copy is running; Copy and Cancel are disabled.</summary>
+    private bool mIsBusy;
+    public bool IsBusy {
+        get => mIsBusy;
+        private set {
+            if (SetProperty(ref mIsBusy, value)) {
+                CopyCommand.NotifyCanExecuteChanged();
+                CancelCommand.NotifyCanExecuteChanged();
+            }
+        }
     }
 
     public ReplacePartitionViewModel(
@@ -150,9 +162,8 @@ public class ReplacePartitionViewModel : ObservableObject
         mIsSizeCompatible = sizeOk;
         mIsValid = valid;
 
-        OkCommand = new AsyncRelayCommand(DoCopy);
-        CancelCommand = new AsyncRelayCommand(async () =>
-            CloseRequested?.Invoke(false));
+        CopyCommand = new AsyncRelayCommand(DoCopy, () => IsValid && !IsBusy);
+        CancelCommand = new RelayCommand(() => CloseRequested?.Invoke(false), () => !IsBusy);
     }
 
     private async Task DoCopy()
@@ -163,7 +174,25 @@ public class ReplacePartitionViewModel : ObservableObject
             return;
         }
 
-        SaveAsDiskViewModel.CopyDisk(mSrcChunks, mDstPartition.ChunkAccess, out int errorCount);
+        // The copy runs off the UI thread so the dialog stays responsive.  This is allowed
+        // under the X1 rule because this dialog is modal (the main window is disabled) and
+        // Copy and Cancel are disabled, and the window refuses to close, while it runs.
+        int errorCount = 0;
+        IsBusy = true;
+        try {
+            await Task.Run(() => SaveAsDiskViewModel.CopyDisk(mSrcChunks,
+                mDstPartition.ChunkAccess, out errorCount));
+        } catch (Exception ex) {
+            AppLog.E("Replace partition: copy failed", ex);
+            IsBusy = false;
+            await mDialogService.ShowMessageAsync(
+                "The partition could not be replaced: " + ex.Message +
+                "  The partition contents may be incomplete.", "Failed");
+            CloseRequested?.Invoke(false);
+            return;
+        }
+        IsBusy = false;
+
         if (errorCount != 0) {
             string msg = "Some data could not be read. Total errors: " + errorCount + ".";
             await mDialogService.ShowMessageAsync(msg, "Partial Copy");

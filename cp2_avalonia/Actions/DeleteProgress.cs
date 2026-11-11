@@ -18,6 +18,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.ExceptionServices;
 
 using AppCommon;
 using CommonUtil;
@@ -71,7 +72,15 @@ namespace cp2_avalonia.Actions {
 
             } else {
                 IFileSystem fs = (IFileSystem)archiveOrFileSystem;
-                bool success = worker.DeleteFromDisk(fs, selected, out bool wasCancelled);
+                bool success = false;
+                Exception? workError = null;
+                try {
+                    success = worker.DeleteFromDisk(fs, selected, out bool wasCancelled);
+                } catch (Exception ex) {
+                    // The worker only handles IOException.  Keep going, so the deletions
+                    // already made are still saved, then report the error.
+                    workError = ex;
+                }
                 try {
                     // Save the deletions we managed to handle.
                     bkWorker.ReportProgress(100, ProgressUtil.FINISHING_MSG);
@@ -79,6 +88,10 @@ namespace cp2_avalonia.Actions {
                 } catch (Exception ex) {
                     ProgressUtil.ShowMessage("Error: update failed: " + ex.Message, true, bkWorker);
                     return false;
+                }
+                if (workError != null) {
+                    // The progress dialog shows the error.
+                    ExceptionDispatchInfo.Capture(workError).Throw();
                 }
                 if (!success) {
                     return false;

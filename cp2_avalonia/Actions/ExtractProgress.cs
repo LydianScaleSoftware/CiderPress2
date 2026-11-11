@@ -18,6 +18,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.IO;
 
 using AppCommon;
 using CommonUtil;
@@ -53,38 +54,37 @@ namespace cp2_avalonia.Actions {
         /// THIS RUNS ON THE WORKER THREAD.  Do not try to access GUI objects.
         /// </remarks>
         public object DoWork(BackgroundWorker bkWorker) {
-            string curDir = Environment.CurrentDirectory;
-            try {
-                ProgressUtil.PersistentChoices choices = new();
+            // The output folder is passed to the worker as a base path.  (Changing
+            // Environment.CurrentDirectory would affect the whole process, including other
+            // windows, while the extraction runs.)  An error here is shown by the dialog.
+            if (!Directory.Exists(outputDir)) {
+                throw new DirectoryNotFoundException(
+                    "The output folder does not exist: " + outputDir);
+            }
+            ProgressUtil.PersistentChoices choices = new();
 
-                CallbackFacts.Results CbFunc(CallbackFacts what)
-                {
-                    return ProgressUtil.HandleCallback(what, "extract", choices, null, bkWorker);
+            CallbackFacts.Results CbFunc(CallbackFacts what)
+            {
+                return ProgressUtil.HandleCallback(what, "extract", choices, null, bkWorker);
+            }
+
+            ExtractFileWorker extWorker = new ExtractFileWorker(CbFunc,
+                addExportExt: AddExportExt, macZip: EnableMacOSZip, preserve: Preserve,
+                rawMode: RawMode, basePath: outputDir, stripPaths: StripPaths, DefaultSpecs,
+                appHook);
+
+            if (archiveOrFileSystem is IArchive arc) {
+                if (!extWorker.ExtractFromArchive(arc, selected, exportSpec,
+                        out bool wasCancelled)) {
+                    return false;
                 }
-
-                ExtractFileWorker extWorker = new ExtractFileWorker(CbFunc,
-                    addExportExt: AddExportExt, macZip: EnableMacOSZip, preserve: Preserve,
-                    rawMode: RawMode, basePath: string.Empty, stripPaths: StripPaths, DefaultSpecs,
-                    appHook);
-
-                // Switch to output directory.
-                Environment.CurrentDirectory = outputDir;
-
-                if (archiveOrFileSystem is IArchive arc) {
-                    if (!extWorker.ExtractFromArchive(arc, selected, exportSpec,
-                            out bool wasCancelled)) {
-                        return false;
-                    }
-                } else if (archiveOrFileSystem is IFileSystem fs) {
-                    if (!extWorker.ExtractFromDisk(fs, selected, selectionDir, exportSpec,
-                            out bool wasCancelled)) {
-                        return false;
-                    }
-                } else {
-                    Debug.Assert(false);
+            } else if (archiveOrFileSystem is IFileSystem fs) {
+                if (!extWorker.ExtractFromDisk(fs, selected, selectionDir, exportSpec,
+                        out bool wasCancelled)) {
+                    return false;
                 }
-            } finally {
-                Environment.CurrentDirectory = curDir;
+            } else {
+                Debug.Assert(false);
             }
             return true;
         }

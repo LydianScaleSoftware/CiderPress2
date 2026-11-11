@@ -130,7 +130,11 @@ namespace cp2_avalonia.Tools {
             private readonly TextBlock mLabel;
             private readonly TextBox mBox;
 
-            private bool mIgnoreChange;
+            // TextBox.TextChanged is raised asynchronously, after the Text property has
+            // been set, so a flag set around "box.Text = ..." can't suppress it.  Instead
+            // remember the last value assigned or reported, and ignore events that don't
+            // change it.
+            private string mLastValue = string.Empty;
             private bool mDigitsOnly;
 
             public TextBoxMapItem(UpdateOption updater, StackPanel panel, TextBlock label,
@@ -141,19 +145,21 @@ namespace cp2_avalonia.Tools {
             }
 
             private void OnTextChanged(object? sender, TextChangedEventArgs e) {
-                if (!mIgnoreChange) {
-                    string text = mBox.Text ?? string.Empty;
-                    if (mDigitsOnly) {
-                        string filtered = NormalizeDecimalInput(text);
-                        if (filtered != text) {
-                            mIgnoreChange = true;
-                            mBox.Text = filtered;
-                            mIgnoreChange = false;
-                            text = filtered;
-                        }
+                string text = mBox.Text ?? string.Empty;
+                if (mDigitsOnly) {
+                    string filtered = NormalizeDecimalInput(text);
+                    if (filtered != text) {
+                        // The reformatted text raises another TextChanged later; it will
+                        // match mLastValue and be ignored.
+                        mBox.Text = filtered;
+                        text = filtered;
                     }
-                    Updater(OptTag, text);
                 }
+                if (text == mLastValue) {
+                    return;
+                }
+                mLastValue = text;
+                Updater(OptTag, text);
             }
 
             public override void AssignControl(string tag, string uiString, string defVal,
@@ -162,10 +168,11 @@ namespace cp2_avalonia.Tools {
                 mDigitsOnly = digitsOnly;
                 mLabel.Text = uiString + ':';
                 VisElem.IsVisible = true;
-                // Suppress the TextChanged event fired by the initial value assignment.
-                mIgnoreChange = true;
-                mBox.Text = digitsOnly ? NormalizeDecimalInput(defVal) : defVal;
-                mIgnoreChange = false;
+                // The TextChanged event fired by this assignment (later) is ignored because
+                // the text matches mLastValue.
+                string initial = digitsOnly ? NormalizeDecimalInput(defVal) : defVal;
+                mLastValue = initial;
+                mBox.Text = initial;
             }
 
             private static string NormalizeDecimalInput(string value) {
@@ -306,12 +313,23 @@ namespace cp2_avalonia.Tools {
         }
 
         /// <summary>
+        /// Returns the current value of an option, or the option's own default if the
+        /// dictionary has no entry for it (e.g. the saved options predate the option, or the
+        /// user cleared the field).
+        /// </summary>
+        internal static string GetOptionValue(Dictionary<string, string> convOptions,
+                OptionDefinition optDef) {
+            return convOptions.TryGetValue(optDef.OptTag, out string? value) ?
+                value : optDef.DefaultVal;
+        }
+
+        /// <summary>
         /// Configures controls to match the option definitions for a specific converter.
         /// </summary>
         internal static void ConfigureControls(List<ControlMapItem> controls,
                 List<OptionDefinition> optionDefs, Dictionary<string, string> convOptions) {
             foreach (OptionDefinition optDef in optionDefs) {
-                string defaultVal = convOptions[optDef.OptTag];
+                string defaultVal = GetOptionValue(convOptions, optDef);
 
                 ControlMapItem item;
                 switch (optDef.Type) {

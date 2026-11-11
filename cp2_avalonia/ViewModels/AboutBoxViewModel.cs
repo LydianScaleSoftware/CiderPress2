@@ -67,7 +67,7 @@ public class AboutBoxViewModel : ObservableObject
     public AboutBoxViewModel()
     {
         // Load legal text before commands are created so the binding finds the value.
-        string pathName = Path.Combine(PlatformUtil.GetRuntimeDataDir(), LEGAL_STUFF_FILE_NAME);
+        string pathName = Path.Combine(PlatformUtil.GetAppResourceDir(), LEGAL_STUFF_FILE_NAME);
         try {
             LegalStuffText = File.ReadAllText(pathName);
         } catch (Exception ex) {

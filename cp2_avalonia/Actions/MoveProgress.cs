@@ -18,6 +18,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.ExceptionServices;
 
 using AppCommon;
 using CommonUtil;
@@ -69,8 +70,16 @@ namespace cp2_avalonia.Actions {
             var worker = new MoveFileWorker(CbFunc, mAppHook);
 
             if (mArchiveOrFileSystem is IFileSystem fs) {
-                var success = worker.MoveDiskEntries(fs, mSelected, mDestDir,
-                    out bool wasCancelled);
+                bool success = false;
+                Exception? workError = null;
+                try {
+                    success = worker.MoveDiskEntries(fs, mSelected, mDestDir,
+                        out bool wasCancelled);
+                } catch (Exception ex) {
+                    // The worker only handles IOException.  Keep going, so the moves
+                    // already made are still saved, then report the error.
+                    workError = ex;
+                }
                 try {
                     // Save the moves we managed to handle.
                     bkWorker.ReportProgress(100, ProgressUtil.FINISHING_MSG);
@@ -78,6 +87,10 @@ namespace cp2_avalonia.Actions {
                 } catch (Exception ex) {
                     ProgressUtil.ShowMessage("Error: update failed: " + ex.Message, true, bkWorker);
                     return false;
+                }
+                if (workError != null) {
+                    // The progress dialog shows the error.
+                    ExceptionDispatchInfo.Capture(workError).Throw();
                 }
                 if (!success) {
                     return false;

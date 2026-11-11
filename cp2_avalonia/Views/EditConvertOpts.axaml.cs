@@ -81,12 +81,19 @@ namespace cp2_avalonia.Views {
 
         private void ConfigureForConverter(string convTag, List<OptionDefinition> optDefs) {
             Debug.WriteLine("Configure controls for " + convTag);
+            // Only the synchronous change events from assigning the controls need to be
+            // ignored.  Text boxes raise TextChanged later, and ignore it themselves
+            // because the text matches what was assigned.
             mIsConfiguring = true;
-            mConvOptions = LoadExportOptions(optDefs, VM!.SettingPrefix, convTag, VM!.SettingsService);
-            HideConvControls(mCustomCtrls);
-            noOptions.IsVisible = (optDefs.Count == 0);
-            ConfigureControls(mCustomCtrls, optDefs, mConvOptions);
-            Dispatcher.UIThread.Post(() => mIsConfiguring = false);
+            try {
+                mConvOptions = LoadExportOptions(optDefs, VM!.SettingPrefix, convTag,
+                    VM!.SettingsService);
+                HideConvControls(mCustomCtrls);
+                noOptions.IsVisible = (optDefs.Count == 0);
+                ConfigureControls(mCustomCtrls, optDefs, mConvOptions);
+            } finally {
+                mIsConfiguring = false;
+            }
         }
 
         private void UpdateOption(string tag, string newValue) {

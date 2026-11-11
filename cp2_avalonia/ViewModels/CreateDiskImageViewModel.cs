@@ -56,7 +56,12 @@ public class CreateDiskImageViewModel : ObservableObject
 
     public bool IsValid {
         get => _isValid;
-        private set => SetProperty(ref _isValid, value);
+        private set {
+            if (SetProperty(ref _isValid, value)) {
+                // Create is only available while all fields are valid.
+                OkCommand?.NotifyCanExecuteChanged();
+            }
+        }
     }
     private bool _isValid;
 
@@ -332,7 +337,7 @@ public class CreateDiskImageViewModel : ObservableObject
         _customSizeText = _settingsService.GetString(AppSettings.NEW_DISK_CUSTOM_SIZE, "65535");
         _isCheckedReserveBoot = _settingsService.GetBool(AppSettings.NEW_DISK_RESERVE_BOOT, true);
 
-        OkCommand = new AsyncRelayCommand(ExecuteOkAsync);
+        OkCommand = new AsyncRelayCommand(ExecuteOkAsync, () => IsValid);
         CancelCommand = new AsyncRelayCommand(ExecuteCancelAsync);
 
         UpdateControls();
@@ -341,6 +346,9 @@ public class CreateDiskImageViewModel : ObservableObject
     // --- Command handlers ---
 
     private async Task ExecuteOkAsync() {
+        if (!IsValid) {
+            return;
+        }
         if (!await CreateImageAsync()) {
             return;
         }

@@ -530,11 +530,6 @@ public class EditSectorViewModel : ObservableObject
         SetSectorDataLabel();
     }
 
-    private async Task ReadFromDiskAsync() {
-        if (!await ConfirmDiscardChangesAsync()) return;
-        ReadFromDisk();
-    }
-
     private async Task WriteToDiskAsync() {
         if (!TryEnableWrites()) {
             await _dialogService.ShowMessageAsync("Unable to write to this disk", "Not Possible");
@@ -680,14 +675,20 @@ public class EditSectorViewModel : ObservableObject
     // -----------------------------------------------------------------------------------------
     // Button command implementations
 
+    // The discard-changes prompt must come before the position changes: if the user declines,
+    // nothing may change, or a later Write would put the edited buffer into the wrong
+    // block or sector.
+
     private async Task ReadButtonClickedAsync() {
+        if (!await ConfirmDiscardChangesAsync()) return;
         mCurBlockOrTrack = (uint)mEnteredBlockOrTrack;
         mCurSector = (uint)mEnteredSector;
         SetPrevNextEnabled();
-        await ReadFromDiskAsync();
+        ReadFromDisk();
     }
 
     private async Task PrevButtonClickedAsync() {
+        if (!await ConfirmDiscardChangesAsync()) return;
         if (mEditMode == SectorEditMode.Sectors) {
             if (mCurSector != 0) {
                 mCurSector--;
@@ -700,10 +701,11 @@ public class EditSectorViewModel : ObservableObject
         }
         SetPrevNextEnabled();
         CopyNumToTextFields();
-        await ReadFromDiskAsync();
+        ReadFromDisk();
     }
 
     private async Task NextButtonClickedAsync() {
+        if (!await ConfirmDiscardChangesAsync()) return;
         if (mEditMode == SectorEditMode.Sectors) {
             mCurSector++;
             if (mCurSector == mChunkAccess.NumSectorsPerTrack) {
@@ -715,7 +717,7 @@ public class EditSectorViewModel : ObservableObject
         }
         SetPrevNextEnabled();
         CopyNumToTextFields();
-        await ReadFromDiskAsync();
+        ReadFromDisk();
     }
 
     private async Task WriteButtonClickedAsync() {
@@ -823,8 +825,22 @@ public class EditSectorViewModel : ObservableObject
         if (idx < 0 || idx >= SectorOrderList.Count) return;
         SectorOrderItem item = SectorOrderList[idx];
         if (item.Order == mSectorOrder) return;
+
+        if (!await ConfirmDiscardChangesAsync()) {
+            // Declined: put the selector back on the order that is still in effect.
+            mInitializingAdv = true;
+            for (int i = 0; i < SectorOrderList.Count; i++) {
+                if (SectorOrderList[i].Order == mSectorOrder) {
+                    mSelectedSectorOrderIndex = i;
+                    OnPropertyChanged(nameof(SelectedSectorOrderIndex));
+                    break;
+                }
+            }
+            mInitializingAdv = false;
+            return;
+        }
         mSectorOrder = item.Order;
-        await ReadFromDiskAsync();
+        ReadFromDisk();
     }
 
     // -----------------------------------------------------------------------------------------

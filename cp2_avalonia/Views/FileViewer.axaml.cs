@@ -125,6 +125,15 @@ public partial class FileViewer : Window
         // Subscribe to FindResultFound event.
         vm.FindResultFound += ApplyFindResult;
 
+        // Show Export / Copy failures in a box owned by this window.
+        vm.ErrorReported += async message => {
+            try {
+                await cp2_avalonia.Common.PlatformUtil.ShowMessageAsync(this, message, "Error");
+            } catch (Exception ex) {
+                AppLog.E("Unable to show error message", ex);
+            }
+        };
+
         // Build control map and start the viewer.
         CreateControlMap();
 
@@ -413,19 +422,25 @@ public partial class FileViewer : Window
     }
 
     private void ConfigureControls(Converter conv) {
+        // Only the synchronous change events from assigning the controls need to be
+        // ignored.  Text boxes raise TextChanged later, and ignore it themselves because the
+        // text matches what was assigned.
         VM!.BeginConfiguring();
-        var newOpts = VM.TryConsumePendingConverterOptions(conv.Tag, out Dictionary<string, string> pendingOpts)
-            ? pendingOpts
-            : LoadExportOptions(conv.OptionDefs,
-                AppSettings.VIEW_SETTING_PREFIX, conv.Tag, VM!.SettingsService);
-        VM.SetConvOptions(newOpts);
-        HideConvControls(mCustomCtrls);
-        noOptions.IsVisible = (conv.OptionDefs.Count == 0);
-        ConfigOptCtrl.ConfigureControls(mCustomCtrls, conv.OptionDefs, VM.GetConvOptions());
-        // A converter is configured: show the Options box (with either its option
-        // controls or the "no options" message).
-        optionsGroupBox.IsVisible = true;
-        Dispatcher.UIThread.Post(() => VM?.EndConfiguring());
+        try {
+            var newOpts = VM.TryConsumePendingConverterOptions(conv.Tag, out Dictionary<string, string> pendingOpts)
+                ? pendingOpts
+                : LoadExportOptions(conv.OptionDefs,
+                    AppSettings.VIEW_SETTING_PREFIX, conv.Tag, VM!.SettingsService);
+            VM.SetConvOptions(newOpts);
+            HideConvControls(mCustomCtrls);
+            noOptions.IsVisible = (conv.OptionDefs.Count == 0);
+            ConfigOptCtrl.ConfigureControls(mCustomCtrls, conv.OptionDefs, VM.GetConvOptions());
+            // A converter is configured: show the Options box (with either its option
+            // controls or the "no options" message).
+            optionsGroupBox.IsVisible = true;
+        } finally {
+            VM?.EndConfiguring();
+        }
     }
 
     private void UpdateOption(string tag, string newValue) {

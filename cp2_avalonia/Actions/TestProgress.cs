@@ -76,7 +76,11 @@ namespace cp2_avalonia.Actions
             }
             else
             {
-                IFileSystem fs = (IFileSystem)archiveOrFileSystem;
+                // Anything but an archive or file system is a programming error; say so
+                // (the progress dialog shows the message) instead of an InvalidCastException.
+                IFileSystem fs = archiveOrFileSystem as IFileSystem ??
+                    throw new InvalidOperationException(
+                        "Can't test a " + archiveOrFileSystem.GetType().Name);
                 TestFileSystem(fs, selected, bkWorker, failures);
 
                 // Don't descend into embedded volumes.  If they want to test those, they can
@@ -138,14 +142,7 @@ namespace cp2_avalonia.Actions
         private static bool TestArchiveFork(IArchive arc, IFileEntry entry, FilePart part,
             BackgroundWorker bkWorker, int perc)
         {
-            var facts = new CallbackFacts(CallbackFacts.Reasons.Progress,
-                entry.FullPathName, entry.DirectorySeparatorChar)
-            {
-                ProgressPercent = perc,
-                Part = part
-            };
-            ProgressUtil.HandleCallback(facts, "test",
-                new ProgressUtil.PersistentChoices(), null, bkWorker);
+            ProgressUtil.ReportFileProgress(bkWorker, perc, entry.FullPathName, part);
 
             try
             {
@@ -213,14 +210,7 @@ namespace cp2_avalonia.Actions
         private static bool TestDiskFork(IFileSystem fs, IFileEntry entry, FilePart part,
             BackgroundWorker bkWorker, int perc)
         {
-            var facts = new CallbackFacts(CallbackFacts.Reasons.Progress,
-                entry.FullPathName, entry.DirectorySeparatorChar)
-            {
-                ProgressPercent = perc,
-                Part = part
-            };
-            ProgressUtil.HandleCallback(facts, "test",
-                new ProgressUtil.PersistentChoices(), null, bkWorker);
+            ProgressUtil.ReportFileProgress(bkWorker, perc, entry.FullPathName, part);
             try
             {
                 using Stream stream = fs.OpenFile(entry, FileAccessMode.ReadOnly, part);

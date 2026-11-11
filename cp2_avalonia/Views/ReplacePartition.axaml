@@ -15,10 +15,12 @@ limitations under the License.
 -->
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:cp2_avalonia.ViewModels"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
         x:Class="cp2_avalonia.Views.ReplacePartition"
+        x:DataType="vm:ReplacePartitionViewModel" x:CompileBindings="True"
         Title="Replace Partition"
         Width="400" SizeToContent="Height" CanResize="False"
         ShowInTaskbar="False" WindowStartupLocation="CenterOwner">
@@ -31,6 +33,7 @@ limitations under the License.
 
     <Grid Margin="8">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -50,10 +53,13 @@ limitations under the License.
                    TextWrapping="Wrap" Classes.invalid="{Binding !IsSizeCompatible}"
                    IsVisible="{Binding IsSizeDiffVisible}"/>
 
-        <StackPanel Grid.Row="4" Margin="0,8,0,0"
+        <ProgressBar Grid.Row="4" Margin="0,8,0,0" IsIndeterminate="True"
+                     IsVisible="{Binding IsBusy}"/>
+
+        <StackPanel Grid.Row="5" Margin="0,8,0,0"
                     Orientation="Horizontal" HorizontalAlignment="Right">
             <Button Content="Copy" Width="70"
-                    IsEnabled="{Binding IsValid}" Command="{Binding CopyCommand}"/>
+                    Command="{Binding CopyCommand}"/>
             <Button Content="Cancel" IsCancel="True" Width="70" Margin="4,0,0,0"
                     Command="{Binding CancelCommand}"/>
         </StackPanel>

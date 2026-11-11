@@ -22,6 +22,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Platform.Storage;
 using DiskArc;
+using cp2_avalonia.Common;
 using cp2_avalonia.Models;
 using cp2_avalonia.Platform;
 using cp2_avalonia.ViewModels;
@@ -37,14 +38,21 @@ namespace cp2_avalonia.Tools {
         // Linux XDND receive handler (null on non-Linux or until Loaded fires).
         private LinuxDrag? mLinuxDrag;
 
+        // View model whose events we are currently subscribed to.
+        private DropTargetViewModel? mHookedVm;
+
         public DropTarget() {
             InitializeComponent();
             DataContextChanged += (_, __) => {
+                // Unsubscribe from the previous view model so handlers don't accumulate.
+                UnhookViewModel();
                 if (DataContext is DropTargetViewModel vm) {
-                    vm.CloseRequested += () => Close();
-                    vm.PasteRequested += async () => await DoPasteAsync();
+                    vm.CloseRequested += OnCloseRequested;
+                    vm.PasteRequested += OnPasteRequested;
+                    mHookedVm = vm;
                 }
             };
+            Closed += (_, __) => UnhookViewModel();
 
             // Register TextBox drop handler after InitializeComponent.
             var textBox = this.FindControl<TextBox>("textArea");
@@ -106,6 +114,17 @@ namespace cp2_avalonia.Tools {
             VM!.TextArea = sb.ToString();
         }
 
+        private void UnhookViewModel() {
+            if (mHookedVm != null) {
+                mHookedVm.CloseRequested -= OnCloseRequested;
+                mHookedVm.PasteRequested -= OnPasteRequested;
+                mHookedVm = null;
+            }
+        }
+
+        private void OnCloseRequested() => Close();
+        private async void OnPasteRequested() => await DoPasteAsync();
+
         private void Window_Closed(object? sender, EventArgs e) {
             VM?.OnWindowClosed();
         }
@@ -124,7 +143,23 @@ namespace cp2_avalonia.Tools {
             }
         }
 
+        // Called from async-void handlers and fire-and-forget, so every exception must be
+        // caught here; an unhandled one would end the app.
         private async System.Threading.Tasks.Task DoPasteAsync() {
+            try {
+                await DoPasteInternalAsync();
+            } catch (Exception ex) {
+                Services.AppLog.E("Drop Target: paste failed", ex);
+                try {
+                    await PlatformUtil.ShowMessageAsync(this,
+                        "Unable to read the clipboard: " + ex.Message, "Error");
+                } catch (Exception ex2) {
+                    Services.AppLog.E("Unable to show error message", ex2);
+                }
+            }
+        }
+
+        private async System.Threading.Tasks.Task DoPasteInternalAsync() {
             var clipboard = GetTopLevel(this)?.Clipboard;
             if (clipboard == null) {
                 VM!.TextArea = "(No clipboard available)\n";
