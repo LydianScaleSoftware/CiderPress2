@@ -28,6 +28,7 @@ using AppCommon;
 
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
 
@@ -2300,22 +2301,22 @@ public class MainViewModel : ObservableObject
     /// </summary>
     /// <param name="dropData">Data from a drag-drop operation, or null for clipboard paste.</param>
     /// <param name="dropTarget">File entry the data was dropped onto, or NO_ENTRY.</param>
-    public async Task PasteOrDrop(Avalonia.Input.IDataObject? dropData, IFileEntry dropTarget) {
+    public async Task PasteOrDrop(Avalonia.Input.IDataTransfer? dropData, IFileEntry dropTarget) {
         if (!CheckPasteDropOkay()) {
             return;
         }
 
         // For cross-instance drag-drop, check the drag data object for CP2 JSON first.
         // Check both the private UTI and the plain-text fallback used by the macOS native
-        // drag path (where DataFormats.Text carries the JSON when custom UTI lookup fails).
+        // drag path (where DataFormat.Text carries the JSON when custom UTI lookup fails).
         // For keyboard Paste (Ctrl+V), dropData is null and we fall through to the clipboard.
         // Keep the raw text so we can extract the Cp2FileData array for the stream generator.
         ClipInfo? clipInfo = null;
         string? rawClipText = null;
         if (dropData != null) {
-            string? clipText = dropData.Get(ClipInfo.CROSS_INSTANCE_FORMAT) as string;
+            string? clipText = dropData.TryGetValue(ClipInfo.CrossInstanceDataFormat);
             if (!ClipInfo.IsClipTextFromCP2(clipText))
-                clipText = dropData.Get(Avalonia.Input.DataFormats.Text) as string;
+                clipText = dropData.TryGetText();
             clipInfo = ClipInfo.FromClipString(clipText);
             rawClipText = clipText;
         }

@@ -25,6 +25,7 @@ using Avalonia.Media.Imaging;
 using Avalonia;
 using System.Globalization;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using FancyTextDocument = FileConv.FancyText;

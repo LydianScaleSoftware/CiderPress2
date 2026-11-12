@@ -20,7 +20,7 @@ limitations under the License.
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    xmlns:local="clr-namespace:cp2_avalonia" xmlns:common="clr-namespace:cp2_avalonia.Controls" mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="800" x:Class="cp2_avalonia.Views.MainWindow" x:DataType="vm:MainViewModel" Title="{Binding WindowTitle}" Width="1400" Height="900" MinWidth="640" MinHeight="680" Icon="avares://CiderPress2/Res/cp2_app.ico">
+    xmlns:local="clr-namespace:cp2_avalonia" mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="800" x:Class="cp2_avalonia.Views.MainWindow" x:DataType="vm:MainViewModel" Title="{Binding WindowTitle}" Width="1400" Height="900" MinWidth="640" MinHeight="680" Icon="avares://CiderPress2/Res/cp2_app.ico">
 
     <Window.Resources>
         <ResourceDictionary>
@@ -556,7 +556,7 @@ limitations under the License.
                                             <ColumnDefinition Width="Auto"/>
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
-                                        <TextBox Grid.Column="0" Name="findFileTextBox" Text="{Binding FindFileVM.FileName, Mode=TwoWay}" Watermark="Filename…" FontFamily="{DynamicResource GeneralMonoFont}">
+                                        <TextBox Grid.Column="0" Name="findFileTextBox" Text="{Binding FindFileVM.FileName, Mode=TwoWay}" PlaceholderText="Filename…" FontFamily="{DynamicResource GeneralMonoFont}">
                                             <TextBox.KeyBindings>
                                                 <KeyBinding Gesture="Enter" Command="{Binding FindFileVM.FindNextCommand}"/>
                                                 <KeyBinding Gesture="Escape" Command="{Binding FindFileVM.HideCommand}"/>
@@ -861,21 +861,21 @@ limitations under the License.
                                         <CheckBox Content="Use Compression" IsChecked="{Binding Options.AddCompress}"/>
                                         <CheckBox Content="Strip Paths" IsChecked="{Binding Options.AddStripPaths}"/>
                                         <CheckBox Content="Raw (for DOS 3.x)" IsChecked="{Binding Options.AddRaw}"/>
-                                        <common:GroupBox Header="Preservation Handling" Margin="0,4,0,0">
+                                        <GroupBox Header="Preservation Handling" Margin="0,4,0,0">
                                             <StackPanel>
                                                 <CheckBox Content="AppleSingle" IsChecked="{Binding Options.AddPreserveAS}"/>
                                                 <CheckBox Content="AppleDouble" IsChecked="{Binding Options.AddPreserveADF}"/>
                                                 <CheckBox Content="NAPS" IsChecked="{Binding Options.AddPreserveNAPS}"/>
                                             </StackPanel>
-                                        </common:GroupBox>
-                                        <common:GroupBox Header="Import Configuration" Margin="0,4,0,0">
+                                        </GroupBox>
+                                        <GroupBox Header="Import Configuration" Margin="0,4,0,0">
                                             <StackPanel>
                                                 <CheckBox Content="Strip Redundant Extensions" IsChecked="{Binding Options.AddStripExt}" Margin="0,2,0,0"/>
                                                 <TextBlock Text="Conversion mode:" Margin="0,4,0,0"/>
                                                 <ComboBox Margin="0,4,0,0" ItemsSource="{Binding Options.ImportConverters}" SelectedItem="{Binding Options.SelectedImportConverter}" DisplayMemberBinding="{Binding Label}"/>
                                                 <Button Margin="0,4,0,0" HorizontalAlignment="Center" Content="Conversion Settings" Command="{Binding Options.ConfigureImportSettingsCommand}"/>
                                             </StackPanel>
-                                        </common:GroupBox>
+                                        </GroupBox>
                                     </StackPanel>
 
                                     <!-- Extract/Export Options header -->
@@ -886,15 +886,15 @@ limitations under the License.
                                         <CheckBox Content="Strip Paths" IsChecked="{Binding Options.ExtStripPaths}"/>
                                         <CheckBox Content="Add Filename Ext to Exports" IsChecked="{Binding Options.ExtAddExportExt}"/>
                                         <CheckBox Content="Raw (for DOS 3.x)" IsChecked="{Binding Options.ExtRaw}"/>
-                                        <common:GroupBox Header="Preservation Mode" Margin="0,4,0,0">
+                                        <GroupBox Header="Preservation Mode" Margin="0,4,0,0">
                                             <StackPanel>
                                                 <RadioButton Content="None" GroupName="ExtPreserve" IsChecked="{Binding Options.ExtPreserveNone}"/>
                                                 <RadioButton Content="AppleSingle" GroupName="ExtPreserve" IsChecked="{Binding Options.ExtPreserveAS}"/>
                                                 <RadioButton Content="AppleDouble" GroupName="ExtPreserve" IsChecked="{Binding Options.ExtPreserveADF}"/>
                                                 <RadioButton Content="NAPS" GroupName="ExtPreserve" IsChecked="{Binding Options.ExtPreserveNAPS}"/>
                                             </StackPanel>
-                                        </common:GroupBox>
-                                        <common:GroupBox Header="Export Configuration" Margin="0,4,0,8">
+                                        </GroupBox>
+                                        <GroupBox Header="Export Configuration" Margin="0,4,0,8">
                                             <StackPanel>
                                                 <TextBlock Text="Conversion mode:"/>
                                                 <RadioButton Content="Best (automatic)" GroupName="ExportCfg" Margin="0,4,0,0" IsChecked="{Binding Options.IsExportBestChecked}"/>
@@ -908,7 +908,7 @@ limitations under the License.
                                                 </Grid>
                                                 <Button Margin="0,4,0,0" HorizontalAlignment="Center" Content="Conversion Settings" Command="{Binding Options.ConfigureExportSettingsCommand}"/>
                                             </StackPanel>
-                                        </common:GroupBox>
+                                        </GroupBox>
                                     </StackPanel>
                                 </StackPanel>
                             </ScrollViewer>

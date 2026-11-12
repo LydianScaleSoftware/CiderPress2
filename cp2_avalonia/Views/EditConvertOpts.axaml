@@ -20,7 +20,6 @@ limitations under the License.
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:cp2_avalonia"
-        xmlns:common="clr-namespace:cp2_avalonia.Controls"
         mc:Ignorable="d"
         x:Class="cp2_avalonia.Views.EditConvertOpts"
         Title="{Binding DialogTitle}"
@@ -52,7 +51,7 @@ limitations under the License.
         </ScrollViewer>
 
         <!-- configurable controls; this should match the set in FileViewer.axaml -->
-        <common:GroupBox Grid.Row="2" Header="Options" MinHeight="120" Margin="0,8,0,0">
+        <GroupBox Grid.Row="2" Header="Options" MinHeight="120" Margin="0,8,0,0">
             <StackPanel>
                 <TextBlock Name="noOptions" Text="(none)" HorizontalAlignment="Center"/>
                 <CheckBox Name="checkBox1" Content="Check 1" Margin="0,2,0,0"/>
@@ -62,7 +61,7 @@ limitations under the License.
                     <TextBlock Name="stringInput1_Label" Text="Entry label:" Margin="0,0,8,0"/>
                     <TextBox Name="stringInput1_Box" Width="70" Text="100"/>
                 </StackPanel>
-                <common:GroupBox Name="multiGroup1" Header="Multi Group 1">
+                <GroupBox Name="multiGroup1" Header="Multi Group 1">
                     <StackPanel>
                         <RadioButton Name="radioButton1_1" GroupName="group1"
                                      Content="Radio 1" Margin="0,2,0,0"/>
@@ -73,8 +72,8 @@ limitations under the License.
                         <RadioButton Name="radioButton1_4" GroupName="group1"
                                      Content="Radio 4" Margin="0,2,0,0"/>
                     </StackPanel>
-                </common:GroupBox>
-                <common:GroupBox Name="multiGroup2" Header="Multi Group 2">
+                </GroupBox>
+                <GroupBox Name="multiGroup2" Header="Multi Group 2">
                     <StackPanel>
                         <RadioButton Name="radioButton2_1" GroupName="group2"
                                      Content="Radio 1" Margin="0,2,0,0"/>
@@ -85,9 +84,9 @@ limitations under the License.
                         <RadioButton Name="radioButton2_4" GroupName="group2"
                                      Content="Radio 4" Margin="0,2,0,0"/>
                     </StackPanel>
-                </common:GroupBox>
+                </GroupBox>
             </StackPanel>
-        </common:GroupBox>
+        </GroupBox>
 
         <StackPanel Grid.Row="3" Margin="0,8,0,0"
                     Orientation="Horizontal" HorizontalAlignment="Right">

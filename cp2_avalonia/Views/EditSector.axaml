@@ -19,8 +19,7 @@ limitations under the License.
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    xmlns:local="clr-namespace:cp2_avalonia"
-    xmlns:common="clr-namespace:cp2_avalonia.Controls" mc:Ignorable="d" x:Class="cp2_avalonia.Views.EditSector" Title="{Binding DialogTitle}" SizeToContent="Width" Height="560" CanResize="True" ShowInTaskbar="False" WindowStartupLocation="CenterOwner" Opened="Window_Opened" Closing="Window_Closing" KeyDown="Window_KeyDown">
+    xmlns:local="clr-namespace:cp2_avalonia" mc:Ignorable="d" x:Class="cp2_avalonia.Views.EditSector" Title="{Binding DialogTitle}" SizeToContent="Width" Height="560" CanResize="True" ShowInTaskbar="False" WindowStartupLocation="CenterOwner" Opened="Window_Opened" Closing="Window_Closing" KeyDown="Window_KeyDown">
 
     <Window.Styles>
         <!-- Validation error: labels turn red when input is invalid -->
@@ -204,15 +203,15 @@ limitations under the License.
                     <TextBlock Text="Configuration" HorizontalAlignment="Center"/>
                 </StackPanel>
 
-                <common:GroupBox Grid.Row="1" Header="Text Conversion">
+                <GroupBox Grid.Row="1" Header="Text Conversion">
                     <StackPanel>
                         <RadioButton GroupName="TxtConv" Content="High/low ASCII" IsChecked="{Binding IsChecked_ConvHighASCII}"/>
                         <RadioButton GroupName="TxtConv" Content="Mac OS Roman" Margin="0,2,0,0" IsChecked="{Binding IsChecked_ConvMOR}"/>
                         <RadioButton GroupName="TxtConv" Content="ISO Latin-1" Margin="0,2,0,0" IsChecked="{Binding IsChecked_ConvLatin}"/>
                     </StackPanel>
-                </common:GroupBox>
+                </GroupBox>
 
-                <common:GroupBox Grid.Row="2" Header="Advanced">
+                <GroupBox Grid.Row="2" Header="Advanced">
                     <StackPanel>
                         <TextBlock Text="Block order:" IsVisible="{Binding IsBlockOrderVisible}"/>
                         <ComboBox Name="blockOrderCombo" HorizontalAlignment="Stretch" Margin="0,2,0,0" IsVisible="{Binding IsBlockOrderVisible}" IsEnabled="{Binding IsBlockOrderEnabled}" ItemsSource="{Binding BlockOrderList}" SelectedIndex="{Binding SelectedBlockOrderIndex}"/>
@@ -223,7 +222,7 @@ limitations under the License.
                         <TextBlock Text="Sector format:" Margin="0,8,0,0"/>
                         <TextBlock Text="{Binding SectorCodecName, FallbackValue=DOS_33}" Margin="4,4,0,0"/>
                     </StackPanel>
-                </common:GroupBox>
+                </GroupBox>
             </Grid>
         </Grid>
 

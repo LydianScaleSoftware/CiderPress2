@@ -39,9 +39,17 @@ namespace cp2_avalonia.Models {
         /// <summary>
         /// Custom drag-drop format name used to carry CP2 JSON between two CP2 instances.
         /// Must be a reverse-DNS UTI so that macOS NSPasteboardItem accepts it; Avalonia's
-        /// DataObject treats it as an opaque key on all platforms.
+        /// DataTransfer treats it as an opaque key on all platforms.
         /// </summary>
         public const string CROSS_INSTANCE_FORMAT = "com.faddensoft.ciderpress2.clip";
+
+        /// <summary>
+        /// <see cref="CROSS_INSTANCE_FORMAT"/> as an Avalonia 12 data format.  This is a
+        /// platform format (not an application format) because the identifier is passed to the
+        /// system as is, which the native macOS and Linux drag code relies on.
+        /// </summary>
+        public static readonly Avalonia.Input.DataFormat<string> CrossInstanceDataFormat =
+            Avalonia.Input.DataFormat.CreateStringPlatformFormat(CROSS_INSTANCE_FORMAT);
 
         /// <summary>
         /// List of ClipFileEntry objects.  We receive one of these for every fork of every

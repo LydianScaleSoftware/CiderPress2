@@ -70,7 +70,7 @@ public class TreeViewHelperTests
         };
         var style = new Style(x => x.OfType<TreeViewItem>());
         style.Setters.Add(new Setter(TreeViewItem.IsExpandedProperty,
-            new Binding("IsExpanded", BindingMode.TwoWay)));
+            new ReflectionBinding("IsExpanded") { Mode = BindingMode.TwoWay }));
         tree.Styles.Add(style);
         var window = new Window { Content = tree, Width = 300, Height = 120 };
         window.Show();

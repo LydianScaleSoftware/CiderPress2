@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#pragma warning disable CS0618  // DataObject: the app uses it for drags too
 using Avalonia.Input;
 using DiskArc;
 
@@ -38,12 +37,14 @@ public class FileListDragTests : IDisposable
         FileListDrag.Current = null;
     }
 
-    private static DataObject MakeData(string workPath = "/disks/a.po")
+    private static DataTransfer MakeData(string workPath = "/disks/a.po")
     {
-        var data = new DataObject();
-        data.Set(FileListDrag.ENTRIES_FORMAT, new List<IFileEntry> { IFileEntry.NO_ENTRY });
-        data.Set(FileListDrag.SOURCE_FORMAT, Source);
-        data.Set(FileListDrag.WORKPATH_FORMAT, workPath);
+        var item = new DataTransferItem();
+        item.Set(FileListDrag.ENTRIES_FORMAT, new List<IFileEntry> { IFileEntry.NO_ENTRY });
+        item.Set(FileListDrag.SOURCE_FORMAT, Source);
+        item.Set(FileListDrag.WORKPATH_FORMAT, workPath);
+        var data = new DataTransfer();
+        data.Add(item);
         return data;
     }
 
@@ -51,9 +52,9 @@ public class FileListDragTests : IDisposable
     public void FormatNamesMatchWhatWasShipped()
     {
         // Other builds and the viewer must agree on these strings.
-        Assert.Equal("cp2_avalonia/FileListDrag", FileListDrag.ENTRIES_FORMAT);
-        Assert.Equal("cp2_avalonia/FileListDragSource", FileListDrag.SOURCE_FORMAT);
-        Assert.Equal("cp2_avalonia/FileListDragWorkPath", FileListDrag.WORKPATH_FORMAT);
+        Assert.Equal("cp2_avalonia/FileListDrag", FileListDrag.ENTRIES_FORMAT.Identifier);
+        Assert.Equal("cp2_avalonia/FileListDragSource", FileListDrag.SOURCE_FORMAT.Identifier);
+        Assert.Equal("cp2_avalonia/FileListDragWorkPath", FileListDrag.WORKPATH_FORMAT.Identifier);
     }
 
     [Fact]
@@ -68,7 +69,7 @@ public class FileListDragTests : IDisposable
     [Fact]
     public void NothingAvailable()
     {
-        Assert.False(FileListDrag.TryGet(new DataObject(), out _));
+        Assert.False(FileListDrag.TryGet(new DataTransfer(), out _));
     }
 
     [Fact]
@@ -79,7 +80,7 @@ public class FileListDragTests : IDisposable
             Source, "/disks/b.po");
         FileListDrag.Current = cur;
 
-        Assert.True(FileListDrag.TryGet(new DataObject(), out FileListDrag.State state));
+        Assert.True(FileListDrag.TryGet(new DataTransfer(), out FileListDrag.State state));
         Assert.Same(cur, state);
     }
 
@@ -97,6 +98,6 @@ public class FileListDragTests : IDisposable
     public void EmptyCurrentIsIgnored()
     {
         FileListDrag.Current = new FileListDrag.State(new List<IFileEntry>(), Source, "x");
-        Assert.False(FileListDrag.TryGet(new DataObject(), out _));
+        Assert.False(FileListDrag.TryGet(new DataTransfer(), out _));
     }
 }

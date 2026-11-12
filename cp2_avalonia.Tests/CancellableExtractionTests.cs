@@ -36,7 +36,7 @@ public class CancellableExtractionTests
             stopped = true;
             return null;
         });
-        while (!started) await Task.Delay(5);
+        while (!started) await Task.Delay(5, TestContext.Current.CancellationToken);
 
         await ex.CancelAndWaitAsync();
 

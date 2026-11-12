@@ -23,7 +23,6 @@ xmlns:vm="clr-namespace:cp2_avalonia.ViewModels"
                      xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
                      xmlns:local="clr-namespace:cp2_avalonia.Views"
                      xmlns:ftv="clr-namespace:cp2_avalonia.Controls.FancyTextViewer"
-                     xmlns:common="clr-namespace:cp2_avalonia.Controls"
                      mc:Ignorable="d"
                      x:DataType="vm:FileViewerViewModel"
                      Title="{Binding WindowTitle}"
@@ -323,7 +322,7 @@ xmlns:vm="clr-namespace:cp2_avalonia.ViewModels"
                 </StackPanel>
                 <!-- Hidden until a converter is configured: shown once there are options
                      to display or the "no options" message applies. -->
-                <common:GroupBox Name="optionsGroupBox"
+                <GroupBox Name="optionsGroupBox"
                                  Grid.Row="1" Header="Options"
                                  MinHeight="120"
                                  IsVisible="False"
@@ -359,7 +358,7 @@ xmlns:vm="clr-namespace:cp2_avalonia.ViewModels"
                                      Width="70"
                                      Text="100" />
                         </StackPanel>
-                        <common:GroupBox Name="multiGroup1"
+                        <GroupBox Name="multiGroup1"
                                          Header="Multi Group 1"
                                          IsVisible="False">
                             <StackPanel>
@@ -380,8 +379,8 @@ xmlns:vm="clr-namespace:cp2_avalonia.ViewModels"
                                              Content="Radio 4"
                                              Margin="0,2,0,0" />
                             </StackPanel>
-                        </common:GroupBox>
-                        <common:GroupBox Name="multiGroup2"
+                        </GroupBox>
+                        <GroupBox Name="multiGroup2"
                                          Header="Multi Group 2"
                                          IsVisible="False">
                             <StackPanel>
@@ -402,9 +401,9 @@ xmlns:vm="clr-namespace:cp2_avalonia.ViewModels"
                                              Content="Radio 4"
                                              Margin="0,2,0,0" />
                             </StackPanel>
-                        </common:GroupBox>
+                        </GroupBox>
                     </StackPanel>
-                </common:GroupBox>
+                </GroupBox>
 
                 <Button Grid.Row="3" Margin="0,10,0,10"
                         HorizontalAlignment="Center"

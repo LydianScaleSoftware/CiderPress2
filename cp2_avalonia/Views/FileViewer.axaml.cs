@@ -477,7 +477,7 @@ public partial class FileViewer : Window
 
     private void FileViewer_DragOver(object? sender, DragEventArgs e)
     {
-        e.DragEffects = FileListDrag.TryGet(e.Data, out _)
+        e.DragEffects = FileListDrag.TryGet(e.DataTransfer, out _)
             ? DragDropEffects.Copy : DragDropEffects.None;
         e.Handled = true;
     }
@@ -485,7 +485,7 @@ public partial class FileViewer : Window
     private void FileViewer_Drop(object? sender, DragEventArgs e)
     {
         if (VM == null) return;
-        if (!FileListDrag.TryGet(e.Data, out FileListDrag.State state)) return;
+        if (!FileListDrag.TryGet(e.DataTransfer, out FileListDrag.State state)) return;
 
         VM.LoadDroppedEntry(state.Source, state.Entries[0], state.WorkPath);
         e.Handled = true;

@@ -58,6 +58,7 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
     private bool mIsDraggingFileList;
     private readonly List<IFileEntry> mDragMoveList = new List<IFileEntry>();
     private Point mDragStartPosn = new Point(-1, -1);
+    private PointerPressedEventArgs? mDragPressArgs;
     private bool mSuppressSort;   // set when pointer pressed on a column resize grip
     // Set when the user presses an already-selected row within a multi-selection (no
     // modifier keys).  We suppress the DataGrid's immediate collapse-to-one-row so a
@@ -669,8 +670,8 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
         IFileEntry rawHit = HitTestScreenDropTarget(screenX, screenY, out bool inDirTree);
         IFileEntry target = inDirTree ? rawHit : ResolveExternalFileListDropTarget(rawHit);
 
-        var data = new DataObject();
-        data.Set(Models.ClipInfo.CROSS_INSTANCE_FORMAT, json);
+        var data = new DataTransfer();
+        data.Add(DataTransferItem.Create(Models.ClipInfo.CrossInstanceDataFormat, json));
         _ = vm.PasteOrDrop(data, target);
     }
 
@@ -704,9 +705,9 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
 
     private void LaunchPanel_DragOver(object? sender, DragEventArgs e)
     {
-        if (e.Data.Contains(DataFormats.Files))
+        if (e.DataTransfer.Contains(DataFormat.File))
         {
-            var files = e.Data.GetFiles()?.ToList();
+            var files = e.DataTransfer.TryGetFiles()?.ToList();
             if (files?.Count == 1)
             {
                 e.DragEffects = DragDropEffects.Copy;
@@ -792,9 +793,9 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
 
     private void LaunchPanel_Drop(object? sender, DragEventArgs e)
     {
-        if (e.Data.Contains(DataFormats.Files))
+        if (e.DataTransfer.Contains(DataFormat.File))
         {
-            var files = e.Data.GetFiles()?.ToList();
+            var files = e.DataTransfer.TryGetFiles()?.ToList();
             if (files?.Count == 1)
             {
                 string? path = files[0].TryGetLocalPath();
@@ -882,7 +883,7 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
 
     public bool IsTextInputFocused => TextInputFocus.IsTextInputFocused(this);
 
-    private void Window_FocusChanged(object? sender, RoutedEventArgs e)
+    private void Window_FocusChanged(object? sender, FocusChangedEventArgs e)
     {
         bool now = IsTextInputFocused;
         if (now == mTextInputFocused)
@@ -1137,7 +1138,10 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
     private void DismissMenuTimer_Tick(object? sender, EventArgs e)
     {
         mDismissMenuTimer?.Stop();
-        ((IInputRoot)this).ShowAccessKeys = false;
+        // TODO(avalonia12): IInputRoot was removed in Avalonia 12 and nothing public replaces
+        // ShowAccessKeys.  This used to clear the access-key underline mode that Alt+Up leaves
+        // behind, so the underlines may now stay visible after Alt+Up.
+        //((IInputRoot)this).ShowAccessKeys = false;
         FocusSelectedDirectoryTreeItem();
     }
 
@@ -1566,7 +1570,7 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
         }
         else
         {
-            // Don't check e.Data.Contains(DataFormats.Files) here — on Linux the
+            // Don't check e.DataTransfer.Contains(DataFormat.File) here — on Linux the
             // data formats may not be fully populated during DragOver.  The Drop
             // handler validates the actual data.  (WPF has no DragOver on the file
             // list at all — AllowDrop="True" accepts everything by default.)
@@ -1627,14 +1631,14 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
                 Debug.WriteLine("FL ignoring internal drop: no valid target");
             }
         }
-        else if (IsCrossInstanceCp2Drop(e.Data))
+        else if (IsCrossInstanceCp2Drop(e.DataTransfer))
         {
             // Another CP2 instance dragged files here — use the full paste path.
-            _ = ViewModel!.PasteOrDrop(e.Data, ResolveExternalFileListDropTarget(dropTarget));
+            _ = ViewModel!.PasteOrDrop(e.DataTransfer, ResolveExternalFileListDropTarget(dropTarget));
         }
-        else if (e.Data.Contains(DataFormats.Files))
+        else if (e.DataTransfer.Contains(DataFormat.File))
         {
-            var files = e.Data.GetFiles()?.ToList();
+            var files = e.DataTransfer.TryGetFiles()?.ToList();
             if (files != null)
             {
                 string?[] rawPaths = files.Select(f => f.TryGetLocalPath()).ToArray();
@@ -1908,6 +1912,9 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
             }
             mSuppressSort = false;
             mDragStartPosn = e.GetPosition(fileListDataGrid);
+            // DoDragDropAsync needs the press that arms the drag; the drag starts later,
+            // from PointerMoved.
+            mDragPressArgs = e;
 
             // If the user presses an already-selected row that is part of a larger
             // selection (no Ctrl/Shift/Cmd held), suppress the DataGrid's default
@@ -1954,7 +1961,10 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
             mDragStartPosn = new Point(-1, -1);
             // A drag is starting: keep the full selection, don't collapse on release.
             mPendingSingleSelect = null;
-            _ = StartFileListDragAsync(e);
+            if (mDragPressArgs != null)
+            {
+                _ = StartFileListDragAsync(e, mDragPressArgs);
+            }
         }
     }
 
@@ -2004,7 +2014,8 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
         fileListDataGrid.SelectedItems.Add(item);
     }
 
-    private async System.Threading.Tasks.Task StartFileListDragAsync(PointerEventArgs e)
+    private async System.Threading.Tasks.Task StartFileListDragAsync(PointerEventArgs e,
+        PointerPressedEventArgs pressArgs)
     {
         Debug.Assert(!mIsDraggingFileList);
         mIsDraggingFileList = true;
@@ -2022,14 +2033,16 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
         try
         {
             DragDropEffects result = DragDropEffects.None;
-            var data = new DataObject();
-            data.Set(FileListDrag.ENTRIES_FORMAT, mDragMoveList);
+            var data = new DataTransfer();
+            var dataItem = new DataTransferItem();
+            data.Add(dataItem);
+            dataItem.Set(FileListDrag.ENTRIES_FORMAT, mDragMoveList);
             if (DataContext is MainViewModel vm)
             {
                 if (vm.CurrentWorkObject != null)
                 {
-                    data.Set(FileListDrag.SOURCE_FORMAT, vm.CurrentWorkObject);
-                    data.Set(FileListDrag.WORKPATH_FORMAT, vm.WorkPathName);
+                    dataItem.Set(FileListDrag.SOURCE_FORMAT, vm.CurrentWorkObject);
+                    dataItem.Set(FileListDrag.WORKPATH_FORMAT, vm.WorkPathName);
                     // For windows that can't get the entries from the data object (a
                     // macOS native drag session has none of ours).
                     FileListDrag.Current = new FileListDrag.State(
@@ -2099,7 +2112,7 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
                     TempDirectoryTracker.Track(xferData.TempDir);
 
                     // Private MIME type for cross-CP2-instance drag.
-                    data.Set(ClipInfo.CROSS_INSTANCE_FORMAT, xferData.ClipJsonText);
+                    dataItem.Set(ClipInfo.CrossInstanceDataFormat, xferData.ClipJsonText);
 
                     if (OperatingSystem.IsMacOS())
                     {
@@ -2152,9 +2165,9 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
                     }
                     else
                     {
-                        // Windows: DataFormats.Files → HDROP shell drag.
+                        // Windows: DataFormat.File → HDROP shell drag.
                         if (xferData.ExtractedPaths.Count > 0)
-                            await AddStorageFilesToDataObject(data, xferData.ExtractedPaths);
+                            await AddStorageFilesToDataTransfer(data, xferData.ExtractedPaths);
                     }
                 }
 
@@ -2170,7 +2183,7 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
             }
             if (!nativeDragStarted)
             {
-                result = await DragDrop.DoDragDrop(e, data,
+                result = await DragDrop.DoDragDropAsync(pressArgs, data,
                     DragDropEffects.Copy | DragDropEffects.Move);
                 Debug.WriteLine("FL drag complete, effect=" + result);
             }
@@ -2210,13 +2223,13 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
 
     /// <summary>
     /// Converts extracted file paths to <see cref="Avalonia.Platform.Storage.IStorageItem"/>
-    /// objects and adds them to <paramref name="data"/> as <see cref="DataFormats.Files"/>.
+    /// objects and adds them to <paramref name="data"/> as <see cref="DataFormat.File"/> items.
     /// Builds an explicit <c>file://</c> URI for each path so that
     /// <see cref="Avalonia.Platform.Storage.IStorageProvider.TryGetFileFromPathAsync"/> succeeds
     /// on both Unix (where a bare path has no URI scheme) and Windows.
     /// </summary>
-    private async System.Threading.Tasks.Task AddStorageFilesToDataObject(
-        DataObject data, IReadOnlyList<string> paths)
+    private async System.Threading.Tasks.Task AddStorageFilesToDataTransfer(
+        DataTransfer data, IReadOnlyList<string> paths)
     {
         var items = new List<Avalonia.Platform.Storage.IStorageItem>();
         foreach (string path in paths)
@@ -2248,26 +2261,26 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
                 AppLog.W("Storage access failed for '" + path + "'", ex);
             }
         }
-        if (items.Count > 0)
-            data.Set(DataFormats.Files, items);
+        foreach (Avalonia.Platform.Storage.IStorageItem item in items)
+            data.Add(DataTransferItem.CreateFile(item));
     }
 
     /// <summary>
     /// Returns true when the drag data contains CP2 JSON from a different process.
     /// Same-process drags are identified by <see cref="mIsDraggingFileList"/> instead.
     /// </summary>
-    private static bool IsCrossInstanceCp2Drop(IDataObject data)
+    private static bool IsCrossInstanceCp2Drop(IDataTransfer data)
     {
-        // Try our private UTI first (set by Avalonia DoDragDrop on non-macOS, and
+        // Try our private UTI first (set by Avalonia DoDragDropAsync on non-macOS, and
         // also by CP2PromiseProvider when Avalonia's custom-UTI lookup works).
-        string? text = data.Get(ClipInfo.CROSS_INSTANCE_FORMAT) as string;
+        string? text = data.TryGetValue(ClipInfo.CrossInstanceDataFormat);
 
-        // Fallback: on macOS the native drag exposes the JSON as DataFormats.Text
-        // (public.utf8-plain-text) to guarantee Avalonia's IDataObject can surface it.
+        // Fallback: on macOS the native drag exposes the JSON as DataFormat.Text
+        // (public.utf8-plain-text) to guarantee Avalonia's IDataTransfer can surface it.
         if (text == null)
-            text = data.Get(DataFormats.Text) as string;
+            text = data.TryGetText();
 
-        Debug.WriteLine($"IsCrossInstanceCp2Drop: formats=[{string.Join(",", data.GetDataFormats())}]" +
+        Debug.WriteLine($"IsCrossInstanceCp2Drop: formats=[{string.Join(",", data.Formats)}]" +
             $" hasJson={ClipInfo.IsClipTextFromCP2(text)}");
 
         if (!ClipInfo.IsClipTextFromCP2(text)) return false;
@@ -2416,17 +2429,17 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
                 }
             }
         }
-        else if (IsCrossInstanceCp2Drop(e.Data))
+        else if (IsCrossInstanceCp2Drop(e.DataTransfer))
         {
             if (ViewModel?.ShowSingleDirFileList != true)
             {
                 SelectVolumeRootDirectory();
             }
-            _ = ViewModel!.PasteOrDrop(e.Data, curDir);
+            _ = ViewModel!.PasteOrDrop(e.DataTransfer, curDir);
         }
-        else if (e.Data.Contains(DataFormats.Files))
+        else if (e.DataTransfer.Contains(DataFormat.File))
         {
-            var files = e.Data.GetFiles()?.ToList();
+            var files = e.DataTransfer.TryGetFiles()?.ToList();
             if (files != null)
             {
                 string?[] rawPaths = files.Select(f => f.TryGetLocalPath()).ToArray();
@@ -2492,13 +2505,13 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
             // Copy the list — see FileListDataGrid_Drop comment about race condition.
             _ = ViewModel!.MoveFiles(new List<IFileEntry>(mDragMoveList), dropTarget);
         }
-        else if (IsCrossInstanceCp2Drop(e.Data))
+        else if (IsCrossInstanceCp2Drop(e.DataTransfer))
         {
-            _ = ViewModel!.PasteOrDrop(e.Data, dropTarget);
+            _ = ViewModel!.PasteOrDrop(e.DataTransfer, dropTarget);
         }
-        else if (e.Data.Contains(DataFormats.Files))
+        else if (e.DataTransfer.Contains(DataFormat.File))
         {
-            var files = e.Data.GetFiles()?.ToList();
+            var files = e.DataTransfer.TryGetFiles()?.ToList();
             if (files != null)
             {
                 string?[] rawPaths = files.Select(f => f.TryGetLocalPath()).ToArray();

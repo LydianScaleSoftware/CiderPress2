@@ -20,6 +20,7 @@ using System.Text;
 
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Platform.Storage;
 using DiskArc;
 using cp2_avalonia.Common;
@@ -168,11 +169,11 @@ namespace cp2_avalonia.Tools {
             var sb = new StringBuilder();
             sb.AppendLine("=== Clipboard paste ===");
 
-            // On X11 Avalonia maps "text/uri-list" to DataFormat.File, so
-            // IClipboard.GetDataAsync("text/uri-list") silently returns null.
-            // DataFormats.Files is the correct key on all platforms.
-            object? filesObj = await clipboard.GetDataAsync(DataFormats.Files);
-            if (filesObj is IEnumerable<IStorageItem> storageItems) {
+            // On X11 Avalonia maps "text/uri-list" to DataFormat.File, so reading it as a
+            // plain format silently returns null.  DataFormat.File is the correct key on
+            // all platforms.
+            IStorageItem[]? storageItems = await clipboard.TryGetFilesAsync();
+            if (storageItems is { Length: > 0 }) {
                 sb.AppendLine("=== Files ===");
                 foreach (IStorageItem item in storageItems)
                     sb.AppendLine("  " + (item.TryGetLocalPath() ?? item.Name));
@@ -180,7 +181,7 @@ namespace cp2_avalonia.Tools {
                 return;
             }
 
-            string? text = await clipboard.GetTextAsync();
+            string? text = await clipboard.TryGetTextAsync();
             if (text == null) {
                 sb.AppendLine("(no text or files on clipboard)");
             } else {
@@ -202,14 +203,16 @@ namespace cp2_avalonia.Tools {
         }
 
         private void TextArea_Drop(object? sender, DragEventArgs e) {
-            ShowDataObject(e.Data);
+            ShowDataObject(e.DataTransfer);
         }
 
-        private void ShowDataObject(IDataObject dataObj) {
+        private void ShowDataObject(IDataTransfer dataObj) {
             StringBuilder sb = new StringBuilder();
 
-            IEnumerable<string> formats = dataObj.GetDataFormats();
-            var formatList = new List<string>(formats);
+            var formatList = new List<string>();
+            foreach (DataFormat format in dataObj.Formats) {
+                formatList.Add(format.Identifier);
+            }
 
             sb.AppendLine("Found " + formatList.Count + " format(s):");
             foreach (string format in formatList) {
@@ -217,8 +220,8 @@ namespace cp2_avalonia.Tools {
                 sb.AppendLine(format);
             }
 
-            if (dataObj.Contains(DataFormats.Text)) {
-                string? text = dataObj.Get(DataFormats.Text) as string;
+            if (dataObj.Contains(DataFormat.Text)) {
+                string? text = dataObj.TryGetText();
                 if (ClipInfo.IsClipTextFromCP2(text)) {
                     sb.AppendLine();
                     sb.AppendLine("=== CiderPress II clipboard data ===");
@@ -231,8 +234,8 @@ namespace cp2_avalonia.Tools {
                 }
             }
 
-            if (dataObj.Contains(DataFormats.Files)) {
-                var files = dataObj.GetFiles();
+            if (dataObj.Contains(DataFormat.File)) {
+                var files = dataObj.TryGetFiles();
                 if (files != null) {
                     sb.AppendLine();
                     sb.AppendLine("=== Files ===");

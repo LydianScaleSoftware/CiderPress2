@@ -36,6 +36,11 @@ using AppCommon;
 using Models;
 
 public class ClipboardService : IClipboardService {
+    // Platform format for the file-manager URI list (the identifier is passed to the system
+    // as is).
+    private static readonly DataFormat<string> UriListFormat =
+        DataFormat.CreateStringPlatformFormat("text/uri-list");
+
     private ClipInfo? mPendingClipInfo;
     private List<ClipFileEntry>? mCachedClipEntries;
     private string?[]? mXferPaths;     // parallel to mCachedClipEntries; same-process fast path
@@ -66,12 +71,12 @@ public class ClipboardService : IClipboardService {
         TempDirectoryTracker.Track(mClipTempDir);
         mXferPaths = files.TempDir != null ? files.XferPaths : null;
 
-        var dataObj = new DataObject();
+        var dataItem = new DataTransferItem();
         // Inject Cp2FileData into the JSON so cross-instance paste can locate temp files.
         string clipJson = clipInfo.ToClipString();
         if (mXferPaths != null)
             clipJson = Cp2ClipUtil.InjectFileData(clipJson, mXferPaths);
-        dataObj.Set(DataFormats.Text, clipJson);
+        dataItem.Set(DataFormat.Text, clipJson);
 
         if (files.TopLevelForeignPaths.Count > 0) {
             // Offer only the top-level items, so that pasting a directory in a file manager
@@ -81,12 +86,15 @@ public class ClipboardService : IClipboardService {
                 uriList.Append(new Uri(path).AbsoluteUri);
                 uriList.Append("\r\n");
             }
-            dataObj.Set("text/uri-list", uriList.ToString());
+            dataItem.Set(UriListFormat, uriList.ToString());
         }
 
         var clipboard = GetClipboard();
-        if (clipboard != null)
-            await clipboard.SetDataObjectAsync(dataObj);
+        if (clipboard != null) {
+            var dataObj = new DataTransfer();
+            dataObj.Add(dataItem);
+            await clipboard.SetDataAsync(dataObj);
+        }
     }
 
     public async Task<ClipInfo?> GetClipAsync() {
@@ -119,20 +127,18 @@ public class ClipboardService : IClipboardService {
         }
         var clipboard = GetClipboard();
         if (clipboard == null) return null;
-        return await clipboard.GetTextAsync();
+        return await clipboard.TryGetTextAsync();
     }
 
     public async Task<string?> GetUriListAsync() {
         var clipboard = GetClipboard();
         if (clipboard == null) return null;
 
-        // IClipboard.GetDataAsync(string) is [Obsolete] in Avalonia 11.3 and routes
-        // "text/uri-list" through a DataFormat<byte[]> lookup that silently fails on X11
-        // (the X11 backend maps "text/uri-list" to DataFormat.File, not a byte format).
-        // Use DataFormats.Files instead — it calls dataTransfer.TryGetFilesAsync() and
-        // returns IStorageItem[], which we convert to a text/uri-list string.
-        object? filesObj = await clipboard.GetDataAsync(DataFormats.Files);
-        if (filesObj is IEnumerable<IStorageItem> storageItems) {
+        // The X11 backend maps "text/uri-list" to DataFormat.File, not a byte format, so
+        // read DataFormat.File first — TryGetFilesAsync() returns IStorageItem[], which we
+        // convert to a text/uri-list string.
+        IStorageItem[]? storageItems = await clipboard.TryGetFilesAsync();
+        if (storageItems is { Length: > 0 }) {
             var sb = new StringBuilder();
             foreach (IStorageItem item in storageItems) {
                 string? localPath = item.TryGetLocalPath();
@@ -156,7 +162,7 @@ public class ClipboardService : IClipboardService {
         }
 
         // Plain-text fallback: file:// URIs or absolute paths.
-        string? plainText = await clipboard.GetTextAsync();
+        string? plainText = await clipboard.TryGetTextAsync();
         if (!string.IsNullOrEmpty(plainText)) {
             string firstLine = plainText.Split('\n')[0].Trim('\r', ' ');
             if (firstLine.StartsWith("file://") ||
@@ -225,10 +231,16 @@ public class ClipboardService : IClipboardService {
             IClipboard clipboard, string format) {
         try
         {
-            object? data = await clipboard.GetDataAsync(format);
-            if (data is string s) return s;
-            if (data is byte[] { Length: > 0 } bytes)
-                return Encoding.UTF8.GetString(bytes);
+            DataFormat<string> dataFormat = DataFormat.CreateStringPlatformFormat(format);
+            using IAsyncDataTransfer? transfer = await clipboard.TryGetDataAsync();
+            if (transfer != null) {
+                foreach (IAsyncDataTransferItem item in transfer.Items) {
+                    object? data = await item.TryGetRawAsync(dataFormat);
+                    if (data is string s) return s;
+                    if (data is byte[] { Length: > 0 } bytes)
+                        return Encoding.UTF8.GetString(bytes);
+                }
+            }
         }
         catch (Exception e)
         {
