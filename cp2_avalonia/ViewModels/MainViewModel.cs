@@ -206,13 +206,18 @@ public class MainViewModel : ObservableObject
 
 
         // 18. ViewFilesCommand — needs file open + entries selected + file list visible.
-        // Routes through HandleFileListDoubleClick (like WPF's ViewFilesCmd) so activating a
-        // directory navigates into it instead of opening a (useless, slow) viewer on it; only
-        // real files fall through to the viewer.
+        // Routes through HandleFileListDoubleClick (like WPF's ViewFilesCmd) so a lone
+        // directory in the single-directory list is changed to, and a disk image or archive
+        // is opened, rather than viewed.  Unlike WPF, a lone directory in the full list (or
+        // in a file archive) views every file below it.
         ViewFilesCommand = new RelayCommand(
             () => HandleFileListDoubleClick(forceNew: false), CanViewFiles);
         ViewFilesInNewViewerCommand = new RelayCommand(
             () => HandleFileListDoubleClick(forceNew: true), CanViewFiles);
+        // The file list menus show this in place of the View Files items when
+        // IsChangeToDirectorySelected; it does what Enter does there.
+        ChangeToDirectoryCommand = new RelayCommand(
+            () => HandleFileListDoubleClick(forceNew: false), CanViewFiles);
 
         // 19. AddFilesCommand — async, needs open + writable + multi-file + file list visible
         AddFilesCommand = new AsyncRelayCommand(
@@ -855,10 +860,16 @@ public class MainViewModel : ObservableObject
     // Step 5: Group D — view/navigation double-click and metadata handlers
 
     /// <summary>
-    /// Handles a double click on the file list.  If the entry is a directory, selects it in
-    /// the directory tree.  If it is an archive/disk that can be opened as a sub-volume, opens
-    /// it; otherwise, views the file.
+    /// Handles a double click on the file list, and the View Files commands (Enter).  A lone
+    /// directory in the single-directory list is changed to.  A lone disk image or archive is
+    /// opened as a sub-volume.  Anything else is viewed.
     /// </summary>
+    /// <remarks>
+    /// A lone directory in the full list (or in a file archive), whether double-clicked or
+    /// activated with Enter / View Files, views every file below it.  This goes beyond WPF,
+    /// where it points the directory tree at the directory (and does nothing in an archive).
+    /// </remarks>
+    /// <param name="forceNew">Open a new viewer window instead of reusing the active one.</param>
     public void HandleFileListDoubleClick(bool forceNew = false)
     {
         ArchiveTreeItem? arcTreeSel = CachedArchiveTreeSelection;
@@ -889,33 +900,20 @@ public class MainViewModel : ObservableObject
             IFileEntry entry = fli.FileEntry;
             if (entry.IsDirectory)
             {
-                if (fs != null)
+                if (fs != null && ShowSingleDirFileList)
                 {
-                    if (ShowSingleDirFileList)
+                    // Single-directory mode: switch the file list to show the new
+                    // directory's contents, keeping focus in the file list.
+                    FileList.RequestFocusAfterPopulate();
+                    if (!_viewActions.SelectDirectoryTreeItemByEntry(DirectoryTree.TreeRoot, entry))
                     {
-                        // Single-directory mode: switch the file list to show the new
-                        // directory's contents, keeping focus in the file list.
-                        FileList.RequestFocusAfterPopulate();
-                        if (!_viewActions.SelectDirectoryTreeItemByEntry(DirectoryTree.TreeRoot, entry))
-                        {
-                            Debug.WriteLine("Unable to find dir tree entry for " + entry);
-                        }
+                        Debug.WriteLine("Unable to find dir tree entry for " + entry);
                     }
-                    else
-                    {
-                        // Full-list mode: point the directory tree at the new directory and
-                        // move focus to it (WPF behavior).  The file list stays as the full
-                        // listing; OnDirectoryTreeSelectionChanged highlights the new dir in it,
-                        // which makes the DataGrid grab focus asynchronously -- so the focus shift
-                        // must be deferred past that settle to win.
-                        if (!_viewActions.SelectDirectoryTreeItemByEntry(DirectoryTree.TreeRoot, entry))
-                        {
-                            Debug.WriteLine("Unable to find dir tree entry for " + entry);
-                        }
-                        _viewActions.FocusDirectoryTreeDeferred();
-                    }
+                    return;
                 }
-                // else: directory file in a file archive — nothing to do.
+                // Full list or file archive: view every file below the directory
+                // (GetViewerSelection).
+                _ = forceNew ? ViewFilesInNew() : ViewFiles();
                 return;
             }
 
@@ -1183,6 +1181,11 @@ public class MainViewModel : ObservableObject
             out int firstSel, out bool prePopulateForward)
     {
         prePopulateForward = false;
+        if (rawSelCount == 1 && FileList.Selection.Count == 1 &&
+                FileList.Selection[0].FileEntry.IsDirectory) {
+            return GetDirectoryViewerSelection(FileList.Selection[0].FileEntry,
+                out archiveOrFileSystem, out selected, out firstSel, out prePopulateForward);
+        }
         if (!GetFileSelection(omitDir: true, omitOpenArc: true, closeOpenArc: false,
                 oneMeansAll: true, out archiveOrFileSystem, out IFileEntry _,
                 out selected, out firstSel)) {
@@ -1199,6 +1202,105 @@ public class MainViewModel : ObservableObject
         // Pre-populate Forward only when the user explicitly selected multiple files.
         prePopulateForward = rawSelCount > 1;
         return true;
+    }
+
+    /// <summary>
+    /// Viewer selection when the only selected row is a directory: the files in it, as if
+    /// they had all been selected.  In the full list (and in file archives, which always show
+    /// the full list) it is every file below it, in list order.  In the single-directory list
+    /// it would be the directory's own files, but Enter and View Files change to the directory
+    /// there instead (<see cref="HandleFileListDoubleClick"/>), so that case is not normally
+    /// reached.
+    /// </summary>
+    /// <remarks>
+    /// This goes beyond WPF, where View Files on a lone directory navigates to it.
+    /// </remarks>
+    private bool GetDirectoryViewerSelection(IFileEntry dir,
+            out object? archiveOrFileSystem, out List<IFileEntry>? selected,
+            out int firstSel, out bool prePopulateForward)
+    {
+        selected = null;
+        firstSel = 0;
+        prePopulateForward = false;
+        if (!GetSelectedArcDir(out archiveOrFileSystem, out DiskArcNode? _, out IFileEntry _)) {
+            _ = mDialogService.ShowMessageAsync("No selection could be determined.",
+                "ViewFiles Debug");
+            return false;
+        }
+        bool isArchive = archiveOrFileSystem is IArchive;
+        selected = CollectDirectoryFiles(dir, isArchive, recurse: !ShowSingleDirFileList,
+            FileList.Items);
+        HandleOpenArchives(selected, omitOpenArc: true, closeOpenArc: false);
+        if (selected.Count == 0) {
+            _ = mDialogService.ShowMessageAsync("No viewable files in \"" + dir.FileName +
+                "\" (it is empty, or holds only directories or open disks/archives).", "Empty");
+            return false;
+        }
+        prePopulateForward = selected.Count > 1;
+        return true;
+    }
+
+    /// <summary>
+    /// Lists the files (not directories) in <paramref name="dir"/>.  With
+    /// <paramref name="recurse"/> false, only the directory's own files, in directory order.
+    /// With it true, every file below the directory that appears in
+    /// <paramref name="listItems"/>, in that order (so the current sort is kept).
+    /// </summary>
+    /// <param name="isArchive">True for a file archive.  Archive directories are plain
+    ///   entries with no children, so the files are found by path, always recursively (an
+    ///   archive is always shown as the full list).</param>
+    /// <param name="listItems">The rows of the file list (the full list when recursing).</param>
+    internal static List<IFileEntry> CollectDirectoryFiles(IFileEntry dir, bool isArchive,
+            bool recurse, IEnumerable<FileListItem> listItems)
+    {
+        var files = new List<IFileEntry>();
+        if (!isArchive && !recurse) {
+            foreach (IFileEntry child in dir) {
+                if (!child.IsDirectory) {
+                    files.Add(child);
+                }
+            }
+            return files;
+        }
+        if (!isArchive) {
+            // Disk image: walk each row's parent chain.
+            foreach (FileListItem item in listItems) {
+                IFileEntry entry = item.FileEntry;
+                if (!entry.IsDirectory && IsBelow(entry, dir)) {
+                    files.Add(entry);
+                }
+            }
+            return files;
+        }
+        // File archive: match on the path prefix.
+        string prefix = dir.FullPathName;
+        char sep = dir.DirectorySeparatorChar;
+        if (sep != IFileEntry.NO_DIR_SEP && !prefix.EndsWith(sep)) {
+            prefix += sep;
+        }
+        foreach (FileListItem item in listItems) {
+            IFileEntry entry = item.FileEntry;
+            if (!entry.IsDirectory && entry != dir &&
+                    entry.FullPathName.StartsWith(prefix, StringComparison.Ordinal)) {
+                files.Add(entry);
+            }
+        }
+        return files;
+    }
+
+    /// <summary>
+    /// True if <paramref name="entry"/> is somewhere inside directory <paramref name="dir"/>.
+    /// </summary>
+    private static bool IsBelow(IFileEntry entry, IFileEntry dir)
+    {
+        IFileEntry parent = entry.ContainingDir;
+        while (parent != IFileEntry.NO_ENTRY) {
+            if (parent == dir) {
+                return true;
+            }
+            parent = parent.ContainingDir;
+        }
+        return false;
     }
 
     /// <summary>
@@ -3327,7 +3429,37 @@ public class MainViewModel : ObservableObject
             SetProperty(ref mShowSingleDirFileList, value);
             FileList.ShowCol_FileName = value;
             FileList.ShowCol_PathName = !value;
+            UpdateChangeToDirectorySelected();
         }
+    }
+
+    private bool mIsChangeToDirectorySelected;
+    /// <summary>
+    /// True when the only selected row is a directory in the single-directory list of a disk
+    /// image, where Enter (View Files) changes to the directory.  The file list menus then
+    /// show "Change to Directory" in place of the View Files items.
+    /// </summary>
+    public bool IsChangeToDirectorySelected
+    {
+        get => mIsChangeToDirectorySelected;
+        private set
+        {
+            if (SetProperty(ref mIsChangeToDirectorySelected, value)) {
+                OnPropertyChanged(nameof(ShowViewFilesMenuItems));
+            }
+        }
+    }
+
+    /// <summary>
+    /// True when the file list menus should show View Files and View Files in New Viewer.
+    /// </summary>
+    public bool ShowViewFilesMenuItems => AreFileEntriesSelected && !IsChangeToDirectorySelected;
+
+    private void UpdateChangeToDirectorySelected()
+    {
+        IsChangeToDirectorySelected = ShowSingleDirFileList &&
+            mCurrentWorkObject is IFileSystem &&
+            FileList.Selection.Count == 1 && FileList.Selection[0].FileEntry.IsDirectory;
     }
 
     private bool mHasInfoOnly;
@@ -3419,7 +3551,12 @@ public class MainViewModel : ObservableObject
     public bool AreFileEntriesSelected
     {
         get => mAreFileEntriesSelected;
-        set => SetProperty(ref mAreFileEntriesSelected, value);
+        set
+        {
+            if (SetProperty(ref mAreFileEntriesSelected, value)) {
+                OnPropertyChanged(nameof(ShowViewFilesMenuItems));
+            }
+        }
     }
 
     private bool mIsSingleEntrySelected;
@@ -3594,6 +3731,7 @@ public class MainViewModel : ObservableObject
         PasteCommand.NotifyCanExecuteChanged();
         ViewFilesCommand.NotifyCanExecuteChanged();
         ViewFilesInNewViewerCommand.NotifyCanExecuteChanged();
+        ChangeToDirectoryCommand.NotifyCanExecuteChanged();
         AddFilesCommand.NotifyCanExecuteChanged();
         ImportFilesCommand.NotifyCanExecuteChanged();
         ExtractFilesCommand.NotifyCanExecuteChanged();
@@ -3648,6 +3786,7 @@ public class MainViewModel : ObservableObject
     // Actions menu
     public IRelayCommand ViewFilesCommand { get; }
     public IRelayCommand ViewFilesInNewViewerCommand { get; }
+    public IRelayCommand ChangeToDirectoryCommand { get; }
     public IRelayCommand AddFilesCommand { get; }
     public IRelayCommand ImportFilesCommand { get; }
     public IRelayCommand ExtractFilesCommand { get; }
@@ -3801,6 +3940,7 @@ public class MainViewModel : ObservableObject
 
         AreFileEntriesSelected = FileList.Selection.Count > 0;
         IsSingleEntrySelected = FileList.Selection.Count == 1;
+        UpdateChangeToDirectorySelected();
 
         if (FileList.Selection.Count == 1) {
             FileListItem selItem = FileList.Selection[0];
@@ -3950,27 +4090,7 @@ public class MainViewModel : ObservableObject
             }
         }
 
-        if (omitOpenArc || closeOpenArc) {
-            ArchiveTreeItem? arcTreeSel = CachedArchiveTreeSelection;
-            bool hasOpenChildren = arcTreeSel != null && arcTreeSel.Items.Count != 0;
-            if (hasOpenChildren) {
-                for (int i = 0; i < selected.Count; i++) {
-                    IFileEntry entry = selected[i];
-                    if (entry.IsDirectory) {
-                        continue;
-                    }
-                    ArchiveTreeItem? treeItem =
-                        ArchiveTreeItem.FindItemByEntry(ArchiveTree.TreeRoot, entry);
-                    if (treeItem != null) {
-                        if (omitOpenArc) {
-                            selected.RemoveAt(i--);
-                        } else if (closeOpenArc) {
-                            CloseSubTree(treeItem);
-                        }
-                    }
-                }
-            }
-        }
+        HandleOpenArchives(selected, omitOpenArc, closeOpenArc);
 
         if (singleSelItem != null) {
             for (int i = 0; i < selected.Count; i++) {
@@ -3981,6 +4101,40 @@ public class MainViewModel : ObservableObject
             }
         }
         return true;
+    }
+
+    /// <summary>
+    /// Deals with entries that are open in the archive tree (disk images or archives inside
+    /// the current one): removes them from <paramref name="selected"/> if
+    /// <paramref name="omitOpenArc"/> is set, or closes them if <paramref name="closeOpenArc"/>
+    /// is set.
+    /// </summary>
+    private void HandleOpenArchives(List<IFileEntry> selected, bool omitOpenArc,
+            bool closeOpenArc)
+    {
+        if (!omitOpenArc && !closeOpenArc) {
+            return;
+        }
+        ArchiveTreeItem? arcTreeSel = CachedArchiveTreeSelection;
+        bool hasOpenChildren = arcTreeSel != null && arcTreeSel.Items.Count != 0;
+        if (!hasOpenChildren) {
+            return;
+        }
+        for (int i = 0; i < selected.Count; i++) {
+            IFileEntry entry = selected[i];
+            if (entry.IsDirectory) {
+                continue;
+            }
+            ArchiveTreeItem? treeItem =
+                ArchiveTreeItem.FindItemByEntry(ArchiveTree.TreeRoot, entry);
+            if (treeItem != null) {
+                if (omitOpenArc) {
+                    selected.RemoveAt(i--);
+                } else if (closeOpenArc) {
+                    CloseSubTree(treeItem);
+                }
+            }
+        }
     }
 
     private void AddDirEntries(IFileEntry entry,

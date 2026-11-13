@@ -579,19 +579,20 @@ limitations under the License.
                              menu's Opening handler wired in code-behind. -->
                         <Grid.ContextMenu>
                             <ContextMenu Name="fileListPanelContextMenu">
-                                <MenuItem Header="View Files" Command="{Binding ViewFilesCommand}" IsVisible="{Binding AreFileEntriesSelected}"/>
-                                <MenuItem Header="_View Files in New Viewer" Command="{Binding ViewFilesInNewViewerCommand}" InputGesture="Ctrl+Enter" IsVisible="{Binding AreFileEntriesSelected}"/>
+                                <MenuItem Header="Change to Directory" Command="{Binding ChangeToDirectoryCommand}" InputGesture="Enter" IsVisible="{Binding IsChangeToDirectorySelected}"/>
+                                <MenuItem Header="View Files" Command="{Binding ViewFilesCommand}" InputGesture="Enter" IsVisible="{Binding ShowViewFilesMenuItems}"/>
+                                <MenuItem Header="_View Files in New Viewer" Command="{Binding ViewFilesInNewViewerCommand}" InputGesture="Ctrl+Enter" IsVisible="{Binding ShowViewFilesMenuItems}"/>
                                 <MenuItem Header="Rename / Edit Attributes..." Command="{Binding EditAttributesCommand}" InputGesture="Alt+Enter" IsVisible="{Binding AreFileEntriesSelected}"/>
-                                <MenuItem Header="Extract Files..." Command="{Binding ExtractFilesCommand}" IsVisible="{Binding AreFileEntriesSelected}"/>
+                                <MenuItem Header="Extract Files..." Command="{Binding ExtractFilesCommand}" InputGesture="Ctrl+E" IsVisible="{Binding AreFileEntriesSelected}"/>
                                 <MenuItem Header="Export Files..." Command="{Binding ExportFilesCommand}" IsVisible="{Binding AreFileEntriesSelected}"/>
-                                <MenuItem Header="Copy" Command="{Binding CopyCommand}" IsVisible="{Binding AreFileEntriesSelected}"/>
-                                <MenuItem Header="Delete Files" Command="{Binding DeleteFilesCommand}" IsVisible="{Binding AreFileEntriesSelected}"/>
+                                <MenuItem Header="Copy" Command="{Binding CopyCommand}" InputGesture="Ctrl+C" IsVisible="{Binding AreFileEntriesSelected}"/>
+                                <MenuItem Header="Delete Files" Command="{Binding DeleteFilesCommand}" InputGesture="Delete" IsVisible="{Binding AreFileEntriesSelected}"/>
                                 <MenuItem Header="Test Files" Command="{Binding TestFilesCommand}" IsVisible="{Binding AreFileEntriesSelected}"/>
                                 <Separator IsVisible="{Binding AreFileEntriesSelected}"/>
-                                <MenuItem Header="Add Files..." Command="{Binding AddFilesCommand}"/>
+                                <MenuItem Header="Add Files..." Command="{Binding AddFilesCommand}" InputGesture="Ctrl+Shift+A"/>
                                 <MenuItem Header="Import Files..." Command="{Binding ImportFilesCommand}"/>
-                                <MenuItem Header="Paste" Command="{Binding PasteCommand}"/>
-                                <MenuItem Header="Create Directory..." Command="{Binding CreateDirectoryCommand}"/>
+                                <MenuItem Header="Paste" Command="{Binding PasteCommand}" InputGesture="Ctrl+V"/>
+                                <MenuItem Header="Create Directory..." Command="{Binding CreateDirectoryCommand}" InputGesture="Ctrl+Shift+N"/>
                             </ContextMenu>
                         </Grid.ContextMenu>
                         <!-- Center panel option 1: file list DataGrid -->
@@ -704,20 +705,22 @@ limitations under the License.
                             <DataGrid.ContextMenu>
                                 <!-- TODO: ContextMenuOpening refocus handler -->
                                 <ContextMenu>
-                                    <MenuItem Header="View Files" Command="{Binding ViewFilesCommand}"/>
-                                    <MenuItem Header="_View Files in New Viewer" Command="{Binding ViewFilesInNewViewerCommand}" InputGesture="Ctrl+Enter"/>
+                                    <!-- A lone directory in the single-directory list is changed to, not viewed. -->
+                                    <MenuItem Header="Change to Directory" Command="{Binding ChangeToDirectoryCommand}" InputGesture="Enter" IsVisible="{Binding IsChangeToDirectorySelected}"/>
+                                    <MenuItem Header="View Files" Command="{Binding ViewFilesCommand}" InputGesture="Enter" IsVisible="{Binding ShowViewFilesMenuItems}"/>
+                                    <MenuItem Header="_View Files in New Viewer" Command="{Binding ViewFilesInNewViewerCommand}" InputGesture="Ctrl+Enter" IsVisible="{Binding ShowViewFilesMenuItems}"/>
 
                                     <MenuItem Header="Rename / Edit Attributes..." Command="{Binding EditAttributesCommand}" InputGesture="Alt+Enter"/>
-                                    <MenuItem Header="Extract Files..." Command="{Binding ExtractFilesCommand}"/>
+                                    <MenuItem Header="Extract Files..." Command="{Binding ExtractFilesCommand}" InputGesture="Ctrl+E"/>
                                     <MenuItem Header="Export Files..." Command="{Binding ExportFilesCommand}"/>
-                                    <MenuItem Header="Copy" Command="{Binding CopyCommand}"/>
-                                    <MenuItem Header="Paste" Command="{Binding PasteCommand}"/>
-                                    <MenuItem Header="Delete Files" Command="{Binding DeleteFilesCommand}"/>
+                                    <MenuItem Header="Copy" Command="{Binding CopyCommand}" InputGesture="Ctrl+C"/>
+                                    <MenuItem Header="Paste" Command="{Binding PasteCommand}" InputGesture="Ctrl+V"/>
+                                    <MenuItem Header="Delete Files" Command="{Binding DeleteFilesCommand}" InputGesture="Delete"/>
                                     <MenuItem Header="Test Files" Command="{Binding TestFilesCommand}"/>
                                     <Separator/>
-                                    <MenuItem Header="Add Files..." Command="{Binding AddFilesCommand}"/>
+                                    <MenuItem Header="Add Files..." Command="{Binding AddFilesCommand}" InputGesture="Ctrl+Shift+A"/>
                                     <MenuItem Header="Import Files..." Command="{Binding ImportFilesCommand}"/>
-                                    <MenuItem Header="Create Directory..." Command="{Binding CreateDirectoryCommand}"/>
+                                    <MenuItem Header="Create Directory..." Command="{Binding CreateDirectoryCommand}" InputGesture="Ctrl+Shift+N"/>
                                 </ContextMenu>
                             </DataGrid.ContextMenu>
                         </DataGrid>
