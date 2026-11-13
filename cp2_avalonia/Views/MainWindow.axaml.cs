@@ -414,6 +414,14 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
         if (OperatingSystem.IsMacOS())
         {
             mainMenu.IsVisible = false;
+
+            // The file list's context menus carry the Ctrl gestures; show the menu bar's
+            // (⌘) gesture for the same command instead.  Done on opening, once the commands
+            // are bound.
+            UseMenuBarGesturesOnOpen(fileListPanelContextMenu);
+            if (fileListDataGrid.ContextMenu is ContextMenu rowMenu) {
+                UseMenuBarGesturesOnOpen(rowMenu);
+            }
         }
 
         // Restore window placement before the window is shown to avoid a visible jump.
@@ -977,31 +985,10 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
 
     public void FocusDirectoryTree() => directoryTree.Focus();
 
-    // Rooted (field, not a local) so it can't be GC'd before it fires.
-    private DispatcherTimer? mFocusDirTreeTimer;
-
     // Alt+Up menu-dismissal state (see Window_PreviewKeyDown / Window_AltKeyUp).
     private bool mDismissMenuAfterAltUp;
     private DispatcherTimer? mDismissMenuTimer;
 
-    public void FocusDirectoryTreeDeferred()
-    {
-        // Two problems to beat: (1) the file-list DataGrid re-focuses its selected row
-        // asynchronously after the ItemsSource repopulation, so a short timer defers past that
-        // settle; (2) focusing the TreeView itself doesn't put keyboard focus on a navigable
-        // node, so we focus the selected item's TreeViewItem container instead.
-        mFocusDirTreeTimer ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
-        mFocusDirTreeTimer.Stop();
-        mFocusDirTreeTimer.Tick -= FocusDirTreeTimer_Tick;
-        mFocusDirTreeTimer.Tick += FocusDirTreeTimer_Tick;
-        mFocusDirTreeTimer.Start();
-    }
-
-    private void FocusDirTreeTimer_Tick(object? sender, EventArgs e)
-    {
-        mFocusDirTreeTimer?.Stop();
-        FocusSelectedDirectoryTreeItem();
-    }
 
     // Focuses the TreeViewItem container for the directory tree's selected item, so keyboard
     // focus actually lands on a navigable node (plain TreeView.Focus() does not).
@@ -1132,6 +1119,19 @@ public partial class MainWindow : Window, IDialogHost, IViewActions
         mDismissMenuTimer.Tick -= DismissMenuTimer_Tick;
         mDismissMenuTimer.Tick += DismissMenuTimer_Tick;
         mDismissMenuTimer.Start();
+    }
+
+    /// <summary>
+    /// macOS: when <paramref name="menu"/> opens, give its items the shortcut labels of the
+    /// menu bar.  See <see cref="MenuGestureLabels"/>.
+    /// </summary>
+    private void UseMenuBarGesturesOnOpen(ContextMenu menu)
+    {
+        menu.Opening += (_, _) => {
+            if (NativeMenu.GetMenu(this) is NativeMenu nativeMenu) {
+                MenuGestureLabels.CopyFromNativeMenu(nativeMenu, menu.Items);
+            }
+        };
     }
 
     private void DismissMenuTimer_Tick(object? sender, EventArgs e)

@@ -73,7 +73,6 @@ internal class FakeViewActions : IViewActions
     public void ScrollDirectoryTreeItemIntoView(DirectoryTreeItem item) { }
     public void FocusDirectoryTree() { }
     public void FocusArchiveTree() { }
-    public void FocusDirectoryTreeDeferred() { }
     public void ShowAsciiChart() { }
 }
 

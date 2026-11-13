@@ -108,12 +108,6 @@ public interface IViewActions
     /// <summary>Moves keyboard focus to the archive tree.</summary>
     void FocusArchiveTree();
 
-    /// <summary>
-    /// Moves keyboard focus to the directory tree after a short delay, so it wins over the
-    /// focus the file-list DataGrid grabs asynchronously while repopulating.
-    /// </summary>
-    void FocusDirectoryTreeDeferred();
-
     /// <summary>Opens (or re-focuses) the ASCII Chart window.</summary>
     void ShowAsciiChart();
 }
