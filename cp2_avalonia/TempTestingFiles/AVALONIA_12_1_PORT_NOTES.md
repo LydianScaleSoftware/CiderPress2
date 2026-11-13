@@ -106,6 +106,20 @@ Tests (`cp2_avalonia.Tests`)
   `TestContext.Current.CancellationToken` on one `Task.Delay`.
 - No tests were deleted or weakened.
 
+Found after the first manual test: the file viewer showed nothing for any file
+- Cause: `FileViewerViewModel` sets `SelectedForkTab = Data` *before* it sets `IsDataTabEnabled = true`, and the
+  tab's `IsEnabled` is bound to that flag. In 11.3 selecting the still-disabled `TabItem` worked; in 12 the selection is
+  refused (and the old one cleared), and nothing selected the tab again once it was enabled. `tabControl.SelectedIndex`
+  stayed -1, so no tab content was ever created and the viewer pane stayed empty (text, bitmaps, everything).
+- Fix (`Views/FileViewer.axaml.cs` only): the tab selection moved into `ApplySelectedTab(vm)`, which is now also called when
+  `IsDataTabEnabled`, `IsRsrcTabEnabled` or `IsNoteTabEnabled` changes. The view model is unchanged.
+- Found and verified with a throwaway headless harness (real `App` + Skia renderer, a ProDOS text file in memory, the real
+  `FileViewer`): before the fix `SelectedIndex` = -1 and no `FancyTextViewer` in the visual tree; after it the text renders in
+  the Data Fork tab. The harness is not kept in the tree. Not checked: bitmap/Rsrc/Notes tabs, history navigation, or any
+  mouse/keyboard behaviour.
+- The same "disabled item can't be selected" rule may affect other controls that select items whose `IsEnabled` is bound,
+  which is worth keeping in mind when smoke-testing (the Settings dialog's `TabControl` has no disabled tabs).
+
 Checked, no change needed
 - `DispatcherTimer`s (`App.axaml.cs`, `MainWindow.axaml.cs`): all are created from UI-thread event handlers.
 - No `TopLevel` casts, no `Gestures.` in XAML, no `WindowState` in a style, no `ToggleButton.Checked/Unchecked`

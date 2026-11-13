@@ -112,13 +112,15 @@ public partial class FileViewer : Window
                     noteScroll.Offset = new Avalonia.Vector(0, 0);
                     break;
                 case nameof(FileViewerViewModel.SelectedForkTab):
-                    mUpdatingTab = true;
-                    tabControl.SelectedItem = vm.SelectedForkTab switch {
-                        FileViewerViewModel.Tab.Rsrc => rsrcTabItem,
-                        FileViewerViewModel.Tab.Note => noteTabItem,
-                        _ => dataTabItem
-                    };
-                    mUpdatingTab = false;
+                    ApplySelectedTab(vm);
+                    break;
+                // Avalonia 12 refuses to select a disabled TabItem, and the view model picks
+                // the tab before the tab's enabled flag is set.  Select again once the tab
+                // has been enabled.
+                case nameof(FileViewerViewModel.IsDataTabEnabled):
+                case nameof(FileViewerViewModel.IsRsrcTabEnabled):
+                case nameof(FileViewerViewModel.IsNoteTabEnabled):
+                    ApplySelectedTab(vm);
                     break;
             }
         };
@@ -152,6 +154,23 @@ public partial class FileViewer : Window
             mBitmapWheelTunnel, RoutingStrategies.Tunnel);
 
         vm.Init();
+    }
+
+    /// <summary>
+    /// Makes the tab control show the tab that the view model has selected.
+    /// </summary>
+    private void ApplySelectedTab(FileViewerViewModel vm) {
+        TabItem item = vm.SelectedForkTab switch {
+            FileViewerViewModel.Tab.Rsrc => rsrcTabItem,
+            FileViewerViewModel.Tab.Note => noteTabItem,
+            _ => dataTabItem
+        };
+        if (ReferenceEquals(tabControl.SelectedItem, item)) {
+            return;
+        }
+        mUpdatingTab = true;
+        tabControl.SelectedItem = item;
+        mUpdatingTab = false;
     }
 
     private void OnClosing(object? sender, WindowClosingEventArgs e) {
